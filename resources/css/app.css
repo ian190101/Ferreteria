@@ -1,0 +1,116 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+    --color-primary: 37 99 235;
+    --color-secondary: 15 23 42;
+    --surface-alpha: 0.88;
+    --surface-blur: 18px;
+    --surface-border: rgb(255 255 255 / 0.68);
+    --control-radius: 999px;
+}
+
+.dark {
+    color-scheme: dark;
+}
+
+@layer base {
+    html {
+        @apply scroll-smooth;
+    }
+
+    body {
+        @apply text-slate-900 antialiased dark:text-slate-100;
+        font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    }
+
+    ::selection {
+        @apply bg-brand-primary text-white;
+    }
+
+    * {
+        scrollbar-width: thin;
+        scrollbar-color: rgb(148 163 184 / 0.65) transparent;
+    }
+}
+
+@layer components {
+    main > section {
+        @apply w-full;
+    }
+
+    .app-surface,
+    .rounded-lg.border.bg-white,
+    .rounded-lg.border.dark\:bg-slate-900 {
+        background: rgb(255 255 255 / var(--surface-alpha));
+        border-color: rgb(255 255 255 / 0.70);
+        box-shadow: 0 18px 50px rgb(15 23 42 / 0.08), inset 0 1px 0 rgb(255 255 255 / 0.45);
+        backdrop-filter: blur(var(--surface-blur)) saturate(1.25);
+    }
+
+    .dark .app-surface,
+    .dark .rounded-lg.border.bg-white,
+    .dark .rounded-lg.border.dark\:bg-slate-900 {
+        background: rgb(15 23 42 / var(--surface-alpha));
+        border-color: rgb(255 255 255 / 0.10);
+        box-shadow: 0 18px 55px rgb(0 0 0 / 0.28), inset 0 1px 0 rgb(255 255 255 / 0.06);
+    }
+
+    table {
+        @apply text-slate-700 dark:text-slate-200;
+        border-collapse: separate;
+        border-spacing: 0;
+    }
+
+    thead {
+        @apply text-xs uppercase tracking-[0.08em];
+    }
+
+    thead tr {
+        @apply bg-slate-100/75 dark:bg-white/5;
+    }
+
+    th:first-child {
+        border-top-left-radius: 0.875rem;
+    }
+
+    th:last-child {
+        border-top-right-radius: 0.875rem;
+    }
+
+    tbody tr {
+        @apply transition-colors hover:bg-white/70 dark:hover:bg-white/5;
+    }
+
+    input,
+    select,
+    textarea {
+        @apply border-slate-200 bg-white/80 text-sm text-slate-900 shadow-sm transition placeholder:text-slate-400 focus:border-brand-primary focus:ring-brand-primary dark:border-white/10 dark:bg-white/10 dark:text-slate-100;
+        border-radius: 0.875rem;
+        min-height: 2.5rem;
+    }
+
+    button,
+    a {
+        @apply outline-none focus-visible:ring-2 focus-visible:ring-brand-primary focus-visible:ring-offset-2 focus-visible:ring-offset-slate-100 dark:focus-visible:ring-offset-slate-950;
+    }
+
+    .shadow-sm {
+        --tw-shadow: 0 1px 2px 0 rgb(15 23 42 / 0.05);
+        --tw-shadow-colored: 0 1px 2px 0 var(--tw-shadow-color);
+    }
+
+    .rounded-lg {
+        border-radius: 1rem;
+    }
+
+    .rounded-md {
+        border-radius: 0.875rem;
+    }
+
+    .text-brand-primary.hover\:underline:hover,
+    .text-red-600.hover\:underline:hover {
+        text-decoration: none;
+    }
+}

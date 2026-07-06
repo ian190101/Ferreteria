@@ -1,0 +1,101 @@
+<?php
+
+namespace App\Models;
+
+// use Illuminate\Contracts\Auth\MustVerifyEmail;
+use App\Modules\Branches\Models\Branch;
+use Database\Factories\UserFactory;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Foundation\Auth\User as Authenticatable;
+use Illuminate\Notifications\Notifiable;
+use OwenIt\Auditing\Auditable as AuditableConcern;
+use OwenIt\Auditing\Contracts\Auditable;
+use Spatie\Permission\Traits\HasRoles;
+
+class User extends Authenticatable implements Auditable
+{
+    /** @use HasFactory<UserFactory> */
+    use AuditableConcern, HasFactory, HasRoles, Notifiable;
+
+    /**
+     * The attributes that are mass assignable.
+     *
+     * @var list<string>
+     */
+    protected $fillable = [
+        'branch_id',
+        'name',
+        'email',
+        'is_active',
+        'password',
+        'last_login_at',
+        'last_login_ip',
+    ];
+
+    /**
+     * The attributes that should be hidden for serialization.
+     *
+     * @var list<string>
+     */
+    protected $hidden = [
+        'password',
+        'remember_token',
+    ];
+
+    /**
+     * Get the attributes that should be cast.
+     *
+     * @return array<string, string>
+     */
+    protected function casts(): array
+    {
+        return [
+            'email_verified_at' => 'datetime',
+            'is_active' => 'boolean',
+            'last_login_at' => 'datetime',
+            'password' => 'hashed',
+        ];
+    }
+
+    public function branch(): BelongsTo
+    {
+        return $this->belongsTo(Branch::class);
+    }
+
+    public function accessibleBranches(): BelongsToMany
+    {
+        return $this->belongsToMany(Branch::class)
+            ->withTimestamps()
+            ->orderBy('name');
+    }
+
+    public function isSuperAdministrator(): bool
+    {
+        return $this->hasRole('superadmin');
+    }
+
+    /**
+     * Devuelve la sucursal principal y las sucursales adicionales configuradas.
+     *
+     * @return array<int>
+     */
+    public function accessibleBranchIds(): array
+    {
+        $branchIds = collect([$this->branch_id]);
+
+        if ($this->relationLoaded('accessibleBranches')) {
+            $branchIds = $branchIds->merge($this->accessibleBranches->pluck('id'));
+        } else {
+            $branchIds = $branchIds->merge($this->accessibleBranches()->pluck('branches.id'));
+        }
+
+        return $branchIds
+            ->filter()
+            ->unique()
+            ->map(fn ($id) => (int) $id)
+            ->values()
+            ->all();
+    }
+}
