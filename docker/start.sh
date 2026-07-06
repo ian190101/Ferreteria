@@ -9,6 +9,8 @@ mkdir -p storage/framework/cache storage/framework/sessions storage/framework/vi
 chown -R www-data:www-data storage bootstrap/cache
 
 php artisan migrate --force
+php artisan cache:clear || true
+php artisan permission:cache-reset || true
 php artisan config:cache
 php artisan route:cache
 php artisan view:cache

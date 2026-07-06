@@ -6,6 +6,7 @@ use App\Modules\Branches\Models\BranchSetting;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Inertia\Middleware;
+use Spatie\Permission\Models\Permission;
 
 class HandleInertiaRequests extends Middleware
 {
@@ -53,34 +54,36 @@ class HandleInertiaRequests extends Middleware
             ];
         }
 
-        $version = Cache::get('inertia-auth-version', 1);
+        $user->loadMissing(['branch:id,name', 'accessibleBranches:id,name']);
+        $roles = $user->getRoleNames()->values()->all();
 
-        return Cache::remember("user:{$user->id}:inertia-auth:{$version}", now()->addMinutes(30), function () use ($user) {
-            $user->loadMissing(['branch:id,name', 'accessibleBranches:id,name']);
+        // Los roles/permisos no se cachean aqui porque pueden cargarse por inserts externos en TiDB.
+        $permissions = in_array('superadmin', $roles, true)
+            ? Permission::query()->pluck('name')->values()->all()
+            : $user->getAllPermissions()->pluck('name')->values()->all();
 
-            return [
-                'user' => [
-                    'id' => $user->id,
-                    'branch_id' => $user->branch_id,
-                    'name' => $user->name,
-                    'email' => $user->email,
-                    'is_active' => $user->is_active,
-                    'branch' => $user->branch ? [
-                        'id' => $user->branch->id,
-                        'name' => $user->branch->name,
-                    ] : null,
-                    'accessible_branches' => $user->accessibleBranches
-                        ->map(fn ($branch) => [
-                            'id' => $branch->id,
-                            'name' => $branch->name,
-                        ])
-                        ->values()
-                        ->all(),
-                ],
-                'roles' => $user->getRoleNames()->values()->all(),
-                'permissions' => $user->getAllPermissions()->pluck('name')->values()->all(),
-            ];
-        });
+        return [
+            'user' => [
+                'id' => $user->id,
+                'branch_id' => $user->branch_id,
+                'name' => $user->name,
+                'email' => $user->email,
+                'is_active' => $user->is_active,
+                'branch' => $user->branch ? [
+                    'id' => $user->branch->id,
+                    'name' => $user->branch->name,
+                ] : null,
+                'accessible_branches' => $user->accessibleBranches
+                    ->map(fn ($branch) => [
+                        'id' => $branch->id,
+                        'name' => $branch->name,
+                    ])
+                    ->values()
+                    ->all(),
+            ],
+            'roles' => $roles,
+            'permissions' => $permissions,
+        ];
     }
 
     /**
