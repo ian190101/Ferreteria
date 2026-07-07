@@ -220,6 +220,15 @@ function buildNavigation(permissions) {
             ].filter(Boolean),
         },
         {
+            label: 'Comercial',
+            items: [
+                item(can('sales.view'), 'Comercial', 'Ventas', route('sales.index'), route().current('sales.index') || route().current('sales.create') || route().current('sales.show') || route().current('sales.settings.*') || route().current('sales.templates.*'), 'ventas'),
+                item(can('sales.deliveries.view'), 'Comercial', 'Despachos', route('sales.deliveries.index'), route().current('sales.deliveries.*'), 'ventas'),
+                item(can('sales.returns.view'), 'Comercial', 'Devoluciones', route('sales.returns.index'), route().current('sales.returns.*'), 'ventas'),
+                item(can('customers.view'), 'Comercial', 'Clientes', route('customers.index'), route().current('customers.*'), 'clientes'),
+            ].filter(Boolean),
+        },
+        {
             label: 'Inventario',
             items: [
                 item(can('inventory.products.view'), 'Inventario', 'Stock central', route('inventory.stock.index'), route().current('inventory.stock.*'), 'inventario'),
@@ -228,15 +237,6 @@ function buildNavigation(permissions) {
                 item(can('inventory.movements.view'), 'Inventario', 'Kardex', route('inventory.movements.index'), route().current('inventory.movements.*'), 'reportes'),
                 item(can('inventory.reservations.view'), 'Inventario', 'Reservas', route('inventory.reservations.index'), route().current('inventory.reservations.*'), 'inventario'),
                 item(can('inventory.transfers.view'), 'Inventario', 'Transferencias', route('inventory.transfers.index'), route().current('inventory.transfers.*'), 'inventario'),
-            ].filter(Boolean),
-        },
-        {
-            label: 'Comercial',
-            items: [
-                item(can('sales.view'), 'Comercial', 'Ventas', route('sales.index'), route().current('sales.index') || route().current('sales.create') || route().current('sales.show') || route().current('sales.settings.*') || route().current('sales.templates.*'), 'ventas'),
-                item(can('sales.deliveries.view'), 'Comercial', 'Despachos', route('sales.deliveries.index'), route().current('sales.deliveries.*'), 'ventas'),
-                item(can('sales.returns.view'), 'Comercial', 'Devoluciones', route('sales.returns.index'), route().current('sales.returns.*'), 'ventas'),
-                item(can('customers.view'), 'Comercial', 'Clientes', route('customers.index'), route().current('customers.*'), 'clientes'),
             ].filter(Boolean),
         },
         {
