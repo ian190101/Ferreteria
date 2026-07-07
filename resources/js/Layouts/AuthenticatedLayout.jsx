@@ -163,10 +163,11 @@ function SidebarContent({ navigation, user, branding, onNavigate }) {
 }
 
 function BrandLogo({ logoPath }) {
+    const [failed, setFailed] = useState(false);
     const logoSrc = assetUrl(logoPath);
 
-    if (logoSrc) {
-        return <img src={logoSrc} alt="Logo de sucursal" className="h-full w-full object-contain p-1.5" />;
+    if (logoSrc && !failed) {
+        return <img src={logoSrc} alt="" className="h-full w-full object-contain p-1.5" onError={() => setFailed(true)} />;
     }
 
     return <ApplicationLogo className="h-7 w-7 fill-current" />;

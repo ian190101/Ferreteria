@@ -3,7 +3,19 @@ export function assetUrl(path) {
         return null;
     }
 
-    const value = String(path).trim();
+    let value = String(path).trim();
+
+    const imgSrc = value.match(/<img[^>]+src=["']([^"']+)["']/i)?.[1];
+
+    if (imgSrc) {
+        value = imgSrc.trim();
+    }
+
+    const googleDriveFile = value.match(/^https:\/\/drive\.google\.com\/file\/d\/([^/]+)\/view/i);
+
+    if (googleDriveFile) {
+        return `https://drive.google.com/uc?export=view&id=${googleDriveFile[1]}`;
+    }
 
     if (/^(https?:)?\/\//i.test(value) || value.startsWith('data:')) {
         return value;
