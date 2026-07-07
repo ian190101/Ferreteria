@@ -18,6 +18,7 @@ const iconPaths = {
     reportes: 'M5 3h14v18H5V3Zm3 4h8V5H8v2Zm0 4h8V9H8v2Zm0 4h5v-2H8v2Z',
     exportaciones: 'M5 20h14v-2H5v2Zm7-17-5 5h3v6h4V8h3l-5-5Z',
     configuracion: 'M12 8a4 4 0 1 1 0 8 4 4 0 0 1 0-8Zm8.5 4a7.7 7.7 0 0 0-.1-1l2-1.5-2-3.5-2.4 1a8.2 8.2 0 0 0-1.8-1L15.8 3h-4l-.4 3a8.2 8.2 0 0 0-1.8 1l-2.4-1-2 3.5 2 1.5a7.7 7.7 0 0 0 0 2l-2 1.5 2 3.5 2.4-1a8.2 8.2 0 0 0 1.8 1l.4 3h4l.4-3a8.2 8.2 0 0 0 1.8-1l2.4 1 2-3.5-2-1.5c.1-.3.1-.7.1-1Z',
+    informacion: 'M11 10h2v7h-2v-7Zm0-3h2v2h-2V7Zm1-5a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm0 18a8 8 0 1 1 0-16 8 8 0 0 1 0 16Z',
 };
 
 export default function AuthenticatedLayout({ header, children }) {
@@ -260,6 +261,7 @@ function buildNavigation(permissions) {
                 item(can('branches.view'), 'Administracion', 'Sucursales', route('branches.index'), route().current('branches.*'), 'configuracion'),
                 item(can('audit.view'), 'Administracion', 'Auditoria', route('audit.index'), route().current('audit.*'), 'reportes'),
                 item(can('settings.manage'), 'Administracion', 'Exportaciones', route('exports.index'), route().current('exports.*'), 'exportaciones'),
+                item(can('settings.manage'), 'Administracion', 'Informacion', route('settings.info.index'), route().current('settings.info.*'), 'informacion'),
                 item(can('settings.manage'), 'Administracion', 'Sistema', route('settings.system.index'), route().current('settings.system.*'), 'configuracion'),
             ].filter(Boolean),
         },
