@@ -16,7 +16,6 @@ const numberFormatter = new Intl.NumberFormat('es-BO', {
 export default function Index({
     scope,
     metrics,
-    quickActions = [],
     recentSales = [],
     pendingReceivables = [],
     lowStocks = [],
@@ -61,21 +60,6 @@ export default function Index({
                         title="Panel operativo"
                         description={`Resumen de ${scope.label.toLowerCase()} desde ${formatDateOnly(scope.from)} hasta ${formatDateOnly(scope.to)}.`}
                     />
-
-                    {quickActions.length > 0 ? (
-                        <div className="grid gap-2 sm:grid-cols-2 lg:min-w-96">
-                            {quickActions.map((action) => (
-                                <Link
-                                    key={`${action.group}-${action.label}`}
-                                    href={action.href}
-                                    className="rounded-md border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-800 shadow-sm transition hover:border-brand-primary hover:text-brand-primary dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100"
-                                >
-                                    <span className="block text-xs font-medium text-slate-500 dark:text-slate-400">{action.group}</span>
-                                    {action.label}
-                                </Link>
-                            ))}
-                        </div>
-                    ) : null}
                 </div>
 
                 <form onSubmit={submitFilters} className="mt-6 grid gap-4 rounded-lg border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:grid-cols-2 xl:grid-cols-[1.2fr_1fr_1fr_auto]">

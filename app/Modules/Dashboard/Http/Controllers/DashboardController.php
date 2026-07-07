@@ -60,7 +60,6 @@ class DashboardController extends Controller
                     'to' => $to->toDateString(),
                 ],
                 'metrics' => $this->metrics($user, $branchId, $allowedBranchIds, $from, $to, $today),
-                'quickActions' => $this->quickActions($user),
             ];
         });
 
@@ -112,19 +111,6 @@ class DashboardController extends Controller
             'expenses_range_total' => $user->can('expenses.view') ? (float) $this->expenseQuery($branchId, $branchIds)->whereBetween('spent_at', [$from, $to])->sum('amount') : null,
             'profit_range_total' => $user->can('payments.view') || $user->can('purchases.view') || $user->can('expenses.view') ? $this->profitForRange($user, $branchId, $branchIds, $from, $to) : null,
         ];
-    }
-
-    private function quickActions($user): array
-    {
-        return collect([
-            $user->can('sales.manage') ? ['label' => 'Nueva nota', 'href' => route('sales.create', ['type' => 'sale_note']), 'group' => 'Ventas'] : null,
-            $user->can('sales.manage') ? ['label' => 'Nueva cotizacion', 'href' => route('sales.create', ['type' => 'quotation']), 'group' => 'Ventas'] : null,
-            $user->can('purchases.manage') ? ['label' => 'Registrar compra', 'href' => route('purchases.create'), 'group' => 'Inventario'] : null,
-            $user->can('inventory.adjustments.manage') ? ['label' => 'Ajustar stock', 'href' => route('inventory.adjustments.index'), 'group' => 'Inventario'] : null,
-            $user->can('payments.manage') ? ['label' => 'Registrar pago', 'href' => route('payments.index'), 'group' => 'Caja'] : null,
-            $user->can('payment-promises.manage') ? ['label' => 'Promesa de pago', 'href' => route('payments.promises.index'), 'group' => 'Cobranza'] : null,
-            $user->can('cash.manage') ? ['label' => 'Abrir caja', 'href' => route('cash.index'), 'group' => 'Caja'] : null,
-        ])->filter()->values()->all();
     }
 
     private function recentSales($user, ?int $branchId, array $branchIds, Carbon $from, Carbon $to)
