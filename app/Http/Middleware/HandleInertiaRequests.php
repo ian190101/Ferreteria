@@ -94,7 +94,20 @@ class HandleInertiaRequests extends Middleware
         $branchId = $request->user()?->branch_id;
 
         if (! $branchId) {
-            return $this->defaultBranding();
+            return Cache::remember('public:branding', now()->addMinutes(30), function () {
+                $setting = BranchSetting::query()
+                    ->select(['branch_id', 'primary_color', 'secondary_color', 'logo_path', 'theme_mode'])
+                    ->whereNotNull('logo_path')
+                    ->where('logo_path', '!=', '')
+                    ->orderBy('branch_id')
+                    ->first();
+
+                if (! $setting) {
+                    return $this->defaultBranding();
+                }
+
+                return $this->brandingFromSetting($setting);
+            });
         }
 
         return Cache::remember("branch:{$branchId}:branding", now()->addMinutes(30), function () use ($branchId) {
@@ -107,15 +120,20 @@ class HandleInertiaRequests extends Middleware
                 return $this->defaultBranding();
             }
 
-            return [
-                'primary' => $setting->primary_color,
-                'secondary' => $setting->secondary_color,
-                'primaryRgb' => $this->hexToRgb($setting->primary_color),
-                'secondaryRgb' => $this->hexToRgb($setting->secondary_color),
-                'logoPath' => $setting->logo_path,
-                'themeMode' => $setting->theme_mode,
-            ];
+            return $this->brandingFromSetting($setting);
         });
+    }
+
+    private function brandingFromSetting(BranchSetting $setting): array
+    {
+        return [
+            'primary' => $setting->primary_color,
+            'secondary' => $setting->secondary_color,
+            'primaryRgb' => $this->hexToRgb($setting->primary_color),
+            'secondaryRgb' => $this->hexToRgb($setting->secondary_color),
+            'logoPath' => $setting->logo_path,
+            'themeMode' => $setting->theme_mode,
+        ];
     }
 
     private function defaultBranding(): array

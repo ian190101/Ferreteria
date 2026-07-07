@@ -11,3 +11,19 @@ export function assetUrl(path) {
 
     return value.startsWith('/') ? value : `/${value}`;
 }
+
+export function updateFavicon(logoSrc) {
+    if (!logoSrc) {
+        return;
+    }
+
+    let favicon = document.querySelector('link[rel="icon"]');
+
+    if (!favicon) {
+        favicon = document.createElement('link');
+        favicon.rel = 'icon';
+        document.head.appendChild(favicon);
+    }
+
+    favicon.href = logoSrc;
+}

@@ -1,7 +1,7 @@
 import ApplicationLogo from '@/Components/ApplicationLogo';
 import AppearanceSwitch from '@/Components/AppearanceSwitch';
 import IconGlyph from '@/Components/Icon';
-import { assetUrl } from '@/Utils/assets';
+import { assetUrl, updateFavicon } from '@/Utils/assets';
 import { Link, usePage } from '@inertiajs/react';
 import { useEffect, useMemo, useState } from 'react';
 import { roleLabel } from '../../../app/Modules/Users/Resources/Utils/permissionLabels';
@@ -273,20 +273,4 @@ function initials(name) {
         .map((part) => part[0])
         .join('')
         .toUpperCase();
-}
-
-function updateFavicon(logoSrc) {
-    if (!logoSrc) {
-        return;
-    }
-
-    let favicon = document.querySelector('link[rel="icon"]');
-
-    if (!favicon) {
-        favicon = document.createElement('link');
-        favicon.rel = 'icon';
-        document.head.appendChild(favicon);
-    }
-
-    favicon.href = logoSrc;
 }

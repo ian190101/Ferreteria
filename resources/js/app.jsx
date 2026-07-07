@@ -5,6 +5,7 @@ import { createInertiaApp } from '@inertiajs/react';
 import { resolvePageComponent } from 'laravel-vite-plugin/inertia-helpers';
 import { createRoot } from 'react-dom/client';
 import { route as ziggyRoute } from 'ziggy-js';
+import { assetUrl, updateFavicon } from './Utils/assets';
 import { Ziggy as generatedZiggy } from './ziggy';
 
 const appName = import.meta.env.VITE_APP_NAME || 'Laravel';
@@ -61,4 +62,5 @@ function applyBranding(branding) {
     document.documentElement.classList.remove('liquid-glass');
     document.documentElement.style.colorScheme = useDark ? 'dark' : 'light';
     localStorage.removeItem('appearance-glass');
+    updateFavicon(assetUrl(branding.logoPath));
 }

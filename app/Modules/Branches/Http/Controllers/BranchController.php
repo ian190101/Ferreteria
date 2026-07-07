@@ -52,6 +52,8 @@ class BranchController extends Controller
             $branch->setting()->create($request->validated('setting'));
         });
 
+        Cache::forget('public:branding');
+
         return redirect()->route('branches.index')->with('success', 'Sucursal creada correctamente.');
     }
 
@@ -73,6 +75,7 @@ class BranchController extends Controller
         });
 
         Cache::forget("branch:{$branch->id}:branding");
+        Cache::forget('public:branding');
 
         return redirect()->route('branches.index')->with('success', 'Sucursal actualizada correctamente.');
     }
@@ -87,6 +90,7 @@ class BranchController extends Controller
 
         $branch->update(['is_active' => false]);
         Cache::forget("branch:{$branch->id}:branding");
+        Cache::forget('public:branding');
 
         return redirect()->route('branches.index')->with('success', 'Sucursal desactivada correctamente.');
     }
