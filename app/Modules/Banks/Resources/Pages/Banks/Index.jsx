@@ -88,8 +88,8 @@ export default function Index({ accounts, transactions, summary, branches, activ
                     </SelectField>
                     <SelectField label="Tipo" name="type" value={filterForm.data.type} onChange={(event) => filterForm.setData('type', event.target.value)}>
                         <option value="">Todos</option>
-                        <option value="deposit">Deposito</option>
-                        <option value="withdrawal">Retiro</option>
+                        <option value="deposit">Ingreso</option>
+                        <option value="withdrawal">Egreso</option>
                         <option value="adjustment">Ajuste</option>
                     </SelectField>
                     <SelectField label="Estado" name="status" value={filterForm.data.status} onChange={(event) => filterForm.setData('status', event.target.value)}>
@@ -131,8 +131,8 @@ export default function Index({ accounts, transactions, summary, branches, activ
                                     {activeAccounts.map((account) => <option key={account.id} value={account.id}>{account.name} ({account.account_number})</option>)}
                                 </SelectField>
                                 <SelectField label="Tipo" name="type" value={transactionForm.data.type} onChange={(event) => transactionForm.setData('type', event.target.value)} error={transactionForm.errors.type}>
-                                    <option value="deposit">Deposito</option>
-                                    <option value="withdrawal">Retiro</option>
+                                    <option value="deposit">Ingreso</option>
+                                    <option value="withdrawal">Egreso</option>
                                     <option value="adjustment">Ajuste positivo</option>
                                 </SelectField>
                                 <FormField label="Fecha" name="transacted_at" value="Se registrara automaticamente al guardar" disabled className="mt-1 block w-full rounded-md border-gray-300 bg-slate-100 shadow-sm dark:border-gray-700 dark:bg-slate-800 dark:text-gray-300" error={transactionForm.errors.transacted_at} />
@@ -271,8 +271,8 @@ async function voidTransaction(transaction) {
 
 function typeLabel(type) {
     const labels = {
-        deposit: 'Deposito',
-        withdrawal: 'Retiro',
+        deposit: 'Ingreso',
+        withdrawal: 'Egreso',
         adjustment: 'Ajuste',
     };
 

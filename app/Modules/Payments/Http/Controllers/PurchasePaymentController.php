@@ -3,6 +3,7 @@
 namespace App\Modules\Payments\Http\Controllers;
 
 use App\Http\Controllers\Controller;
+use App\Modules\Banks\Services\BankReconciliationService;
 use App\Modules\Payments\Http\Requests\StorePurchasePaymentRequest;
 use App\Modules\Payments\Http\Requests\VoidPurchasePaymentRequest;
 use App\Modules\Payments\Models\PurchasePayment;
@@ -47,9 +48,9 @@ class PurchasePaymentController extends Controller
         ]);
     }
 
-    public function store(StorePurchasePaymentRequest $request): RedirectResponse
+    public function store(StorePurchasePaymentRequest $request, BankReconciliationService $banks): RedirectResponse
     {
-        $payment = DB::transaction(function () use ($request) {
+        $payment = DB::transaction(function () use ($request, $banks) {
             $purchase = Purchase::query()->lockForUpdate()->findOrFail($request->integer('purchase_id'));
             $amount = round((float) $request->input('amount'), 2);
 
@@ -72,6 +73,8 @@ class PurchasePaymentController extends Controller
                 'payment_status' => $this->statusForBalance($newBalance, (float) $purchase->total_amount),
             ]);
 
+            $banks->recordPurchasePayment($payment);
+
             return $payment;
         });
 
@@ -80,18 +83,20 @@ class PurchasePaymentController extends Controller
             ->with('success', "Pago de compra {$payment->id} registrado correctamente.");
     }
 
-    public function void(VoidPurchasePaymentRequest $request, PurchasePayment $payment): RedirectResponse
+    public function void(VoidPurchasePaymentRequest $request, PurchasePayment $payment, BankReconciliationService $banks): RedirectResponse
     {
         abort_unless(BranchAccess::canAccess($request->user(), (int) $payment->branch_id), 403);
 
-        DB::transaction(function () use ($request, $payment) {
+        DB::transaction(function () use ($request, $payment, $banks) {
             $payment = PurchasePayment::query()->lockForUpdate()->findOrFail($payment->id);
             $purchase = Purchase::query()->lockForUpdate()->findOrFail($payment->purchase_id);
+            $voidReason = 'Anulado por '.$request->user()->name.': '.$request->string('reason')->toString();
             $notes = trim(implode("\n", array_filter([
                 $payment->notes,
-                'Anulado por '.$request->user()->name.': '.$request->string('reason')->toString(),
+                $voidReason,
             ])));
 
+            $banks->voidForSource($payment, $voidReason);
             $payment->update(['notes' => $notes]);
             $payment->delete();
 

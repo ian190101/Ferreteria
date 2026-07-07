@@ -3,6 +3,7 @@
 namespace App\Modules\Expenses\Http\Controllers;
 
 use App\Http\Controllers\Controller;
+use App\Modules\Banks\Services\BankReconciliationService;
 use App\Modules\Expenses\Http\Requests\StoreExpenseRequest;
 use App\Modules\Expenses\Http\Requests\VoidExpenseRequest;
 use App\Modules\Expenses\Models\Expense;
@@ -12,6 +13,7 @@ use App\Support\UiCatalogCache;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -56,30 +58,41 @@ class ExpenseController extends Controller
         ]);
     }
 
-    public function store(StoreExpenseRequest $request): RedirectResponse
+    public function store(StoreExpenseRequest $request, BankReconciliationService $banks): RedirectResponse
     {
-        Expense::query()->create([
-            ...$request->validated(),
-            'user_id' => $request->user()->id,
-            'spent_at' => now(),
-        ]);
+        DB::transaction(function () use ($request, $banks) {
+            $expense = Expense::query()->create([
+                ...$request->validated(),
+                'user_id' => $request->user()->id,
+                'spent_at' => now(),
+            ]);
+
+            $banks->recordExpense($expense);
+        });
 
         $this->bumpSummaryCache();
 
         return redirect()->route('expenses.index')->with('success', 'Gasto registrado correctamente.');
     }
 
-    public function void(VoidExpenseRequest $request, Expense $expense): RedirectResponse
+    public function void(VoidExpenseRequest $request, Expense $expense, BankReconciliationService $banks): RedirectResponse
     {
-        $notes = trim(implode("\n", array_filter([
-            $expense->notes,
-            'Anulado por '.$request->user()->name.': '.$request->string('reason')->toString(),
-        ])));
+        abort_unless(BranchAccess::canAccess($request->user(), (int) $expense->branch_id), 403);
 
-        $expense->update([
-            'status' => Expense::STATUS_VOID,
-            'notes' => $notes,
-        ]);
+        DB::transaction(function () use ($request, $expense, $banks) {
+            $expense = Expense::query()->whereKey($expense->id)->lockForUpdate()->firstOrFail();
+            $voidReason = 'Anulado por '.$request->user()->name.': '.$request->string('reason')->toString();
+            $notes = trim(implode("\n", array_filter([
+                $expense->notes,
+                $voidReason,
+            ])));
+
+            $banks->voidForSource($expense, $voidReason);
+            $expense->update([
+                'status' => Expense::STATUS_VOID,
+                'notes' => $notes,
+            ]);
+        });
 
         $this->bumpSummaryCache();
 

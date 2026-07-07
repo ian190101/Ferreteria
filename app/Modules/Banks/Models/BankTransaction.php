@@ -5,6 +5,7 @@ namespace App\Modules\Banks\Models;
 use App\Models\User;
 use App\Modules\Branches\Models\Branch;
 use App\Modules\Shared\Models\AuditableModel;
+use Illuminate\Database\Eloquent\Relations\MorphTo;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class BankTransaction extends AuditableModel
@@ -32,6 +33,8 @@ class BankTransaction extends AuditableModel
         'reconciled_at',
         'voided_at',
         'void_reason',
+        'source_type',
+        'source_id',
     ];
 
     protected $casts = [
@@ -54,5 +57,10 @@ class BankTransaction extends AuditableModel
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    public function source(): MorphTo
+    {
+        return $this->morphTo();
     }
 }

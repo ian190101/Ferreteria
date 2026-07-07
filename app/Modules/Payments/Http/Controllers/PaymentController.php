@@ -3,6 +3,7 @@
 namespace App\Modules\Payments\Http\Controllers;
 
 use App\Http\Controllers\Controller;
+use App\Modules\Banks\Services\BankReconciliationService;
 use App\Modules\Payments\Http\Requests\StoreSalePaymentRequest;
 use App\Modules\Payments\Http\Requests\VoidSalePaymentRequest;
 use App\Modules\Payments\Models\CreditNote;
@@ -56,9 +57,9 @@ class PaymentController extends Controller
         ]);
     }
 
-    public function store(StoreSalePaymentRequest $request): RedirectResponse
+    public function store(StoreSalePaymentRequest $request, BankReconciliationService $banks): RedirectResponse
     {
-        $payment = DB::transaction(function () use ($request) {
+        $payment = DB::transaction(function () use ($request, $banks) {
             $sale = Sale::query()->lockForUpdate()->findOrFail($request->integer('sale_id'));
             $amount = round((float) $request->input('amount'), 2);
 
@@ -81,6 +82,8 @@ class PaymentController extends Controller
                 'status' => $newBalance <= 0 ? 'paid' : 'partial_paid',
             ]);
 
+            $banks->recordSalePayment($payment);
+
             return $payment;
         });
 
@@ -89,18 +92,20 @@ class PaymentController extends Controller
             ->with('success', "Pago {$payment->id} registrado correctamente.");
     }
 
-    public function void(VoidSalePaymentRequest $request, SalePayment $payment): RedirectResponse
+    public function void(VoidSalePaymentRequest $request, SalePayment $payment, BankReconciliationService $banks): RedirectResponse
     {
         abort_unless(BranchAccess::canAccess($request->user(), (int) $payment->branch_id), 403);
 
-        DB::transaction(function () use ($request, $payment) {
+        DB::transaction(function () use ($request, $payment, $banks) {
             $payment = SalePayment::query()->lockForUpdate()->findOrFail($payment->id);
             $sale = Sale::query()->lockForUpdate()->findOrFail($payment->sale_id);
+            $voidReason = 'Anulado por '.$request->user()->name.': '.$request->string('reason')->toString();
             $notes = trim(implode("\n", array_filter([
                 $payment->notes,
-                'Anulado por '.$request->user()->name.': '.$request->string('reason')->toString(),
+                $voidReason,
             ])));
 
+            $banks->voidForSource($payment, $voidReason);
             $payment->update(['notes' => $notes]);
             $payment->delete();
 
