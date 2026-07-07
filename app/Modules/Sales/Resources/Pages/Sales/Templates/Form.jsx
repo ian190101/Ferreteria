@@ -1,5 +1,6 @@
 import PrimaryButton from '@/Components/PrimaryButton';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
+import { assetUrl } from '@/Utils/assets';
 import FormField from '../../../../../Shared/Resources/Components/FormField';
 import ModuleHeader from '../../../../../Shared/Resources/Components/ModuleHeader';
 import SelectField from '../../../../../Shared/Resources/Components/SelectField';
@@ -305,6 +306,10 @@ function Panel({ title, children }) {
 
 function Preview({ data }) {
     const width = data.paper_type === 'thermal' ? `${data.thermal_width_mm}mm` : '100%';
+    const logo = data.layout.logo ?? {};
+    const logoSrc = assetUrl(logo.path);
+    const primary = data.layout.colors.primary;
+    const secondary = data.layout.colors.secondary;
 
     return (
         <aside className="hidden lg:block">
@@ -319,9 +324,14 @@ function Preview({ data }) {
                         fontSize: `${data.layout.font_size}px`,
                     }}
                 >
-                    <p className="text-center font-bold" style={{ color: data.layout.colors.primary }}>FABRICA DE CALAMINAS</p>
-                    <p className="text-center text-xs">Direccion / telefonos</p>
-                    <div className="mt-3 border-t border-black pt-2 text-right text-xs">NOTA DE VENTA<br />Nro.: 000001</div>
+                    {logo.show && logoSrc ? (
+                        <div className={logoPositionClass(logo.position)}>
+                            <img src={logoSrc} alt="" className="mb-2 inline-block object-contain" style={{ width: `${logo.width_mm ?? 28}mm` }} />
+                        </div>
+                    ) : null}
+                    <p className="text-center font-bold" style={{ color: primary }}>FABRICA DE CALAMINAS</p>
+                    <p className="text-center text-xs" style={{ color: primary }}>Direccion / telefonos</p>
+                    <div className="mt-3 border-t border-black pt-2 text-right text-xs" style={{ color: secondary }}>NOTA DE VENTA<br />Nro.: 000001</div>
                     <div className="mt-3 grid grid-cols-2 gap-1 border-t border-black pt-2 text-xs">
                         <span>Cliente</span><span>Moneda</span><span>Vendedor</span><span>Tipo</span>
                     </div>
@@ -331,4 +341,12 @@ function Preview({ data }) {
             </div>
         </aside>
     );
+}
+
+function logoPositionClass(position) {
+    return {
+        center: 'text-center',
+        right: 'text-right',
+        left: 'text-left',
+    }[position] ?? 'text-left';
 }

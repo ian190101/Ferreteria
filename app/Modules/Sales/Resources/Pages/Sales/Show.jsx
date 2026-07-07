@@ -31,6 +31,7 @@ export default function Show({ sale, template, paymentMethods, conversionReadine
     const paperWidth = template.paper_type === 'thermal' ? `${template.thermal_width_mm ?? 80}mm` : paper.width;
     const primary = template.use_branding ? branch.setting?.primary_color ?? layout.colors.primary : layout.colors.primary;
     const secondary = template.use_branding ? branch.setting?.secondary_color ?? layout.colors.secondary : layout.colors.secondary;
+    const logoPath = template.use_branding ? branch.setting?.logo_path : layout.logo?.path;
     const paymentForm = useForm({
         sale_id: sale.id,
         payment_method_id: paymentMethods[0]?.id ?? '',
@@ -46,7 +47,7 @@ export default function Show({ sale, template, paymentMethods, conversionReadine
     };
 
     const renderSection = (section) => {
-        const props = { sale, branch, currency, documentTitle, fields, primary, secondary, layout };
+        const props = { sale, branch, currency, documentTitle, fields, primary, secondary, layout, logoPath };
 
         return {
             header: <HeaderSection key="header" {...props} />,
@@ -225,9 +226,8 @@ export default function Show({ sale, template, paymentMethods, conversionReadine
     );
 }
 
-function HeaderSection({ branch, fields, layout, primary }) {
+function HeaderSection({ branch, fields, layout, primary, logoPath }) {
     const logo = layout.logo ?? {};
-    const logoPath = logo.path || branch.setting?.logo_path;
     const logoSrc = assetUrl(logoPath);
 
     return (
