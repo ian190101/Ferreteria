@@ -4,6 +4,7 @@ namespace App\Modules\Banks\Services;
 
 use App\Modules\Banks\Models\BankAccount;
 use App\Modules\Banks\Models\BankTransaction;
+use App\Modules\Cash\Models\CashRegisterSession;
 use App\Modules\Expenses\Models\Expense;
 use App\Modules\Payments\Models\PaymentMethod;
 use App\Modules\Payments\Models\PurchasePayment;
@@ -137,6 +138,7 @@ class BankReconciliationService
             'bank_account_id' => $account->id,
             'branch_id' => $branchId,
             'user_id' => $userId,
+            'cash_register_session_id' => $this->openCashSessionId($branchId, $userId, $transactedAt),
             'type' => $type,
             'transacted_at' => $transactedAt ?: now(),
             'amount' => $amount,
@@ -185,6 +187,17 @@ class BankReconciliationService
         }
 
         return $account;
+    }
+
+    private function openCashSessionId(int $branchId, int $userId, mixed $transactedAt): ?int
+    {
+        return CashRegisterSession::query()
+            ->where('branch_id', $branchId)
+            ->where('opened_by', $userId)
+            ->where('status', CashRegisterSession::STATUS_OPEN)
+            ->where('opened_at', '<=', $transactedAt ?: now())
+            ->latest('opened_at')
+            ->value('id');
     }
 
     private function alreadyRecorded(Model $source): bool

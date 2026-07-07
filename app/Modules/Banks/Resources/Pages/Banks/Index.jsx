@@ -14,11 +14,13 @@ const moneyFormatter = new Intl.NumberFormat('es-BO', {
     maximumFractionDigits: 2,
 });
 
-export default function Index({ accounts, transactions, summary, branches, activeAccounts, filters }) {
+export default function Index({ accounts, transactions, summary, branches, activeAccounts, cashSessions, users, filters }) {
     const canManage = usePage().props.auth.permissions.includes('banks.manage');
     const filterForm = useForm({
         branch_id: filters.branch_id ?? '',
         bank_account_id: filters.bank_account_id ?? '',
+        cash_session_id: filters.cash_session_id ?? '',
+        user_id: filters.user_id ?? '',
         status: filters.status ?? '',
         type: filters.type ?? '',
         from: filters.from ?? '',
@@ -77,7 +79,7 @@ export default function Index({ accounts, transactions, summary, branches, activ
                     <Metric label="Pendientes de conciliar" value={summary.pending_reconciliation} />
                 </div>
 
-                <form onSubmit={submitFilters} className="mb-6 grid gap-4 rounded-lg border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:grid-cols-2 lg:grid-cols-7">
+                <form onSubmit={submitFilters} className="mb-6 grid gap-4 rounded-lg border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:grid-cols-2 lg:grid-cols-5">
                     <SelectField label="Sucursal" name="branch_id" value={filterForm.data.branch_id} onChange={(event) => filterForm.setData('branch_id', event.target.value)}>
                         <option value="">Todas</option>
                         {branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
@@ -85,6 +87,18 @@ export default function Index({ accounts, transactions, summary, branches, activ
                     <SelectField label="Cuenta" name="bank_account_id" value={filterForm.data.bank_account_id} onChange={(event) => filterForm.setData('bank_account_id', event.target.value)}>
                         <option value="">Todas</option>
                         {activeAccounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}
+                    </SelectField>
+                    <SelectField label="Caja" name="cash_session_id" value={filterForm.data.cash_session_id} onChange={(event) => filterForm.setData('cash_session_id', event.target.value)}>
+                        <option value="">Todas</option>
+                        {cashSessions.map((session) => (
+                            <option key={session.id} value={session.id}>
+                                #{session.id} - {session.branch?.name ?? '-'} - {session.opener?.name ?? '-'}
+                            </option>
+                        ))}
+                    </SelectField>
+                    <SelectField label="Usuario" name="user_id" value={filterForm.data.user_id} onChange={(event) => filterForm.setData('user_id', event.target.value)}>
+                        <option value="">Todos</option>
+                        {users.map((user) => <option key={user.id} value={user.id}>{user.name}</option>)}
                     </SelectField>
                     <SelectField label="Tipo" name="type" value={filterForm.data.type} onChange={(event) => filterForm.setData('type', event.target.value)}>
                         <option value="">Todos</option>
@@ -190,6 +204,7 @@ export default function Index({ accounts, transactions, summary, branches, activ
                             <tr>
                                 <th className="px-4 py-3 font-medium">Fecha</th>
                                 <th className="px-4 py-3 font-medium">Cuenta</th>
+                                <th className="px-4 py-3 font-medium">Usuario / Caja</th>
                                 <th className="px-4 py-3 font-medium">Tipo</th>
                                 <th className="px-4 py-3 text-right font-medium">Monto</th>
                                 <th className="px-4 py-3 font-medium">Estado</th>
@@ -200,12 +215,16 @@ export default function Index({ accounts, transactions, summary, branches, activ
                         <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                             {transactions.data.length === 0 ? (
                                 <tr>
-                                    <td colSpan={canManage ? 7 : 6} className="px-4 py-6 text-center text-sm text-slate-500">Sin movimientos bancarios.</td>
+                                    <td colSpan={canManage ? 8 : 7} className="px-4 py-6 text-center text-sm text-slate-500">Sin movimientos bancarios.</td>
                                 </tr>
                             ) : transactions.data.map((transaction) => (
                                 <tr key={transaction.id}>
                                     <td className="px-4 py-3">{formatDate(transaction.transacted_at)}</td>
                                     <td className="px-4 py-3">{transaction.account?.name ?? '-'}</td>
+                                    <td className="px-4 py-3">
+                                        <p className="font-medium text-slate-800 dark:text-slate-100">{transaction.user?.name ?? '-'}</p>
+                                        <p className="text-xs text-slate-500">{transaction.cash_session_id ? `Caja #${transaction.cash_session_id}` : 'Sin caja vinculada'}</p>
+                                    </td>
                                     <td className="px-4 py-3">{typeLabel(transaction.type)}</td>
                                     <td className="px-4 py-3 text-right">{transaction.account?.currency_code ?? 'BOB'} {moneyFormatter.format(Number(transaction.amount ?? 0))}</td>
                                     <td className="px-4 py-3">{transaction.status === 'void' ? 'Anulado' : (transaction.reconciled_at ? 'Conciliado' : 'Pendiente')}</td>

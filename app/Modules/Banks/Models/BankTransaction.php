@@ -4,9 +4,10 @@ namespace App\Modules\Banks\Models;
 
 use App\Models\User;
 use App\Modules\Branches\Models\Branch;
+use App\Modules\Cash\Models\CashRegisterSession;
 use App\Modules\Shared\Models\AuditableModel;
-use Illuminate\Database\Eloquent\Relations\MorphTo;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\MorphTo;
 
 class BankTransaction extends AuditableModel
 {
@@ -24,6 +25,7 @@ class BankTransaction extends AuditableModel
         'bank_account_id',
         'branch_id',
         'user_id',
+        'cash_register_session_id',
         'type',
         'transacted_at',
         'amount',
@@ -57,6 +59,11 @@ class BankTransaction extends AuditableModel
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    public function cashSession(): BelongsTo
+    {
+        return $this->belongsTo(CashRegisterSession::class, 'cash_register_session_id');
     }
 
     public function source(): MorphTo

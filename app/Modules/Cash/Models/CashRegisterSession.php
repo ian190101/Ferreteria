@@ -3,9 +3,11 @@
 namespace App\Modules\Cash\Models;
 
 use App\Models\User;
+use App\Modules\Banks\Models\BankTransaction;
 use App\Modules\Branches\Models\Branch;
 use App\Modules\Shared\Models\AuditableModel;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class CashRegisterSession extends AuditableModel
 {
@@ -36,6 +38,9 @@ class CashRegisterSession extends AuditableModel
         'opening_amount',
         'cash_income_amount',
         'cash_expense_amount',
+        'bank_income_amount',
+        'bank_expense_amount',
+        'bank_net_amount',
         'expected_cash_amount',
         'counted_cash_amount',
         'cash_count_breakdown',
@@ -51,6 +56,9 @@ class CashRegisterSession extends AuditableModel
         'opening_amount' => 'decimal:2',
         'cash_income_amount' => 'decimal:2',
         'cash_expense_amount' => 'decimal:2',
+        'bank_income_amount' => 'decimal:2',
+        'bank_expense_amount' => 'decimal:2',
+        'bank_net_amount' => 'decimal:2',
         'expected_cash_amount' => 'decimal:2',
         'counted_cash_amount' => 'decimal:2',
         'cash_count_breakdown' => 'array',
@@ -70,5 +78,10 @@ class CashRegisterSession extends AuditableModel
     public function closer(): BelongsTo
     {
         return $this->belongsTo(User::class, 'closed_by');
+    }
+
+    public function bankTransactions(): HasMany
+    {
+        return $this->hasMany(BankTransaction::class);
     }
 }

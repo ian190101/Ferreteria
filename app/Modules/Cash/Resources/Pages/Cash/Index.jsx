@@ -64,7 +64,7 @@ export default function Index({ sessions, openSessions, branches, filters }) {
             <Head title="Caja" />
 
             <section className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-                <ModuleHeader title="Caja" description="Apertura y cierre de caja por sucursal con calculo automatico de efectivo esperado." />
+                <ModuleHeader title="Caja" description="Apertura y cierre de caja por sucursal con efectivo contado y conciliacion QR/Banco por usuario." />
 
                 {canManage ? (
                     <div className="mb-6 grid gap-6 xl:grid-cols-[0.8fr_1.2fr]">
@@ -129,6 +129,9 @@ export default function Index({ sessions, openSessions, branches, filters }) {
                                     <th className="px-4 py-3 text-right font-medium">Inicial</th>
                                     <th className="px-4 py-3 text-right font-medium">Ingresos</th>
                                     <th className="px-4 py-3 text-right font-medium">Gastos</th>
+                                    <th className="px-4 py-3 text-right font-medium">QR/Banco ingresos</th>
+                                    <th className="px-4 py-3 text-right font-medium">QR/Banco egresos</th>
+                                    <th className="px-4 py-3 text-right font-medium">QR/Banco neto</th>
                                     <th className="px-4 py-3 text-right font-medium">Esperado</th>
                                     <th className="px-4 py-3 text-right font-medium">Contado</th>
                                     <th className="px-4 py-3 text-right font-medium">Diferencia</th>
@@ -144,6 +147,9 @@ export default function Index({ sessions, openSessions, branches, filters }) {
                                         <MoneyCell value={session.opening_amount} />
                                         <MoneyCell value={session.cash_income_amount} />
                                         <MoneyCell value={session.cash_expense_amount} />
+                                        <MoneyCell value={session.bank_income_amount} />
+                                        <MoneyCell value={session.bank_expense_amount} />
+                                        <MoneyCell value={session.bank_net_amount} />
                                         <MoneyCell value={session.expected_cash_amount} />
                                         <MoneyCell value={session.counted_cash_amount} />
                                         <MoneyCell value={session.difference_amount} />
@@ -176,6 +182,7 @@ function CloseSessionForm({ session, canViewBanks }) {
     const difference = countedTotal - expected;
     const bankIncome = Number(session.current_bank_income_amount ?? 0);
     const bankExpense = Number(session.current_bank_expense_amount ?? 0);
+    const bankNet = Number(session.current_bank_net_amount ?? bankIncome - bankExpense);
     const hasBankMovements = bankIncome > 0 || bankExpense > 0;
 
     const updateCount = (key, value) => {
@@ -198,7 +205,8 @@ function CloseSessionForm({ session, canViewBanks }) {
                 <div>
                     <p className="font-semibold text-slate-900 dark:text-slate-100">{session.branch?.name ?? '-'}</p>
                     <p className="text-sm text-slate-500">Apertura: {formatDate(session.opened_at)} - Inicial Bs {moneyFormatter.format(Number(session.opening_amount ?? 0))}</p>
-                    <p className="text-sm text-slate-500">Ingresos efectivo Bs {moneyFormatter.format(Number(session.current_cash_income_amount ?? 0))} - Gastos efectivo Bs {moneyFormatter.format(Number(session.current_cash_expense_amount ?? 0))}</p>
+                    <p className="text-sm text-slate-500">Ingresos efectivo Bs {moneyFormatter.format(Number(session.current_cash_income_amount ?? 0))} - Egresos efectivo Bs {moneyFormatter.format(Number(session.current_cash_expense_amount ?? 0))}</p>
+                    <p className="text-sm text-slate-500">QR/Banco ingresos Bs {moneyFormatter.format(bankIncome)} - egresos Bs {moneyFormatter.format(bankExpense)} - neto Bs {moneyFormatter.format(bankNet)}</p>
                     <p className="text-xs text-slate-500">Responsable: {session.opener?.name ?? '-'}</p>
                 </div>
                 <FormField label="Fecha cierre" name="closed_at" value="Se registrara automaticamente al guardar" disabled className="mt-1 block w-full rounded-md border-gray-300 bg-slate-100 shadow-sm dark:border-gray-700 dark:bg-slate-800 dark:text-gray-300" error={closeForm.errors.closed_at} />
@@ -216,26 +224,28 @@ function CloseSessionForm({ session, canViewBanks }) {
                 ))}
             </div>
 
-            <div className="grid gap-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950/50 lg:grid-cols-3">
+            <div className="grid gap-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950/50 lg:grid-cols-4">
                 <CashMetric label="Esperado en caja" value={expected} />
                 <CashMetric label="Efectivo contado" value={countedTotal} strong />
                 <CashMetric label="Diferencia" value={difference} tone={difference < 0 ? 'danger' : difference > 0 ? 'warning' : 'success'} />
+                <CashMetric label="QR/Banco neto" value={bankNet} tone={bankNet < 0 ? 'danger' : bankNet > 0 ? 'success' : 'neutral'} />
             </div>
 
             {hasBankMovements ? (
                 <div className="rounded-2xl border border-sky-200 bg-sky-50 p-4 text-sm text-sky-950 dark:border-sky-900/60 dark:bg-sky-950/30 dark:text-sky-100">
                     <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                         <div>
-                            <p className="font-semibold">QR / Banco detectado en esta caja</p>
-                            <p className="mt-1">Ingresos Bs {moneyFormatter.format(bankIncome)} - Egresos Bs {moneyFormatter.format(bankExpense)}. Se incluyen en reportes, pero no se suman al efectivo fisico.</p>
+                            <p className="font-semibold">Conciliar con QR/Banco al cerrar</p>
+                            <p className="mt-1">Periodo: desde la apertura de caja hasta el momento del cierre. Ingresos Bs {moneyFormatter.format(bankIncome)} - Egresos Bs {moneyFormatter.format(bankExpense)} - Neto Bs {moneyFormatter.format(bankNet)}.</p>
+                            <p className="mt-1 text-xs">Al cerrar se guardara el efectivo contado por separado y estos movimientos QR/Banco quedaran vinculados a la caja #{session.id}.</p>
                         </div>
                         {canViewBanks ? (
                             <button
                                 type="button"
-                                onClick={() => router.get(route('banks.index'), { branch_id: session.branch_id, status: 'registered' })}
+                                onClick={() => router.get(route('banks.index'), { branch_id: session.branch_id, cash_session_id: session.id, user_id: session.opened_by, status: 'registered' })}
                                 className="rounded-md bg-sky-600 px-4 py-2 text-sm font-semibold text-white"
                             >
-                                Conciliar con QR/Banco
+                                Ver detalle QR/Banco
                             </button>
                         ) : null}
                     </div>
@@ -250,7 +260,7 @@ function CloseSessionForm({ session, canViewBanks }) {
 
             <div className="flex justify-end">
                 <button disabled={closeForm.processing} className="rounded-md border border-brand-primary px-5 py-2.5 text-sm font-semibold text-brand-primary transition hover:bg-brand-primary hover:text-white disabled:cursor-not-allowed disabled:opacity-60" type="submit">
-                    Cerrar caja
+                    {hasBankMovements ? 'Cerrar caja y conciliar QR/Banco' : 'Cerrar caja'}
                 </button>
             </div>
         </form>

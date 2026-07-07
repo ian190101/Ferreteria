@@ -3,6 +3,7 @@
 namespace App\Modules\Cash\Http\Controllers;
 
 use App\Http\Controllers\Controller;
+use App\Modules\Banks\Models\BankTransaction;
 use App\Modules\Cash\Http\Requests\CloseCashSessionRequest;
 use App\Modules\Cash\Http\Requests\OpenCashSessionRequest;
 use App\Modules\Cash\Models\CashRegisterSession;
@@ -58,6 +59,7 @@ class CashRegisterController extends Controller
                 $session->setAttribute('current_cash_expense_amount', round($cashExpense, 2));
                 $session->setAttribute('current_bank_income_amount', round($bankIncome, 2));
                 $session->setAttribute('current_bank_expense_amount', round($bankExpense, 2));
+                $session->setAttribute('current_bank_net_amount', round($bankIncome - $bankExpense, 2));
                 $session->setAttribute('current_expected_cash_amount', round((float) $session->opening_amount + $cashIncome - $cashExpense, 2));
 
                 return $session;
@@ -104,6 +106,9 @@ class CashRegisterController extends Controller
             $closedAt = now();
             $cashIncome = $this->cashIncome($cashSession, $closedAt);
             $cashExpense = $this->cashExpense($cashSession, $closedAt);
+            $this->attachBankTransactionsToSession($cashSession, $closedAt);
+            $bankIncome = $this->bankIncome($cashSession, $closedAt);
+            $bankExpense = $this->bankExpense($cashSession, $closedAt);
             $expected = round((float) $cashSession->opening_amount + $cashIncome - $cashExpense, 2);
             $cashCount = $this->normalizedCashCount($request->validated('cash_count'));
             $counted = $this->countedCashAmount($cashCount);
@@ -113,6 +118,9 @@ class CashRegisterController extends Controller
                 'closed_at' => $closedAt,
                 'cash_income_amount' => $cashIncome,
                 'cash_expense_amount' => $cashExpense,
+                'bank_income_amount' => $bankIncome,
+                'bank_expense_amount' => $bankExpense,
+                'bank_net_amount' => round($bankIncome - $bankExpense, 2),
                 'expected_cash_amount' => $expected,
                 'counted_cash_amount' => $counted,
                 'cash_count_breakdown' => $cashCount,
@@ -157,32 +165,50 @@ class CashRegisterController extends Controller
 
     private function bankIncome(CashRegisterSession $session, $closedAt): float
     {
-        return (float) SalePayment::query()
-            ->where('branch_id', $session->branch_id)
-            ->where('user_id', $session->opened_by)
-            ->whereHas('method', fn ($query) => $query->where('code', '!=', 'cash'))
-            ->whereBetween('paid_at', [$session->opened_at, $closedAt])
-            ->sum('amount_bob');
+        return (float) $this->bankTransactionsForSession($session, $closedAt)
+            ->where('type', BankTransaction::TYPE_DEPOSIT)
+            ->sum('amount');
     }
 
     private function bankExpense(CashRegisterSession $session, $closedAt): float
     {
-        $purchasePayments = (float) PurchasePayment::query()
+        return (float) $this->bankTransactionsForSession($session, $closedAt)
+            ->where('type', BankTransaction::TYPE_WITHDRAWAL)
+            ->sum('amount');
+    }
+
+    private function attachBankTransactionsToSession(CashRegisterSession $session, $closedAt): void
+    {
+        $this->bankTransactionsInPeriod($session, $closedAt)
+            ->get()
+            ->each(fn (BankTransaction $transaction) => $transaction->update([
+                'cash_register_session_id' => $transaction->cash_register_session_id ?: $session->id,
+                'reconciled_at' => $transaction->reconciled_at ?: now(),
+            ]));
+    }
+
+    private function bankTransactionsForSession(CashRegisterSession $session, $closedAt)
+    {
+        return BankTransaction::query()
+            ->where('status', BankTransaction::STATUS_REGISTERED)
+            ->where(function ($query) use ($session, $closedAt) {
+                $query->where('cash_register_session_id', $session->id)
+                    ->orWhere(fn ($fallback) => $fallback
+                        ->whereNull('cash_register_session_id')
+                        ->where('branch_id', $session->branch_id)
+                        ->where('user_id', $session->opened_by)
+                        ->whereBetween('transacted_at', [$session->opened_at, $closedAt]));
+            });
+    }
+
+    private function bankTransactionsInPeriod(CashRegisterSession $session, $closedAt)
+    {
+        return BankTransaction::query()
+            ->where('status', BankTransaction::STATUS_REGISTERED)
             ->where('branch_id', $session->branch_id)
             ->where('user_id', $session->opened_by)
-            ->whereHas('method', fn ($query) => $query->where('code', '!=', 'cash'))
-            ->whereBetween('paid_at', [$session->opened_at, $closedAt])
-            ->sum('amount');
-
-        $expenses = (float) Expense::query()
-            ->where('branch_id', $session->branch_id)
-            ->where('user_id', $session->opened_by)
-            ->where('status', Expense::STATUS_REGISTERED)
-            ->whereHas('paymentMethod', fn ($query) => $query->where('code', '!=', 'cash'))
-            ->whereBetween('spent_at', [$session->opened_at, $closedAt])
-            ->sum('amount');
-
-        return $purchasePayments + $expenses;
+            ->whereBetween('transacted_at', [$session->opened_at, $closedAt])
+            ->whereIn('type', [BankTransaction::TYPE_DEPOSIT, BankTransaction::TYPE_WITHDRAWAL]);
     }
 
     private function normalizedCashCount(array $cashCount): array

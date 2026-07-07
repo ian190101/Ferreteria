@@ -3,12 +3,14 @@
 namespace App\Modules\Banks\Http\Controllers;
 
 use App\Http\Controllers\Controller;
+use App\Models\User;
 use App\Modules\Banks\Http\Requests\StoreBankAccountRequest;
 use App\Modules\Banks\Http\Requests\StoreBankTransactionRequest;
 use App\Modules\Banks\Http\Requests\UpdateBankAccountRequest;
 use App\Modules\Banks\Http\Requests\VoidBankTransactionRequest;
 use App\Modules\Banks\Models\BankAccount;
 use App\Modules\Banks\Models\BankTransaction;
+use App\Modules\Cash\Models\CashRegisterSession;
 use App\Support\BranchAccess;
 use App\Support\UiCatalogCache;
 use Illuminate\Http\RedirectResponse;
@@ -23,18 +25,36 @@ class BankController extends Controller
 {
     public function index(Request $request): Response
     {
+        $user = $request->user();
+        $isSuperAdministrator = $user->isSuperAdministrator();
+        $cashSessionRequested = $request->filled('cash_session_id');
+        $selectedCashSession = $this->selectedCashSession($request);
+
         $accountsQuery = BankAccount::query()
             ->with('branch:id,name')
             ->withCount('transactions')
-            ->when(true, fn ($query) => BranchAccess::apply($query, $request->user()))
+            ->when(true, fn ($query) => BranchAccess::apply($query, $user))
             ->when($request->filled('branch_id'), fn ($query) => $query->where('branch_id', $request->integer('branch_id')))
             ->when($request->filled('is_active'), fn ($query) => $query->where('is_active', $request->boolean('is_active')));
 
         $transactionsQuery = BankTransaction::query()
-            ->with(['account:id,name,account_number,currency_code', 'branch:id,name', 'user:id,name'])
-            ->when(true, fn ($query) => BranchAccess::apply($query, $request->user()))
+            ->with(['account:id,name,account_number,currency_code', 'branch:id,name', 'user:id,name', 'cashSession:id,opened_at,closed_at,status'])
+            ->when(true, fn ($query) => BranchAccess::apply($query, $user))
+            ->when(! $isSuperAdministrator, fn ($query) => $query->where('user_id', $user->id))
             ->when($request->filled('bank_account_id'), fn ($query) => $query->where('bank_account_id', $request->integer('bank_account_id')))
             ->when($request->filled('branch_id'), fn ($query) => $query->where('branch_id', $request->integer('branch_id')))
+            ->when($isSuperAdministrator && $request->filled('user_id'), fn ($query) => $query->where('user_id', $request->integer('user_id')))
+            ->when($cashSessionRequested && ! $selectedCashSession, fn ($query) => $query->whereRaw('1 = 0'))
+            ->when($selectedCashSession, fn ($query) => $query->where(function ($cashQuery) use ($selectedCashSession) {
+                $endAt = $selectedCashSession->closed_at ?: now();
+
+                $cashQuery->where('cash_register_session_id', $selectedCashSession->id)
+                    ->orWhere(fn ($fallback) => $fallback
+                        ->whereNull('cash_register_session_id')
+                        ->where('branch_id', $selectedCashSession->branch_id)
+                        ->where('user_id', $selectedCashSession->opened_by)
+                        ->whereBetween('transacted_at', [$selectedCashSession->opened_at, $endAt]));
+            }))
             ->when($request->filled('status'), fn ($query) => $query->where('status', $request->string('status')->toString()))
             ->when($request->filled('type'), fn ($query) => $query->where('type', $request->string('type')->toString()))
             ->when($request->filled('from'), fn ($query) => $query->whereDate('transacted_at', '>=', $request->date('from')))
@@ -59,13 +79,28 @@ class BankController extends Controller
                 ->paginate($request->integer('per_page', 15))
                 ->withQueryString(),
             'summary' => $summary,
-            'branches' => UiCatalogCache::activeBranchesForUser($request->user()),
+            'branches' => UiCatalogCache::activeBranchesForUser($user),
             'activeAccounts' => BankAccount::query()
-                ->when(true, fn ($query) => BranchAccess::apply($query, $request->user()))
+                ->when(true, fn ($query) => BranchAccess::apply($query, $user))
                 ->where('is_active', true)
                 ->orderBy('name')
                 ->get(['id', 'branch_id', 'name', 'account_number', 'currency_code', 'current_balance']),
-            'filters' => $request->only(['branch_id', 'bank_account_id', 'status', 'type', 'from', 'to', 'per_page']),
+            'cashSessions' => CashRegisterSession::query()
+                ->with(['branch:id,name', 'opener:id,name'])
+                ->when(true, fn ($query) => BranchAccess::apply($query, $user))
+                ->when(! $isSuperAdministrator, fn ($query) => $query->where('opened_by', $user->id))
+                ->latest('opened_at')
+                ->limit(80)
+                ->get(['id', 'branch_id', 'opened_by', 'opened_at', 'closed_at', 'status']),
+            'users' => User::query()
+                ->whereIn('id', BankTransaction::query()
+                    ->when(true, fn ($query) => BranchAccess::apply($query, $user))
+                    ->when(! $isSuperAdministrator, fn ($query) => $query->where('user_id', $user->id))
+                    ->select('user_id')
+                    ->distinct())
+                ->orderBy('name')
+                ->get(['id', 'name']),
+            'filters' => $request->only(['branch_id', 'bank_account_id', 'cash_session_id', 'user_id', 'status', 'type', 'from', 'to', 'per_page']),
         ]);
     }
 
@@ -114,6 +149,7 @@ class BankController extends Controller
                 ...$request->validated(),
                 'branch_id' => $account->branch_id,
                 'user_id' => $request->user()->id,
+                'cash_register_session_id' => $this->openCashSessionId((int) $account->branch_id, (int) $request->user()->id),
                 'transacted_at' => now(),
                 'status' => BankTransaction::STATUS_REGISTERED,
             ]);
@@ -181,15 +217,40 @@ class BankController extends Controller
     private function summaryKey(Request $request): string
     {
         return sprintf(
-            'banks:summary:%s:%s:%s:%s:%s:%s:%s',
+            'banks:summary:%s:%s:%s:%s:%s:%s:%s:%s:%s',
             Cache::get('banks:summary_version', 1),
             $request->input('branch_id', 'all'),
             $request->input('bank_account_id', 'all'),
+            $request->input('cash_session_id', 'all'),
+            $request->input('user_id', 'all'),
             $request->input('status', 'all'),
             $request->input('type', 'all'),
             $request->input('from', 'start'),
             $request->input('to', 'end'),
         );
+    }
+
+    private function openCashSessionId(int $branchId, int $userId): ?int
+    {
+        return CashRegisterSession::query()
+            ->where('branch_id', $branchId)
+            ->where('opened_by', $userId)
+            ->where('status', CashRegisterSession::STATUS_OPEN)
+            ->latest('opened_at')
+            ->value('id');
+    }
+
+    private function selectedCashSession(Request $request): ?CashRegisterSession
+    {
+        if (! $request->filled('cash_session_id')) {
+            return null;
+        }
+
+        return CashRegisterSession::query()
+            ->whereKey($request->integer('cash_session_id'))
+            ->when(true, fn ($query) => BranchAccess::apply($query, $request->user()))
+            ->when(! $request->user()->isSuperAdministrator(), fn ($query) => $query->where('opened_by', $request->user()->id))
+            ->first();
     }
 
     private function bumpSummaryCache(): void
