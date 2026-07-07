@@ -3,7 +3,7 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import FormField from '../../../../Shared/Resources/Components/FormField';
 import ModuleHeader from '../../../../Shared/Resources/Components/ModuleHeader';
 import SelectField from '../../../../Shared/Resources/Components/SelectField';
-import { Head, Link, useForm } from '@inertiajs/react';
+import { Head, Link, useForm, usePage } from '@inertiajs/react';
 
 const moneyFormatter = new Intl.NumberFormat('es-BO', {
     minimumFractionDigits: 2,
@@ -35,6 +35,8 @@ const DEFAULT_ITEM = {
 
 export default function Form({ documentType, branches, saleTypes, currencies, advanceOptions, products, coils, customers, sequencePreviews, quotations = [] }) {
     const title = documentType === 'quotation' ? 'Nueva cotizacion' : 'Nueva nota de venta';
+    const permissions = usePage().props.auth.permissions;
+    const canOverridePrices = permissions.includes('sales.prices.override');
     const { data, setData, post, processing, errors, transform } = useForm({
         document_type: documentType,
         source_quotation_id: '',
@@ -70,6 +72,9 @@ export default function Form({ documentType, branches, saleTypes, currencies, ad
             item_attributes: defaultItemAttributes(product),
             quantity_mode: 'direct',
             meters: item.display_quantity || '1',
+            price_mode: 'meter',
+            price_per_ton: '',
+            unit_price: productSalePrice(product),
         } : item)));
     };
 
@@ -108,7 +113,7 @@ export default function Form({ documentType, branches, saleTypes, currencies, ad
             customer_contact: quotation.customer_contact ?? '',
             terms: quotation.terms ?? '',
             internal_notes: `Generada desde cotizacion ${quotation.receipt_number}`,
-            items: (quotation.items ?? []).map((item) => saleItemFromQuotation(item, products)),
+            items: (quotation.items ?? []).map((item) => saleItemFromQuotation(item, products, canOverridePrices)),
         });
     };
 
@@ -244,15 +249,28 @@ export default function Form({ documentType, branches, saleTypes, currencies, ad
                                             ))}
                                         </div>
                                     ) : null}
-                                    <SelectField label="Precio en" name={`items.${index}.price_mode`} value={item.price_mode ?? 'meter'} onChange={(event) => updateItem(index, 'price_mode', event.target.value)}>
+                                    <SelectField label="Precio en" name={`items.${index}.price_mode`} value={canOverridePrices ? (item.price_mode ?? 'meter') : 'meter'} onChange={(event) => updateItem(index, 'price_mode', event.target.value)} disabled={!canOverridePrices}>
                                         <option value="meter">{item.quantity_mode === 'direct' ? 'Precio por unidad' : 'Precio por metro'}</option>
                                         <option value="ton">Precio por tonelada</option>
                                     </SelectField>
-                                    {item.price_mode === 'ton' ? (
+                                    {canOverridePrices && item.price_mode === 'ton' ? (
                                         <FormField label="Precio/TON (Bs.)" name={`items.${index}.price_per_ton`} type="number" step="0.01" value={item.price_per_ton} placeholder="Bs. 0.00" onChange={(event) => updateItem(index, 'price_per_ton', event.target.value)} />
                                     ) : (
-                                        <FormField label={item.quantity_mode === 'direct' ? 'Precio/unidad' : 'Precio/metro'} name={`items.${index}.unit_price`} type="number" step="0.0001" value={item.unit_price} onChange={(event) => updateItem(index, 'unit_price', event.target.value)} error={errors[`items.${index}.unit_price`]} required />
+                                        <FormField
+                                            label={item.quantity_mode === 'direct' ? 'Precio/unidad' : 'Precio/metro'}
+                                            name={`items.${index}.unit_price`}
+                                            type="number"
+                                            step="0.0001"
+                                            value={canOverridePrices ? item.unit_price : productSalePrice(product)}
+                                            onChange={(event) => updateItem(index, 'unit_price', event.target.value)}
+                                            error={errors[`items.${index}.unit_price`]}
+                                            disabled={!canOverridePrices}
+                                            required
+                                        />
                                     )}
+                                    {!canOverridePrices ? (
+                                        <p className="text-xs text-slate-500 sm:col-span-6">Precio bloqueado: se usa el precio de venta configurado en Productos.</p>
+                                    ) : null}
                                     <FormField label="Desc." name={`items.${index}.discount_amount`} type="number" step="0.01" value={item.discount_amount} onChange={(event) => updateItem(index, 'discount_amount', event.target.value)} error={errors[`items.${index}.discount_amount`]} required />
                                     <div className="rounded-md border border-slate-200 bg-slate-50 px-4 py-3 text-sm dark:border-slate-800 dark:bg-slate-950 sm:col-span-6">
                                         <p className="text-slate-500 dark:text-slate-400">{item.quantity_mode === 'direct' ? 'Cantidad' : 'Equivalente'}: <span className="font-semibold text-emerald-600">{item.quantity_mode === 'direct' ? `${numberFormatter.format(summary.meters)} ${item.display_unit_label || productUnitSymbol(product)}` : `${numberFormatter.format(summary.meters)} m`}</span></p>
@@ -306,9 +324,10 @@ function prepareSaleItem(item, products) {
     };
 }
 
-function saleItemFromQuotation(item, products) {
+function saleItemFromQuotation(item, products, canOverridePrices) {
     const product = products.find((entry) => String(entry.id) === String(item.product_id));
     const calculationMode = item.calculation_mode ?? 'direct';
+    const unitPrice = canOverridePrices ? (item.unit_price ?? productSalePrice(product)) : productSalePrice(product);
 
     return {
         ...DEFAULT_ITEM,
@@ -322,7 +341,7 @@ function saleItemFromQuotation(item, products) {
         quantity_mode: calculationMode,
         meters: item.meters ?? item.display_quantity ?? '1',
         price_mode: 'meter',
-        unit_price: item.unit_price ?? '0',
+        unit_price: unitPrice,
         discount_amount: item.discount_amount ?? '0',
     };
 }
@@ -442,6 +461,10 @@ function baseQuantityFromItem(item, product) {
 
 function productUnitSymbol(product) {
     return product?.unit?.symbol ?? product?.base_unit ?? 'unidad';
+}
+
+function productSalePrice(product) {
+    return product?.sale_price ?? '0';
 }
 
 function baseQuantityFieldValue(item, product, summary) {

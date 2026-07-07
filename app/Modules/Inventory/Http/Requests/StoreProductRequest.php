@@ -33,6 +33,8 @@ class StoreProductRequest extends FormRequest
             'base_unit' => ['required', 'string', 'max:24'],
             'attributes' => ['nullable', 'array'],
             'default_width' => ['nullable', 'numeric', 'gt:0', 'max:99999999.9999'],
+            'purchase_price' => ['required', 'numeric', 'min:0', 'max:999999999999.9999'],
+            'sale_price' => ['required', 'numeric', 'min:0', 'max:999999999999.9999'],
             'minimum_stock_meters' => ['required', 'numeric', 'min:0', 'max:999999999999.999'],
             'is_active' => ['required', 'boolean'],
         ];

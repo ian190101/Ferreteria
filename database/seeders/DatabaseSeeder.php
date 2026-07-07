@@ -66,6 +66,7 @@ class DatabaseSeeder extends Seeder
             'production.manage',
             'sales.view',
             'sales.manage',
+            'sales.prices.override',
             'sales.deliveries.view',
             'sales.deliveries.manage',
             'sales.returns.view',

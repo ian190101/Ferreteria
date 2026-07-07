@@ -27,6 +27,8 @@ class Product extends AuditableModel
         'base_unit',
         'attributes',
         'default_width',
+        'purchase_price',
+        'sale_price',
         'minimum_stock_meters',
         'is_active',
     ];
@@ -34,6 +36,8 @@ class Product extends AuditableModel
     protected $casts = [
         'attributes' => 'array',
         'default_width' => 'decimal:4',
+        'purchase_price' => 'decimal:4',
+        'sale_price' => 'decimal:4',
         'minimum_stock_meters' => 'decimal:3',
         'is_active' => 'boolean',
     ];

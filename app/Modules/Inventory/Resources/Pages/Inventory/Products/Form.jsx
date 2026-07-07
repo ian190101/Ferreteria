@@ -26,11 +26,14 @@ export default function Form({ product, thicknesses, categories, units }) {
         base_unit: product?.base_unit ?? initialUnit?.symbol ?? 'unidad',
         attributes: product?.attributes ?? {},
         default_width: product?.default_width ?? '',
+        purchase_price: product?.purchase_price ?? '0',
+        sale_price: product?.sale_price ?? '0',
         minimum_stock_meters: product?.minimum_stock_meters ?? '0',
         is_active: product?.is_active ?? true,
     });
     const selectedCategory = categories.find((category) => Number(category.id) === Number(data.product_category_id));
     const selectedUnit = units.find((unit) => Number(unit.id) === Number(data.product_unit_id));
+    const profit = Math.max(Number(data.sale_price || 0) - Number(data.purchase_price || 0), 0);
 
     const submit = (event) => {
         event.preventDefault();
@@ -149,6 +152,13 @@ export default function Form({ product, thicknesses, categories, units }) {
                         ))}
                     </SelectField>
                     <FormField label="Ancho por defecto" name="default_width" type="number" step="0.0001" value={data.default_width} onChange={(event) => setData('default_width', event.target.value)} error={errors.default_width} />
+                    <FormField label="Precio compra" name="purchase_price" type="number" step="0.0001" min="0" value={data.purchase_price} onChange={(event) => setData('purchase_price', event.target.value)} error={errors.purchase_price} required />
+                    <FormField label="Precio venta" name="sale_price" type="number" step="0.0001" min="0" value={data.sale_price} onChange={(event) => setData('sale_price', event.target.value)} error={errors.sale_price} required />
+                    <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-100">
+                        <p className="text-xs font-semibold uppercase tracking-wide">Ganancia estimada</p>
+                        <p className="mt-1 text-xl font-bold">Bs {moneyFormatter.format(profit)}</p>
+                        <p className="mt-1 text-xs">Por {selectedUnit?.symbol ?? data.base_unit ?? 'unidad'} antes de descuentos.</p>
+                    </div>
                     <FormField
                         label={`Stock minimo (${unitLabel(data.base_unit)})`}
                         name="minimum_stock_meters"
@@ -207,6 +217,11 @@ export default function Form({ product, thicknesses, categories, units }) {
         </AuthenticatedLayout>
     );
 }
+
+const moneyFormatter = new Intl.NumberFormat('es-BO', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+});
 
 function unitLabel(unit) {
     return {

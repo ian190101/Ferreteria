@@ -66,7 +66,7 @@ class UiCatalogCache
             ])
             ->where('is_active', true)
             ->orderBy('name')
-            ->get(['id', 'thickness_id', 'product_category_id', 'product_unit_id', 'name', 'sku', 'inventory_tracking_mode', 'base_unit', 'attributes']));
+            ->get(['id', 'thickness_id', 'product_category_id', 'product_unit_id', 'name', 'sku', 'inventory_tracking_mode', 'base_unit', 'attributes', 'purchase_price', 'sale_price']));
     }
 
     public static function activeCoilProducts()

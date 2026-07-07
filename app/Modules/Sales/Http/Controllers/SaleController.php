@@ -74,7 +74,8 @@ class SaleController extends Controller
                 ? AdvanceOption::query()->findOrFail($request->integer('advance_option_id'))
                 : null;
 
-            $items = collect($request->validated('items'))->map(function (array $item) {
+            $canOverridePrices = $request->user()->can('sales.prices.override');
+            $items = collect($request->validated('items'))->map(function (array $item) use ($canOverridePrices) {
                 $product = Product::query()
                     ->with(['unit:id,symbol', 'productCategory.attributes.unit:id,symbol'])
                     ->find($item['product_id']);
@@ -83,6 +84,7 @@ class SaleController extends Controller
                 $item['display_unit_label'] = $item['display_unit_label'] ?? $product?->unit?->symbol ?? $item['unit_label'];
                 $item['item_attributes'] = $this->saleItemAttributes($product, $item['item_attributes'] ?? []);
                 $item['calculation_mode'] = $item['calculation_mode'] ?? 'direct';
+                $item['unit_price'] = $canOverridePrices ? $item['unit_price'] : (float) ($product?->sale_price ?? 0);
                 $lineTotal = ((float) $item['meters'] * (float) $item['unit_price']) - (float) $item['discount_amount'];
                 $item['total'] = max(round($lineTotal, 2), 0);
 

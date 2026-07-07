@@ -30,6 +30,8 @@ class ProductController extends Controller
                 'barcode',
                 'inventory_tracking_mode',
                 'base_unit',
+                'purchase_price',
+                'sale_price',
                 'is_active',
                 'created_at',
             ])

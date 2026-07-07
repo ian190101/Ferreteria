@@ -56,6 +56,7 @@ const permissionNames = {
     'reports.view': 'Ver reportes',
     'sales.view': 'Ver ventas y cotizaciones',
     'sales.manage': 'Crear, convertir y anular ventas',
+    'sales.prices.override': 'Editar precios en ventas',
     'sales.deliveries.view': 'Ver despachos',
     'sales.deliveries.manage': 'Gestionar despachos',
     'sales.returns.view': 'Ver devoluciones',
