@@ -57,6 +57,9 @@ class SaleController extends Controller
             'coils' => $this->availableCoils($request),
             'customers' => UiCatalogCache::recentCustomers(),
             'sequencePreviews' => $this->sequencePreviews($request),
+            'quotations' => $request->string('type', 'sale_note')->toString() === 'sale_note'
+                ? $this->convertibleQuotations($request)
+                : [],
         ]);
     }
 
@@ -92,8 +95,16 @@ class SaleController extends Controller
             $advancePercentage = $advanceOption ? (float) $advanceOption->percentage : 0;
             $advanceAmount = round($total * ($advancePercentage / 100), 2);
 
+            $sourceQuotation = $request->filled('source_quotation_id')
+                ? Sale::query()
+                    ->with('items')
+                    ->whereKey($request->integer('source_quotation_id'))
+                    ->lockForUpdate()
+                    ->first()
+                : null;
+
             $sale = Sale::query()->create([
-                ...$request->safe()->except(['items']),
+                ...$request->safe()->except(['items', 'source_quotation_id']),
                 'receipt_number' => $request->filled('receipt_number')
                     ? $request->validated('receipt_number')
                     : $this->nextReceiptNumber($request->integer('branch_id'), $request->string('document_type')->toString()),
@@ -117,6 +128,17 @@ class SaleController extends Controller
 
             if ($sale->document_type === 'sale_note') {
                 $this->decrementInventoryForSale($sale, $request->user()->id);
+
+                if ($sourceQuotation) {
+                    $this->consumeReservationsForQuotation($sourceQuotation, $sale);
+                    $sourceQuotation->update([
+                        'status' => 'converted',
+                        'internal_notes' => trim(implode("\n", array_filter([
+                            $sourceQuotation->internal_notes,
+                            'Convertida a nota de venta '.$sale->receipt_number,
+                        ]))),
+                    ]);
+                }
             }
 
             return $sale;
@@ -632,6 +654,40 @@ class SaleController extends Controller
             ->orderByDesc('id')
             ->limit(500)
             ->get(['id', 'branch_id', 'product_id', 'barcode', 'lot_number', 'available_meters']);
+    }
+
+    private function convertibleQuotations(Request $request)
+    {
+        return Sale::query()
+            ->with([
+                'branch:id,name',
+                'currency:id,name,code,symbol,exchange_rate_to_bob',
+                'saleType:id,name',
+                'advanceOption:id,name,percentage',
+                'items.product:id,name,sku,inventory_tracking_mode',
+            ])
+            ->when(true, fn ($query) => BranchAccess::apply($query, $request->user()))
+            ->where('document_type', 'quotation')
+            ->where('status', 'quoted')
+            ->latest('sold_at')
+            ->limit(100)
+            ->get([
+                'id',
+                'branch_id',
+                'sale_type_id',
+                'currency_id',
+                'customer_id',
+                'advance_option_id',
+                'receipt_number',
+                'customer_name',
+                'customer_document',
+                'customer_contact',
+                'subtotal',
+                'total',
+                'terms',
+                'internal_notes',
+                'sold_at',
+            ]);
     }
 
     private function nextReceiptNumber(int $branchId, string $documentType): string

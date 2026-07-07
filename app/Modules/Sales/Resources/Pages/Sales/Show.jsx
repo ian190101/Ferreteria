@@ -4,6 +4,7 @@ import FormField from '../../../../Shared/Resources/Components/FormField';
 import SelectField from '../../../../Shared/Resources/Components/SelectField';
 import { Head, Link, router, useForm, usePage } from '@inertiajs/react';
 import { promptAction } from '@/Utils/alerts';
+import { useEffect } from 'react';
 
 const PAPER_SIZES = {
     letter: { width: '216mm', page: 'letter' },
@@ -40,6 +41,18 @@ export default function Show({ sale, template, paymentMethods, conversionReadine
         reference: '',
         notes: '',
     });
+
+    useEffect(() => {
+        paymentForm.setData({
+            sale_id: sale.id,
+            payment_method_id: paymentMethods[0]?.id ?? '',
+            paid_at: '',
+            amount: sale.balance_due ?? '',
+            reference: '',
+            notes: '',
+        });
+        paymentForm.clearErrors();
+    }, [sale.id]);
 
     const submitPayment = (event) => {
         event.preventDefault();
@@ -455,5 +468,6 @@ async function convertQuotation(sale) {
         sold_at: null,
     }, {
         preserveScroll: true,
+        preserveState: false,
     });
 }

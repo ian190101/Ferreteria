@@ -33,10 +33,11 @@ const DEFAULT_ITEM = {
     discount_amount: '0',
 };
 
-export default function Form({ documentType, branches, saleTypes, currencies, advanceOptions, products, coils, customers, sequencePreviews }) {
+export default function Form({ documentType, branches, saleTypes, currencies, advanceOptions, products, coils, customers, sequencePreviews, quotations = [] }) {
     const title = documentType === 'quotation' ? 'Nueva cotizacion' : 'Nueva nota de venta';
     const { data, setData, post, processing, errors, transform } = useForm({
         document_type: documentType,
+        source_quotation_id: '',
         branch_id: branches[0]?.id ?? '',
         sale_type_id: saleTypes[0]?.id ?? '',
         currency_id: currencies[0]?.id ?? '',
@@ -84,6 +85,33 @@ export default function Form({ documentType, branches, saleTypes, currencies, ad
         });
     };
 
+    const selectQuotation = (value) => {
+        const quotation = quotations.find((item) => String(item.id) === String(value));
+
+        if (!quotation) {
+            setData('source_quotation_id', '');
+
+            return;
+        }
+
+        setData({
+            ...data,
+            source_quotation_id: value,
+            branch_id: quotation.branch_id ?? data.branch_id,
+            sale_type_id: quotation.sale_type_id ?? data.sale_type_id,
+            currency_id: quotation.currency_id ?? data.currency_id,
+            customer_id: quotation.customer_id ?? '',
+            advance_option_id: quotation.advance_option_id ?? '',
+            receipt_number: '',
+            customer_name: quotation.customer_name ?? '',
+            customer_document: quotation.customer_document ?? '',
+            customer_contact: quotation.customer_contact ?? '',
+            terms: quotation.terms ?? '',
+            internal_notes: `Generada desde cotizacion ${quotation.receipt_number}`,
+            items: (quotation.items ?? []).map((item) => saleItemFromQuotation(item, products)),
+        });
+    };
+
     const addItem = () => setData('items', [...data.items, { ...DEFAULT_ITEM }]);
     const removeItem = (index) => setData('items', data.items.filter((_, itemIndex) => itemIndex !== index));
 
@@ -105,6 +133,19 @@ export default function Form({ documentType, branches, saleTypes, currencies, ad
 
                 <form onSubmit={submit} className="space-y-6">
                     <div className="grid gap-5 rounded-lg border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:grid-cols-3">
+                        {documentType === 'sale_note' ? (
+                            <div className="sm:col-span-3">
+                                <SelectField label="Crear desde cotizacion" name="source_quotation_id" value={data.source_quotation_id} onChange={(event) => selectQuotation(event.target.value)} error={errors.source_quotation_id}>
+                                    <option value="">Nota nueva sin cotizacion</option>
+                                    {quotations.map((quotation) => (
+                                        <option key={quotation.id} value={quotation.id}>
+                                            {quotation.receipt_number} - {quotation.customer_name} - {quotation.branch?.name} - Bs {moneyFormatter.format(Number(quotation.total ?? 0))}
+                                        </option>
+                                    ))}
+                                </SelectField>
+                                <p className="mt-1 text-xs text-slate-500">Al seleccionar una cotizacion vigente se precargan sus datos e items para emitir la nota de venta.</p>
+                            </div>
+                        ) : null}
                         <div>
                             <FormField label="Numero" name="receipt_number" value={data.receipt_number} onChange={(event) => setData('receipt_number', event.target.value)} error={errors.receipt_number} placeholder={nextPreview(sequencePreviews, data.branch_id, data.document_type)} />
                             <p className="mt-1 text-xs text-slate-500">Vacio usa automatico: {nextPreview(sequencePreviews, data.branch_id, data.document_type)}</p>
@@ -262,6 +303,27 @@ function prepareSaleItem(item, products) {
             ? (summary.unitPrice ? summary.unitPrice.toFixed(4) : '')
             : item.unit_price,
         discount_amount: item.discount_amount || '0',
+    };
+}
+
+function saleItemFromQuotation(item, products) {
+    const product = products.find((entry) => String(entry.id) === String(item.product_id));
+    const calculationMode = item.calculation_mode ?? 'direct';
+
+    return {
+        ...DEFAULT_ITEM,
+        product_id: item.product_id ?? '',
+        product_coil_id: item.product_coil_id ?? '',
+        description: item.description ?? product?.name ?? '',
+        unit_label: item.unit_label ?? productUnitSymbol(product),
+        display_quantity: item.display_quantity ?? item.meters ?? '1',
+        display_unit_label: item.display_unit_label ?? item.unit_label ?? productUnitSymbol(product),
+        item_attributes: item.item_attributes ?? defaultItemAttributes(product),
+        quantity_mode: calculationMode,
+        meters: item.meters ?? item.display_quantity ?? '1',
+        price_mode: 'meter',
+        unit_price: item.unit_price ?? '0',
+        discount_amount: item.discount_amount ?? '0',
     };
 }
 

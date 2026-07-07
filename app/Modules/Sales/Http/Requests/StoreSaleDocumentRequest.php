@@ -7,6 +7,7 @@ use App\Modules\Inventory\Models\ProductBranchStock;
 use App\Modules\Inventory\Models\ProductCoil;
 use App\Modules\Inventory\Models\InventoryReservation;
 use App\Modules\Cash\Support\CashSessionGuard;
+use App\Modules\Sales\Models\Sale;
 use App\Support\BranchAccess;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -27,6 +28,7 @@ class StoreSaleDocumentRequest extends FormRequest
             'currency_id' => ['required', 'integer', 'exists:currencies,id'],
             'customer_id' => ['nullable', 'integer', 'exists:customers,id'],
             'advance_option_id' => ['nullable', 'integer', 'exists:advance_options,id'],
+            'source_quotation_id' => ['nullable', 'integer', 'exists:sales,id'],
             'receipt_number' => ['nullable', 'string', 'max:80', 'unique:sales,receipt_number'],
             'customer_name' => ['required_without:customer_id', 'nullable', 'string', 'max:255'],
             'customer_document' => ['nullable', 'string', 'max:80'],
@@ -64,6 +66,20 @@ class StoreSaleDocumentRequest extends FormRequest
 
             if ($this->input('document_type') !== 'sale_note') {
                 return;
+            }
+
+            $sourceQuotation = $this->filled('source_quotation_id')
+                ? Sale::query()->find($this->integer('source_quotation_id'))
+                : null;
+
+            if ($sourceQuotation) {
+                if ($sourceQuotation->document_type !== 'quotation' || $sourceQuotation->status !== 'quoted') {
+                    $validator->errors()->add('source_quotation_id', 'Solo se puede crear una nota desde una cotizacion vigente.');
+                }
+
+                if ((int) $sourceQuotation->branch_id !== $this->integer('branch_id')) {
+                    $validator->errors()->add('source_quotation_id', 'La cotizacion seleccionada pertenece a otra sucursal.');
+                }
             }
 
             if (CashSessionGuard::requiresOpenSession($this->user(), $this->integer('branch_id'))) {
