@@ -227,12 +227,13 @@ export default function Show({ sale, template, paymentMethods, conversionReadine
 function HeaderSection({ branch, fields, layout, primary }) {
     const logo = layout.logo ?? {};
     const logoPath = logo.path || branch.setting?.logo_path;
+    const logoSrc = assetUrl(logoPath);
 
     return (
         <section className="grid grid-cols-2 gap-6" style={{ color: primary }}>
             <div className="text-left">
-                {logo.show && logoPath ? (
-                    <img src={`/${logoPath}`} alt="Logo" className="mb-2 object-contain" style={{ width: `${logo.width_mm ?? 28}mm` }} />
+                {logo.show && logoSrc ? (
+                    <img src={logoSrc} alt="Logo" className="mb-2 object-contain" style={{ width: `${logo.width_mm ?? 28}mm` }} />
                 ) : null}
                 {fields.branch_name ? <h1 className="text-base font-bold uppercase">{branch.name ?? 'FABRICA DE CALAMINAS'}</h1> : null}
                 {fields.branch_address ? <p>{branch.address}</p> : null}
@@ -246,6 +247,20 @@ function HeaderSection({ branch, fields, layout, primary }) {
             </div>
         </section>
     );
+}
+
+function assetUrl(path) {
+    if (!path) {
+        return null;
+    }
+
+    const value = String(path).trim();
+
+    if (/^(https?:)?\/\//i.test(value) || value.startsWith('data:')) {
+        return value;
+    }
+
+    return value.startsWith('/') ? value : `/${value}`;
 }
 
 function DocumentSection({ sale, documentTitle, fields, secondary }) {

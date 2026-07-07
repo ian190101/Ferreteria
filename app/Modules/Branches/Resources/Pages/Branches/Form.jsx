@@ -27,6 +27,7 @@ export default function Form({ branch }) {
     const setSetting = (field, value) => {
         setData('setting', { ...data.setting, [field]: value });
     };
+    const logoSrc = assetUrl(data.setting.logo_path);
 
     const submit = (event) => {
         event.preventDefault();
@@ -89,8 +90,13 @@ export default function Form({ branch }) {
                         <h3 className="mb-4 text-base font-semibold text-slate-950 dark:text-white">Vista previa</h3>
                         <div className="overflow-hidden rounded-lg border border-slate-200 dark:border-slate-800">
                             <div className="px-4 py-3 text-white" style={{ backgroundColor: data.setting.primary_color }}>
-                                <p className="font-semibold">{data.name || 'Sucursal'}</p>
-                                <p className="text-sm opacity-90">{data.point_of_sale_name || 'Punto de venta'}</p>
+                                <div className="flex items-center gap-3">
+                                    {logoSrc ? <img src={logoSrc} alt="Logo de sucursal" className="h-10 w-10 rounded bg-white/90 object-contain p-1" /> : null}
+                                    <div>
+                                        <p className="font-semibold">{data.name || 'Sucursal'}</p>
+                                        <p className="text-sm opacity-90">{data.point_of_sale_name || 'Punto de venta'}</p>
+                                    </div>
+                                </div>
                             </div>
                             <div className="p-4" style={{ color: data.setting.secondary_color }}>
                                 <p>{data.address || 'Direccion'}</p>
@@ -103,6 +109,20 @@ export default function Form({ branch }) {
             </section>
         </AuthenticatedLayout>
     );
+}
+
+function assetUrl(path) {
+    if (!path) {
+        return null;
+    }
+
+    const value = String(path).trim();
+
+    if (/^(https?:)?\/\//i.test(value) || value.startsWith('data:')) {
+        return value;
+    }
+
+    return value.startsWith('/') ? value : `/${value}`;
 }
 
 function Panel({ title, children }) {
