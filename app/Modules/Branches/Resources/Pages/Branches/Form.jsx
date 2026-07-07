@@ -1,5 +1,6 @@
 import PrimaryButton from '@/Components/PrimaryButton';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
+import { assetUrl } from '@/Utils/assets';
 import FormField from '../../../../Shared/Resources/Components/FormField';
 import ModuleHeader from '../../../../Shared/Resources/Components/ModuleHeader';
 import SelectField from '../../../../Shared/Resources/Components/SelectField';
@@ -109,20 +110,6 @@ export default function Form({ branch }) {
             </section>
         </AuthenticatedLayout>
     );
-}
-
-function assetUrl(path) {
-    if (!path) {
-        return null;
-    }
-
-    const value = String(path).trim();
-
-    if (/^(https?:)?\/\//i.test(value) || value.startsWith('data:')) {
-        return value;
-    }
-
-    return value.startsWith('/') ? value : `/${value}`;
 }
 
 function Panel({ title, children }) {

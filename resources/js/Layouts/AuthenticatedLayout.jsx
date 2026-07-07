@@ -1,6 +1,7 @@
 import ApplicationLogo from '@/Components/ApplicationLogo';
 import AppearanceSwitch from '@/Components/AppearanceSwitch';
 import IconGlyph from '@/Components/Icon';
+import { assetUrl } from '@/Utils/assets';
 import { Link, usePage } from '@inertiajs/react';
 import { useEffect, useMemo, useState } from 'react';
 import { roleLabel } from '../../../app/Modules/Users/Resources/Utils/permissionLabels';
@@ -20,7 +21,7 @@ const iconPaths = {
 };
 
 export default function AuthenticatedLayout({ header, children }) {
-    const { auth } = usePage().props;
+    const { auth, branding } = usePage().props;
     const user = auth.user;
     const permissions = auth.permissions;
     const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -49,17 +50,21 @@ export default function AuthenticatedLayout({ header, children }) {
         document.documentElement.classList.remove('liquid-glass');
     }, [appearance]);
 
+    useEffect(() => {
+        updateFavicon(assetUrl(branding?.logoPath));
+    }, [branding?.logoPath]);
+
     return (
         <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,rgb(var(--color-primary)/0.10),transparent_34rem),linear-gradient(180deg,#f8fafc,#eef2f7)] text-slate-900 dark:bg-[radial-gradient(circle_at_top_left,rgb(var(--color-primary)/0.22),transparent_32rem),linear-gradient(180deg,#020617,#0f172a)] dark:text-slate-100">
             <aside className="app-surface fixed inset-y-0 left-0 z-40 hidden w-72 border-r border-white/60 bg-white/80 shadow-[0_20px_60px_rgb(15_23_42/0.08)] backdrop-blur-2xl dark:border-white/10 dark:bg-slate-950/80 lg:flex lg:flex-col">
-                <SidebarContent navigation={navigation} user={user} />
+                <SidebarContent navigation={navigation} user={user} branding={branding} />
             </aside>
 
             {sidebarOpen ? (
                 <div className="fixed inset-0 z-50 lg:hidden">
                     <button aria-label="Cerrar menu" className="absolute inset-0 bg-slate-950/50" type="button" onClick={() => setSidebarOpen(false)} />
                     <aside className="app-surface relative flex h-full w-[min(20rem,86vw)] flex-col border-r border-white/60 bg-white/90 shadow-xl backdrop-blur-2xl dark:border-white/10 dark:bg-slate-950/90">
-                        <SidebarContent navigation={navigation} user={user} onNavigate={() => setSidebarOpen(false)} />
+                        <SidebarContent navigation={navigation} user={user} branding={branding} onNavigate={() => setSidebarOpen(false)} />
                     </aside>
                 </div>
             ) : null}
@@ -116,12 +121,12 @@ export default function AuthenticatedLayout({ header, children }) {
     );
 }
 
-function SidebarContent({ navigation, user, onNavigate }) {
+function SidebarContent({ navigation, user, branding, onNavigate }) {
     return (
         <>
             <div className="flex h-20 items-center gap-3 border-b border-slate-200 px-5 dark:border-slate-800">
-            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-brand-primary/10 text-brand-primary ring-1 ring-brand-primary/15">
-                    <ApplicationLogo className="h-7 w-7 fill-current" />
+                <div className="flex h-11 w-11 items-center justify-center overflow-hidden rounded-2xl bg-brand-primary/10 text-brand-primary ring-1 ring-brand-primary/15">
+                    <BrandLogo logoPath={branding?.logoPath} />
                 </div>
                 <div className="min-w-0">
                     <p className="truncate text-sm font-bold uppercase tracking-[0.12em] text-slate-950 dark:text-white">Fabrica de Calaminas</p>
@@ -155,6 +160,16 @@ function SidebarContent({ navigation, user, onNavigate }) {
             </div>
         </>
     );
+}
+
+function BrandLogo({ logoPath }) {
+    const logoSrc = assetUrl(logoPath);
+
+    if (logoSrc) {
+        return <img src={logoSrc} alt="Logo de sucursal" className="h-full w-full object-contain p-1.5" />;
+    }
+
+    return <ApplicationLogo className="h-7 w-7 fill-current" />;
 }
 
 function SidebarLink({ item, onNavigate }) {
@@ -258,4 +273,20 @@ function initials(name) {
         .map((part) => part[0])
         .join('')
         .toUpperCase();
+}
+
+function updateFavicon(logoSrc) {
+    if (!logoSrc) {
+        return;
+    }
+
+    let favicon = document.querySelector('link[rel="icon"]');
+
+    if (!favicon) {
+        favicon = document.createElement('link');
+        favicon.rel = 'icon';
+        document.head.appendChild(favicon);
+    }
+
+    favicon.href = logoSrc;
 }

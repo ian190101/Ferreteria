@@ -1,4 +1,5 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
+import { assetUrl } from '@/Utils/assets';
 import FormField from '../../../../Shared/Resources/Components/FormField';
 import SelectField from '../../../../Shared/Resources/Components/SelectField';
 import { Head, Link, router, useForm, usePage } from '@inertiajs/react';
@@ -247,20 +248,6 @@ function HeaderSection({ branch, fields, layout, primary }) {
             </div>
         </section>
     );
-}
-
-function assetUrl(path) {
-    if (!path) {
-        return null;
-    }
-
-    const value = String(path).trim();
-
-    if (/^(https?:)?\/\//i.test(value) || value.startsWith('data:')) {
-        return value;
-    }
-
-    return value.startsWith('/') ? value : `/${value}`;
 }
 
 function DocumentSection({ sale, documentTitle, fields, secondary }) {
