@@ -40,6 +40,15 @@
         @apply w-full;
     }
 
+    main {
+        min-width: 0;
+        overflow-x: clip;
+    }
+
+    main :where(section, article, div, form, fieldset) {
+        min-width: 0;
+    }
+
     .app-surface,
     .rounded-lg.border.bg-white,
     .rounded-lg.border.dark\:bg-slate-900 {
@@ -61,10 +70,33 @@
         @apply text-slate-700 dark:text-slate-200;
         border-collapse: separate;
         border-spacing: 0;
+        width: max-content;
+        min-width: 100%;
+    }
+
+    main :where(.overflow-hidden, .overflow-x-auto):has(> table) {
+        overflow-x: auto;
+        overflow-y: hidden;
+        -webkit-overflow-scrolling: touch;
+        overscroll-behavior-inline: contain;
+    }
+
+    main :where(.overflow-hidden, .overflow-x-auto):has(> table)::-webkit-scrollbar {
+        height: 0.65rem;
+    }
+
+    main :where(.overflow-hidden, .overflow-x-auto):has(> table)::-webkit-scrollbar-thumb {
+        background: rgb(148 163 184 / 0.55);
+        border-radius: 999px;
     }
 
     thead {
         @apply text-xs uppercase tracking-[0.08em];
+    }
+
+    th,
+    td {
+        vertical-align: top;
     }
 
     thead tr {
@@ -112,5 +144,27 @@
     .text-brand-primary.hover\:underline:hover,
     .text-red-600.hover\:underline:hover {
         text-decoration: none;
+    }
+
+    @media (max-width: 640px) {
+        main > section {
+            @apply px-3 py-5;
+        }
+
+        table {
+            font-size: 0.8125rem;
+        }
+
+        th,
+        td {
+            padding-left: 0.75rem !important;
+            padding-right: 0.75rem !important;
+        }
+
+        input,
+        select,
+        textarea {
+            font-size: 16px;
+        }
     }
 }

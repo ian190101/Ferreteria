@@ -71,8 +71,8 @@ export default function AuthenticatedLayout({ header, children }) {
 
             <div className="lg:pl-72">
                 <header className="sticky top-0 z-30 border-b border-white/60 bg-slate-50/78 backdrop-blur-2xl dark:border-white/10 dark:bg-slate-950/72">
-                    <div className="flex min-h-16 items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
-                        <div className="flex min-w-0 items-center gap-3">
+                    <div className="flex min-h-16 flex-wrap items-center justify-between gap-2 px-3 py-2 sm:flex-nowrap sm:gap-4 sm:px-6 sm:py-0 lg:px-8">
+                        <div className="flex min-w-0 flex-1 items-center gap-3">
                             <button
                                 aria-label="Abrir menu"
                                 className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200/80 bg-white/80 text-slate-700 shadow-sm backdrop-blur transition hover:border-brand-primary hover:text-brand-primary dark:border-white/10 dark:bg-white/10 dark:text-slate-200 lg:hidden"
@@ -91,7 +91,7 @@ export default function AuthenticatedLayout({ header, children }) {
                             </div>
                         </div>
 
-                        <div className="flex items-center gap-3">
+                        <div className="flex shrink-0 items-center gap-2 sm:gap-3">
                             <AppearanceSwitch mode={appearance} onModeChange={setAppearance} />
                             <div className="hidden rounded-full border border-slate-200/80 bg-white/75 px-3 py-2 text-xs text-slate-500 shadow-sm backdrop-blur-xl dark:border-white/10 dark:bg-white/10 dark:text-slate-400 xl:block">
                                 Sucursal activa
