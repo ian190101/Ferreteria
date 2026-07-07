@@ -1,5 +1,7 @@
 import InputError from '@/Components/InputError';
 import InputLabel from '@/Components/InputLabel';
+import PasswordInput from '@/Components/PasswordInput';
+import PasswordMatchHint from '@/Components/PasswordMatchHint';
 import PrimaryButton from '@/Components/PrimaryButton';
 import TextInput from '@/Components/TextInput';
 import GuestLayout from '@/Layouts/GuestLayout';
@@ -63,9 +65,8 @@ export default function Register() {
                 <div className="mt-4">
                     <InputLabel htmlFor="password" value="Contrasena" />
 
-                    <TextInput
+                    <PasswordInput
                         id="password"
-                        type="password"
                         name="password"
                         value={data.password}
                         className="mt-1 block w-full"
@@ -83,9 +84,8 @@ export default function Register() {
                         value="Confirmar contrasena"
                     />
 
-                    <TextInput
+                    <PasswordInput
                         id="password_confirmation"
-                        type="password"
                         name="password_confirmation"
                         value={data.password_confirmation}
                         className="mt-1 block w-full"
@@ -100,6 +100,7 @@ export default function Register() {
                         message={errors.password_confirmation}
                         className="mt-2"
                     />
+                    <PasswordMatchHint password={data.password} confirmation={data.password_confirmation} />
                 </div>
 
                 <div className="mt-4 flex items-center justify-end">

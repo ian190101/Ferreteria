@@ -1,4 +1,5 @@
 import Checkbox from '@/Components/Checkbox';
+import PasswordMatchHint from '@/Components/PasswordMatchHint';
 import PrimaryButton from '@/Components/PrimaryButton';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import FormField from '../../../../Shared/Resources/Components/FormField';
@@ -75,8 +76,16 @@ export default function Form({ userRecord, branches, roles }) {
                             <option value="1">Activo</option>
                             <option value="0">Inactivo</option>
                         </SelectField>
-                        <FormField label={isEditing ? 'Nueva contrasena' : 'Contrasena'} name="password" type="password" value={data.password} onChange={(event) => setData('password', event.target.value)} error={errors.password} required={!isEditing} />
-                        <FormField label="Confirmar contrasena" name="password_confirmation" type="password" value={data.password_confirmation} onChange={(event) => setData('password_confirmation', event.target.value)} error={errors.password_confirmation} required={!isEditing} />
+                        <div>
+                            <FormField label={isEditing ? 'Nueva contrasena temporal' : 'Contrasena temporal'} name="password" type="password" value={data.password} onChange={(event) => setData('password', event.target.value)} error={errors.password} required={!isEditing} />
+                            <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                                El usuario debera cambiarla en su proximo inicio de sesion.
+                            </p>
+                        </div>
+                        <div>
+                            <FormField label="Confirmar contrasena" name="password_confirmation" type="password" value={data.password_confirmation} onChange={(event) => setData('password_confirmation', event.target.value)} error={errors.password_confirmation} required={!isEditing} />
+                            <PasswordMatchHint password={data.password} confirmation={data.password_confirmation} />
+                        </div>
                     </div>
 
                     <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">

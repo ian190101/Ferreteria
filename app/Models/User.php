@@ -30,6 +30,7 @@ class User extends Authenticatable implements Auditable
         'email',
         'is_active',
         'password',
+        'force_password_change',
         'last_login_at',
         'last_login_ip',
     ];
@@ -54,6 +55,7 @@ class User extends Authenticatable implements Auditable
         return [
             'email_verified_at' => 'datetime',
             'is_active' => 'boolean',
+            'force_password_change' => 'boolean',
             'last_login_at' => 'datetime',
             'password' => 'hashed',
         ];

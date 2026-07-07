@@ -1,54 +1,38 @@
-import InputError from '@/Components/InputError';
-import PrimaryButton from '@/Components/PrimaryButton';
-import TextInput from '@/Components/TextInput';
 import GuestLayout from '@/Layouts/GuestLayout';
-import { Head, useForm } from '@inertiajs/react';
+import { Head, Link } from '@inertiajs/react';
 
 export default function ForgotPassword({ status }) {
-    const { data, setData, post, processing, errors } = useForm({
-        email: '',
-    });
-
-    const submit = (e) => {
-        e.preventDefault();
-
-        post(route('password.email'));
-    };
-
     return (
         <GuestLayout>
-            <Head title="Recuperar contrasena" />
+            <Head title="Recuperar acceso" />
 
-            <div className="mb-4 text-sm text-gray-600 dark:text-gray-400">
-                Olvidaste tu contrasena? Ingresa tu correo electronico y te
-                enviaremos un enlace para crear una nueva.
+            <div className="mb-6">
+                <h1 className="text-xl font-semibold text-slate-950 dark:text-white">
+                    Recuperar acceso
+                </h1>
+                <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-400">
+                    Por seguridad, el restablecimiento de contrasena lo realiza
+                    un administrador del sistema. Contacta al administrador para
+                    que verifique tu identidad y te asigne una contrasena temporal.
+                </p>
             </div>
 
-            {status && (
+            {status ? (
                 <div className="mb-4 text-sm font-medium text-green-600 dark:text-green-400">
                     {status}
                 </div>
-            )}
+            ) : null}
 
-            <form onSubmit={submit}>
-                <TextInput
-                    id="email"
-                    type="email"
-                    name="email"
-                    value={data.email}
-                    className="mt-1 block w-full"
-                    isFocused={true}
-                    onChange={(e) => setData('email', e.target.value)}
-                />
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-100">
+                Al iniciar sesion con la contrasena temporal, el sistema te
+                obligara a crear una contrasena nueva.
+            </div>
 
-                <InputError message={errors.email} className="mt-2" />
-
-                <div className="mt-4 flex items-center justify-end">
-                    <PrimaryButton className="ms-4" disabled={processing}>
-                        Enviar enlace de recuperacion
-                    </PrimaryButton>
-                </div>
-            </form>
+            <div className="mt-5 flex justify-end">
+                <Link href={route('login')} className="rounded-full bg-brand-primary px-5 py-2.5 text-sm font-semibold text-white shadow-sm shadow-brand-primary/25">
+                    Volver al login
+                </Link>
+            </div>
         </GuestLayout>
     );
 }

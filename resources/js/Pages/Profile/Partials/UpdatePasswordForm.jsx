@@ -1,7 +1,8 @@
 import InputError from '@/Components/InputError';
 import InputLabel from '@/Components/InputLabel';
+import PasswordInput from '@/Components/PasswordInput';
+import PasswordMatchHint from '@/Components/PasswordMatchHint';
 import PrimaryButton from '@/Components/PrimaryButton';
-import TextInput from '@/Components/TextInput';
 import { Transition } from '@headlessui/react';
 import { useForm } from '@inertiajs/react';
 import { useRef } from 'react';
@@ -63,14 +64,13 @@ export default function UpdatePasswordForm({ className = '' }) {
                         value="Contrasena actual"
                     />
 
-                    <TextInput
+                    <PasswordInput
                         id="current_password"
                         ref={currentPasswordInput}
                         value={data.current_password}
                         onChange={(e) =>
                             setData('current_password', e.target.value)
                         }
-                        type="password"
                         className="mt-1 block w-full"
                         autoComplete="current-password"
                     />
@@ -84,12 +84,11 @@ export default function UpdatePasswordForm({ className = '' }) {
                 <div>
                     <InputLabel htmlFor="password" value="Nueva contrasena" />
 
-                    <TextInput
+                    <PasswordInput
                         id="password"
                         ref={passwordInput}
                         value={data.password}
                         onChange={(e) => setData('password', e.target.value)}
-                        type="password"
                         className="mt-1 block w-full"
                         autoComplete="new-password"
                     />
@@ -103,13 +102,12 @@ export default function UpdatePasswordForm({ className = '' }) {
                         value="Confirmar contrasena"
                     />
 
-                    <TextInput
+                    <PasswordInput
                         id="password_confirmation"
                         value={data.password_confirmation}
                         onChange={(e) =>
                             setData('password_confirmation', e.target.value)
                         }
-                        type="password"
                         className="mt-1 block w-full"
                         autoComplete="new-password"
                     />
@@ -118,6 +116,7 @@ export default function UpdatePasswordForm({ className = '' }) {
                         message={errors.password_confirmation}
                         className="mt-2"
                     />
+                    <PasswordMatchHint password={data.password} confirmation={data.password_confirmation} />
                 </div>
 
                 <div className="flex items-center gap-4">

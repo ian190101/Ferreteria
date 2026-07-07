@@ -3,21 +3,26 @@
 namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
+use App\Support\UserHomeRoute;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rules\Password;
+use Inertia\Inertia;
+use Inertia\Response;
 
-class PasswordController extends Controller
+class ForcePasswordChangeController extends Controller
 {
-    /**
-     * Update the user's password.
-     */
+    public function edit(): Response
+    {
+        return Inertia::render('Auth/ForcePasswordChange');
+    }
+
     public function update(Request $request): RedirectResponse
     {
         $validated = $request->validate([
             'current_password' => ['required', 'current_password'],
-            'password' => ['required', Password::defaults(), 'confirmed'],
+            'password' => ['required', 'confirmed', 'different:current_password', Password::defaults()],
         ]);
 
         $request->user()->update([
@@ -25,6 +30,7 @@ class PasswordController extends Controller
             'force_password_change' => false,
         ]);
 
-        return back();
+        return redirect()->route(UserHomeRoute::nameFor($request->user()))
+            ->with('success', 'Contrasena actualizada correctamente.');
     }
 }

@@ -4,11 +4,11 @@ namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Auth\LoginRequest;
+use App\Support\UserHomeRoute;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
-use App\Support\UserHomeRoute;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -36,6 +36,10 @@ class AuthenticatedSessionController extends Controller
 
         $request->session()->forget('url.intended');
 
+        if ($request->user()->force_password_change) {
+            return redirect()->route('password.force.edit');
+        }
+
         return redirect()->route(UserHomeRoute::nameFor($request->user()));
     }
 
@@ -52,5 +56,4 @@ class AuthenticatedSessionController extends Controller
 
         return redirect()->route('login');
     }
-
 }

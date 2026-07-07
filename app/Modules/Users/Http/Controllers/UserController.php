@@ -53,6 +53,7 @@ class UserController extends Controller
         $data = $request->validated();
         $branchIds = $this->normalizedBranchIds($data);
         $data['branch_id'] ??= $branchIds->first();
+        $data['force_password_change'] = true;
 
         $user = User::query()->create(Arr::except($data, ['roles', 'branch_ids', 'password_confirmation']));
         $user->syncRoles($data['roles']);
@@ -79,8 +80,12 @@ class UserController extends Controller
             return back()->withErrors(['is_active' => 'No puedes desactivar tu propio usuario.']);
         }
 
-        if (blank($data['password'] ?? null)) {
+        $passwordWasChanged = filled($data['password'] ?? null);
+
+        if (! $passwordWasChanged) {
             unset($data['password']);
+        } else {
+            $data['force_password_change'] = true;
         }
 
         $branchIds = $this->normalizedBranchIds($data);
