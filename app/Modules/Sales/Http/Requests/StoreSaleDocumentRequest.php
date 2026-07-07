@@ -6,6 +6,7 @@ use App\Modules\Inventory\Models\Product;
 use App\Modules\Inventory\Models\ProductBranchStock;
 use App\Modules\Inventory\Models\ProductCoil;
 use App\Modules\Inventory\Models\InventoryReservation;
+use App\Modules\Cash\Support\CashSessionGuard;
 use App\Support\BranchAccess;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -62,6 +63,12 @@ class StoreSaleDocumentRequest extends FormRequest
             }
 
             if ($this->input('document_type') !== 'sale_note') {
+                return;
+            }
+
+            if (CashSessionGuard::requiresOpenSession($this->user(), $this->integer('branch_id'))) {
+                $validator->errors()->add('branch_id', CashSessionGuard::message());
+
                 return;
             }
 

@@ -12,17 +12,17 @@ const moneyFormatter = new Intl.NumberFormat('es-BO', {
 });
 
 const CASH_DENOMINATIONS = [
-    { key: 'bill_200', type: 'bill', label: 'Billete de 200 Bs', shortLabel: '200', value: 200, gradient: 'from-emerald-500 to-teal-700' },
-    { key: 'bill_100', type: 'bill', label: 'Billete de 100 Bs', shortLabel: '100', value: 100, gradient: 'from-red-500 to-rose-700' },
-    { key: 'bill_50', type: 'bill', label: 'Billete de 50 Bs', shortLabel: '50', value: 50, gradient: 'from-violet-500 to-indigo-700' },
-    { key: 'bill_20', type: 'bill', label: 'Billete de 20 Bs', shortLabel: '20', value: 20, gradient: 'from-orange-400 to-amber-700' },
-    { key: 'bill_10', type: 'bill', label: 'Billete de 10 Bs', shortLabel: '10', value: 10, gradient: 'from-sky-500 to-blue-700' },
-    { key: 'coin_5', type: 'coin', label: 'Moneda de 5 Bs', shortLabel: '5', value: 5, gradient: 'from-slate-300 to-slate-500' },
-    { key: 'coin_2', type: 'coin', label: 'Moneda de 2 Bs', shortLabel: '2', value: 2, gradient: 'from-zinc-300 to-zinc-500' },
-    { key: 'coin_1', type: 'coin', label: 'Moneda de 1 Bs', shortLabel: '1', value: 1, gradient: 'from-stone-300 to-stone-500' },
-    { key: 'coin_050', type: 'coin', label: 'Moneda de 0.50 ctvs', shortLabel: '0.50', value: 0.5, gradient: 'from-amber-200 to-yellow-500' },
-    { key: 'coin_020', type: 'coin', label: 'Moneda de 20 ctvs', shortLabel: '0.20', value: 0.2, gradient: 'from-neutral-300 to-neutral-500' },
-    { key: 'coin_010', type: 'coin', label: 'Moneda de 10 ctvs', shortLabel: '0.10', value: 0.1, gradient: 'from-gray-300 to-gray-500' },
+    { key: 'bill_200', type: 'bill', label: 'Billete de 200 Bs', shortLabel: '200', cents: 20000, gradient: 'from-emerald-500 to-teal-700' },
+    { key: 'bill_100', type: 'bill', label: 'Billete de 100 Bs', shortLabel: '100', cents: 10000, gradient: 'from-red-500 to-rose-700' },
+    { key: 'bill_50', type: 'bill', label: 'Billete de 50 Bs', shortLabel: '50', cents: 5000, gradient: 'from-violet-500 to-indigo-700' },
+    { key: 'bill_20', type: 'bill', label: 'Billete de 20 Bs', shortLabel: '20', cents: 2000, gradient: 'from-orange-400 to-amber-700' },
+    { key: 'bill_10', type: 'bill', label: 'Billete de 10 Bs', shortLabel: '10', cents: 1000, gradient: 'from-sky-500 to-blue-700' },
+    { key: 'coin_5', type: 'coin', label: 'Moneda de 5 Bs', shortLabel: '5', cents: 500, gradient: 'from-slate-300 to-slate-500' },
+    { key: 'coin_2', type: 'coin', label: 'Moneda de 2 Bs', shortLabel: '2', cents: 200, gradient: 'from-zinc-300 to-zinc-500' },
+    { key: 'coin_1', type: 'coin', label: 'Moneda de 1 Bs', shortLabel: '1', cents: 100, gradient: 'from-stone-300 to-stone-500' },
+    { key: 'coin_050', type: 'coin', label: 'Moneda de 0.50 ctvs', shortLabel: '0.50', cents: 50, gradient: 'from-amber-200 to-yellow-500' },
+    { key: 'coin_020', type: 'coin', label: 'Moneda de 20 ctvs', shortLabel: '0.20', cents: 20, gradient: 'from-neutral-300 to-neutral-500' },
+    { key: 'coin_010', type: 'coin', label: 'Moneda de 10 ctvs', shortLabel: '0.10', cents: 10, gradient: 'from-gray-300 to-gray-500' },
 ];
 
 const emptyCashCount = () => CASH_DENOMINATIONS.reduce((counts, denomination) => ({
@@ -175,9 +175,10 @@ function CloseSessionForm({ session, canViewBanks }) {
         cash_count: emptyCashCount(),
         closing_notes: '',
     });
-    const countedTotal = CASH_DENOMINATIONS.reduce((total, denomination) => (
-        total + Number(closeForm.data.cash_count[denomination.key] ?? 0) * denomination.value
+    const countedTotalCents = CASH_DENOMINATIONS.reduce((total, denomination) => (
+        total + Number(closeForm.data.cash_count[denomination.key] ?? 0) * denomination.cents
     ), 0);
+    const countedTotal = countedTotalCents / 100;
     const expected = Number(session.current_expected_cash_amount ?? session.expected_cash_amount ?? session.opening_amount ?? 0);
     const difference = countedTotal - expected;
     const bankIncome = Number(session.current_bank_income_amount ?? 0);
@@ -231,6 +232,12 @@ function CloseSessionForm({ session, canViewBanks }) {
                 <CashMetric label="QR/Banco neto" value={bankNet} tone={bankNet < 0 ? 'danger' : bankNet > 0 ? 'success' : 'neutral'} />
             </div>
 
+            <div className="rounded-2xl border border-brand-primary/20 bg-brand-primary/10 p-4 text-brand-primary">
+                <p className="text-xs font-semibold uppercase tracking-wide">Total contado en tiempo real</p>
+                <p className="mt-1 text-3xl font-black">Bs {moneyFormatter.format(countedTotal)}</p>
+                <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">Este monto se recalcula al escribir la cantidad de cada billete o moneda.</p>
+            </div>
+
             {hasBankMovements ? (
                 <div className="rounded-2xl border border-sky-200 bg-sky-50 p-4 text-sm text-sky-950 dark:border-sky-900/60 dark:bg-sky-950/30 dark:text-sky-100">
                     <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
@@ -268,7 +275,7 @@ function CloseSessionForm({ session, canViewBanks }) {
 }
 
 function DenominationCounter({ denomination, count, error, onChange }) {
-    const subtotal = Number(count ?? 0) * denomination.value;
+    const subtotal = (Number(count ?? 0) * denomination.cents) / 100;
 
     return (
         <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm dark:border-slate-800 dark:bg-slate-900">

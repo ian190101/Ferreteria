@@ -3,6 +3,7 @@
 namespace App\Modules\Payments\Http\Requests;
 
 use App\Modules\Payments\Models\PaymentMethod;
+use App\Modules\Cash\Support\CashSessionGuard;
 use App\Modules\Sales\Models\Sale;
 use App\Support\BranchAccess;
 use Illuminate\Foundation\Http\FormRequest;
@@ -38,6 +39,12 @@ class StoreSalePaymentRequest extends FormRequest
 
             if ($message = BranchAccess::validate($this->user(), (int) $sale->branch_id)) {
                 $validator->errors()->add('sale_id', $message);
+
+                return;
+            }
+
+            if (CashSessionGuard::requiresOpenSession($this->user(), (int) $sale->branch_id)) {
+                $validator->errors()->add('sale_id', CashSessionGuard::message());
 
                 return;
             }
