@@ -74,18 +74,18 @@
         min-width: 100%;
     }
 
-    main :where(.overflow-hidden, .overflow-x-auto):has(> table) {
-        overflow-x: auto;
+    main :where(.overflow-hidden, .overflow-x-auto):has(table) {
+        overflow-x: auto !important;
         overflow-y: hidden;
         -webkit-overflow-scrolling: touch;
         overscroll-behavior-inline: contain;
     }
 
-    main :where(.overflow-hidden, .overflow-x-auto):has(> table)::-webkit-scrollbar {
+    main :where(.overflow-hidden, .overflow-x-auto):has(table)::-webkit-scrollbar {
         height: 0.65rem;
     }
 
-    main :where(.overflow-hidden, .overflow-x-auto):has(> table)::-webkit-scrollbar-thumb {
+    main :where(.overflow-hidden, .overflow-x-auto):has(table)::-webkit-scrollbar-thumb {
         background: rgb(148 163 184 / 0.55);
         border-radius: 999px;
     }
