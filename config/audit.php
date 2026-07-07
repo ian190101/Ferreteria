@@ -1,7 +1,7 @@
 <?php
 
 use App\Models\Audit;
-use OwenIt\Auditing\Resolvers\IpAddressResolver;
+use App\Support\AuditIpAddressResolver;
 use OwenIt\Auditing\Resolvers\UrlResolver;
 use OwenIt\Auditing\Resolvers\UserAgentResolver;
 use OwenIt\Auditing\Resolvers\UserResolver;
@@ -48,7 +48,7 @@ return [
     |
     */
     'resolvers' => [
-        'ip_address' => IpAddressResolver::class,
+        'ip_address' => AuditIpAddressResolver::class,
         'user_agent' => UserAgentResolver::class,
         'url' => UrlResolver::class,
     ],
