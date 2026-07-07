@@ -94,20 +94,19 @@ class HandleInertiaRequests extends Middleware
         $branchId = $request->user()?->branch_id;
 
         if (! $branchId) {
-            return Cache::remember('public:branding', now()->addMinutes(30), function () {
-                $setting = BranchSetting::query()
-                    ->select(['branch_id', 'primary_color', 'secondary_color', 'logo_path', 'theme_mode'])
-                    ->whereNotNull('logo_path')
-                    ->where('logo_path', '!=', '')
-                    ->orderBy('branch_id')
-                    ->first();
+            $setting = BranchSetting::query()
+                ->select(['branch_id', 'primary_color', 'secondary_color', 'logo_path', 'theme_mode', 'updated_at'])
+                ->whereNotNull('logo_path')
+                ->where('logo_path', '!=', '')
+                ->orderByDesc('updated_at')
+                ->orderBy('branch_id')
+                ->first();
 
-                if (! $setting) {
-                    return $this->defaultBranding();
-                }
+            if (! $setting) {
+                return $this->defaultBranding();
+            }
 
-                return $this->brandingFromSetting($setting);
-            });
+            return $this->brandingFromSetting($setting);
         }
 
         return Cache::remember("branch:{$branchId}:branding", now()->addMinutes(30), function () use ($branchId) {
@@ -131,9 +130,28 @@ class HandleInertiaRequests extends Middleware
             'secondary' => $setting->secondary_color,
             'primaryRgb' => $this->hexToRgb($setting->primary_color),
             'secondaryRgb' => $this->hexToRgb($setting->secondary_color),
-            'logoPath' => $setting->logo_path,
+            'logoPath' => $this->normalizeLogoPath($setting->logo_path),
             'themeMode' => $setting->theme_mode,
         ];
+    }
+
+    private function normalizeLogoPath(?string $path): ?string
+    {
+        if (! $path) {
+            return null;
+        }
+
+        $value = trim($path);
+
+        if (preg_match('/<img[^>]+src=["\']([^"\']+)["\']/i', $value, $matches)) {
+            $value = trim($matches[1]);
+        }
+
+        if (preg_match('#^https://drive\.google\.com/file/d/([^/]+)/view#i', $value, $matches)) {
+            return "https://drive.google.com/thumbnail?id={$matches[1]}&sz=w512";
+        }
+
+        return $value;
     }
 
     private function defaultBranding(): array

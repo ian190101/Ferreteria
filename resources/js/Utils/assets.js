@@ -14,7 +14,7 @@ export function assetUrl(path) {
     const googleDriveFile = value.match(/^https:\/\/drive\.google\.com\/file\/d\/([^/]+)\/view/i);
 
     if (googleDriveFile) {
-        return `https://drive.google.com/uc?export=view&id=${googleDriveFile[1]}`;
+        return `https://drive.google.com/thumbnail?id=${googleDriveFile[1]}&sz=w512`;
     }
 
     if (/^(https?:)?\/\//i.test(value) || value.startsWith('data:')) {
