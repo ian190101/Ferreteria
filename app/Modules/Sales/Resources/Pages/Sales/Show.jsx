@@ -29,8 +29,8 @@ export default function Show({ sale, template, paymentMethods, conversionReadine
         .sort((left, right) => left.order - right.order);
     const paper = PAPER_SIZES[template.paper_type] ?? PAPER_SIZES.letter;
     const paperWidth = template.paper_type === 'thermal' ? `${template.thermal_width_mm ?? 80}mm` : paper.width;
-    const primary = template.use_branding ? branch.setting?.primary_color ?? layout.colors.primary : layout.colors.primary;
-    const secondary = template.use_branding ? branch.setting?.secondary_color ?? layout.colors.secondary : layout.colors.secondary;
+    const primary = layout.colors.primary;
+    const secondary = layout.colors.secondary;
     const logoPath = template.use_branding ? branch.setting?.logo_path : layout.logo?.path;
     const paymentForm = useForm({
         sale_id: sale.id,
