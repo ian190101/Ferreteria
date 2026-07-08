@@ -178,6 +178,8 @@ function SidebarLink({ item, onNavigate }) {
     return (
         <Link
             href={item.href}
+            prefetch
+            cacheFor="30s"
             onClick={onNavigate}
             className={[
                 'group flex items-center gap-3 rounded-2xl px-3 py-2.5 text-sm font-semibold transition',

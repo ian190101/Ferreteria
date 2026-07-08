@@ -54,36 +54,52 @@ class HandleInertiaRequests extends Middleware
             ];
         }
 
-        $user->loadMissing(['branch:id,name', 'accessibleBranches:id,name']);
-        $roles = $user->getRoleNames()->values()->all();
+        $version = Cache::get('inertia-auth-version', 1);
+        $updatedAt = $user->updated_at?->timestamp ?? 0;
 
-        // Los roles/permisos no se cachean aqui porque pueden cargarse por inserts externos en TiDB.
-        $permissions = in_array('superadmin', $roles, true)
-            ? Permission::query()->pluck('name')->values()->all()
-            : $user->getAllPermissions()->pluck('name')->values()->all();
+        return Cache::remember(
+            "inertia-auth:v{$version}:user:{$user->id}:{$updatedAt}",
+            now()->addMinutes(5),
+            function () use ($user) {
+                $user->loadMissing(['branch:id,name', 'accessibleBranches:id,name']);
+                $roles = $user->getRoleNames()->values()->all();
+                $permissions = in_array('superadmin', $roles, true)
+                    ? $this->allPermissionNames()
+                    : $user->getAllPermissions()->pluck('name')->values()->all();
 
-        return [
-            'user' => [
-                'id' => $user->id,
-                'branch_id' => $user->branch_id,
-                'name' => $user->name,
-                'email' => $user->email,
-                'is_active' => $user->is_active,
-                'branch' => $user->branch ? [
-                    'id' => $user->branch->id,
-                    'name' => $user->branch->name,
-                ] : null,
-                'accessible_branches' => $user->accessibleBranches
-                    ->map(fn ($branch) => [
-                        'id' => $branch->id,
-                        'name' => $branch->name,
-                    ])
-                    ->values()
-                    ->all(),
-            ],
-            'roles' => $roles,
-            'permissions' => $permissions,
-        ];
+                return [
+                    'user' => [
+                        'id' => $user->id,
+                        'branch_id' => $user->branch_id,
+                        'name' => $user->name,
+                        'email' => $user->email,
+                        'is_active' => $user->is_active,
+                        'branch' => $user->branch ? [
+                            'id' => $user->branch->id,
+                            'name' => $user->branch->name,
+                        ] : null,
+                        'accessible_branches' => $user->accessibleBranches
+                            ->map(fn ($branch) => [
+                                'id' => $branch->id,
+                                'name' => $branch->name,
+                            ])
+                            ->values()
+                            ->all(),
+                    ],
+                    'roles' => $roles,
+                    'permissions' => $permissions,
+                ];
+            }
+        );
+    }
+
+    private function allPermissionNames(): array
+    {
+        return Cache::remember('permissions:all-names', now()->addMinutes(30), fn () => Permission::query()
+            ->orderBy('name')
+            ->pluck('name')
+            ->values()
+            ->all());
     }
 
     /**
@@ -94,19 +110,21 @@ class HandleInertiaRequests extends Middleware
         $branchId = $request->user()?->branch_id;
 
         if (! $branchId) {
-            $setting = BranchSetting::query()
-                ->select(['branch_id', 'primary_color', 'secondary_color', 'logo_path', 'theme_mode', 'updated_at'])
-                ->whereNotNull('logo_path')
-                ->where('logo_path', '!=', '')
-                ->orderByDesc('updated_at')
-                ->orderBy('branch_id')
-                ->first();
+            return Cache::remember('public:branding', now()->addMinutes(30), function () {
+                $setting = BranchSetting::query()
+                    ->select(['branch_id', 'primary_color', 'secondary_color', 'logo_path', 'theme_mode', 'updated_at'])
+                    ->whereNotNull('logo_path')
+                    ->where('logo_path', '!=', '')
+                    ->orderByDesc('updated_at')
+                    ->orderBy('branch_id')
+                    ->first();
 
-            if (! $setting) {
-                return $this->defaultBranding();
-            }
+                if (! $setting) {
+                    return $this->defaultBranding();
+                }
 
-            return $this->brandingFromSetting($setting);
+                return $this->brandingFromSetting($setting);
+            });
         }
 
         return Cache::remember("branch:{$branchId}:branding", now()->addMinutes(30), function () use ($branchId) {

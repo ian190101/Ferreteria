@@ -141,5 +141,6 @@ class UserController extends Controller
     private function bumpAuthCacheVersion(): void
     {
         Cache::forever('inertia-auth-version', now()->timestamp);
+        Cache::forget('permissions:all-names');
     }
 }

@@ -16,12 +16,14 @@ services:
       - key: LOG_LEVEL
         value: warning
       - key: SESSION_DRIVER
-        value: database
+        value: file
       - key: SESSION_SECURE_COOKIE
         value: true
       - key: QUEUE_CONNECTION
         value: database
       - key: CACHE_STORE
-        value: database
+        value: file
+      - key: DB_PERSISTENT
+        value: true
       - key: FILESYSTEM_DISK
         value: local

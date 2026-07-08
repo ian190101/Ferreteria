@@ -3,9 +3,9 @@
 namespace App\Support;
 
 use App\Models\User;
+use App\Modules\Banks\Models\BankAccount;
 use App\Modules\Branches\Models\Branch;
 use App\Modules\Customers\Models\Customer;
-use App\Modules\Banks\Models\BankAccount;
 use App\Modules\Expenses\Models\ExpenseCategory;
 use App\Modules\Inventory\Models\Product;
 use App\Modules\Inventory\Models\ProductCategory;
@@ -37,11 +37,17 @@ class UiCatalogCache
             return self::activeBranches($columns);
         }
 
-        return Branch::query()
-            ->where('is_active', true)
-            ->whereIn('id', $user->accessibleBranchIds() ?: [-1])
-            ->orderBy('name')
-            ->get($columns);
+        $version = Cache::get('inertia-auth-version', 1);
+        $branchIds = $user->accessibleBranchIds() ?: [-1];
+
+        return self::remember(
+            'branches-user:'.$user->id.':v'.$version.':'.implode(',', $columns).':'.implode(',', $branchIds),
+            fn () => Branch::query()
+                ->where('is_active', true)
+                ->whereIn('id', $branchIds)
+                ->orderBy('name')
+                ->get($columns)
+        );
     }
 
     public static function activeProducts(array $columns = ['id', 'name', 'sku', 'inventory_tracking_mode'])

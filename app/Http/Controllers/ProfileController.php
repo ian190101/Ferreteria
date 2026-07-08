@@ -38,6 +38,7 @@ class ProfileController extends Controller
 
         $request->user()->save();
         Cache::forever('inertia-auth-version', now()->timestamp);
+        Cache::forget('permissions:all-names');
 
         return Redirect::route('profile.edit');
     }

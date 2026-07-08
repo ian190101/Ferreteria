@@ -23,6 +23,8 @@ use Inertia\Response;
 
 class DashboardController extends Controller
 {
+    private const CACHE_SECONDS = 30;
+
     public function __invoke(Request $request): Response
     {
         $user = $request->user();
@@ -41,14 +43,14 @@ class DashboardController extends Controller
         abort_if($branchId && ! in_array($branchId, $allowedBranchIds, true), 403);
 
         $baseCacheKey = sprintf(
-            'dashboard:base:v4:%s:%s:%s:%s',
+            'dashboard:base:v5:%s:%s:%s:%s',
             $user->id,
             $branchId ?? 'all',
             $from->toDateString(),
             $to->toDateString(),
         );
 
-        $payload = Cache::remember($baseCacheKey, now()->addSeconds(10), function () use ($user, $branchId, $allowedBranchIds, $from, $to, $today, $branches) {
+        $payload = Cache::remember($baseCacheKey, now()->addSeconds(self::CACHE_SECONDS), function () use ($user, $branchId, $allowedBranchIds, $from, $to, $today, $branches) {
             return [
                 'scope' => [
                     'branch_id' => $branchId,
@@ -64,23 +66,23 @@ class DashboardController extends Controller
         });
 
         $payload['recentSales'] = Inertia::defer(
-            fn () => Cache::remember($this->sectionCacheKey('recent-sales', $user->id, $branchId, $from, $to), now()->addSeconds(10), fn () => $this->recentSales($user, $branchId, $allowedBranchIds, $from, $to)),
+            fn () => Cache::remember($this->sectionCacheKey('recent-sales', $user->id, $branchId, $from, $to), now()->addSeconds(self::CACHE_SECONDS), fn () => $this->recentSales($user, $branchId, $allowedBranchIds, $from, $to)),
             'dashboard-lists',
         );
         $payload['pendingReceivables'] = Inertia::defer(
-            fn () => Cache::remember($this->sectionCacheKey('pending-receivables', $user->id, $branchId, $from, $to), now()->addSeconds(10), fn () => $this->pendingReceivables($user, $branchId, $allowedBranchIds, $from, $to)),
+            fn () => Cache::remember($this->sectionCacheKey('pending-receivables', $user->id, $branchId, $from, $to), now()->addSeconds(self::CACHE_SECONDS), fn () => $this->pendingReceivables($user, $branchId, $allowedBranchIds, $from, $to)),
             'dashboard-lists',
         );
         $payload['lowStocks'] = Inertia::defer(
-            fn () => $this->lowStocks($user, $branchId, $allowedBranchIds),
+            fn () => Cache::remember($this->sectionCacheKey('low-stocks', $user->id, $branchId, $from, $to), now()->addSeconds(self::CACHE_SECONDS), fn () => $this->lowStocks($user, $branchId, $allowedBranchIds)),
             'dashboard-lists',
         );
         $payload['openCashSessions'] = Inertia::defer(
-            fn () => Cache::remember($this->sectionCacheKey('open-cash', $user->id, $branchId, $from, $to), now()->addSeconds(10), fn () => $this->openCashSessions($user, $branchId, $allowedBranchIds)),
+            fn () => Cache::remember($this->sectionCacheKey('open-cash', $user->id, $branchId, $from, $to), now()->addSeconds(self::CACHE_SECONDS), fn () => $this->openCashSessions($user, $branchId, $allowedBranchIds)),
             'dashboard-lists',
         );
         $payload['charts'] = Inertia::defer(
-            fn () => Cache::remember($this->sectionCacheKey('charts', $user->id, $branchId, $from, $to), now()->addSeconds(10), fn () => $this->charts($user, $branchId, $allowedBranchIds, $from, $to, $today)),
+            fn () => Cache::remember($this->sectionCacheKey('charts', $user->id, $branchId, $from, $to), now()->addSeconds(self::CACHE_SECONDS), fn () => $this->charts($user, $branchId, $allowedBranchIds, $from, $to, $today)),
             'dashboard-charts',
         );
         $payload['branches'] = $branches;
@@ -684,6 +686,6 @@ class DashboardController extends Controller
 
     private function sectionCacheKey(string $section, int $userId, ?int $branchId, Carbon $from, Carbon $to): string
     {
-        return sprintf('dashboard:%s:v4:%s:%s:%s:%s', $section, $userId, $branchId ?? 'all', $from->toDateString(), $to->toDateString());
+        return sprintf('dashboard:%s:v5:%s:%s:%s:%s', $section, $userId, $branchId ?? 'all', $from->toDateString(), $to->toDateString());
     }
 }
