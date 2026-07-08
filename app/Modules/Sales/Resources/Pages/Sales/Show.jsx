@@ -4,7 +4,7 @@ import FormField from '../../../../Shared/Resources/Components/FormField';
 import SelectField from '../../../../Shared/Resources/Components/SelectField';
 import { Head, Link, router, useForm, usePage } from '@inertiajs/react';
 import { promptAction } from '@/Utils/alerts';
-import { useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 const PAPER_SIZES = {
     letter: { width: '216mm', page: 'letter' },
@@ -33,6 +33,9 @@ export default function Show({ sale, template, paymentMethods, conversionReadine
     const primary = layout.colors.primary;
     const secondary = layout.colors.secondary;
     const logoPath = template.use_branding ? branch.setting?.logo_path : layout.logo?.path;
+    const previewShellRef = useRef(null);
+    const previewPaperRef = useRef(null);
+    const [previewFrame, setPreviewFrame] = useState({ scale: 1, width: null, height: null });
     const paymentForm = useForm({
         sale_id: sale.id,
         payment_method_id: paymentMethods[0]?.id ?? '',
@@ -53,6 +56,41 @@ export default function Show({ sale, template, paymentMethods, conversionReadine
         });
         paymentForm.clearErrors();
     }, [sale.id]);
+
+    useEffect(() => {
+        const shell = previewShellRef.current;
+        const paperElement = previewPaperRef.current;
+
+        if (!shell || !paperElement) {
+            return undefined;
+        }
+
+        const updatePreviewSize = () => {
+            const availableWidth = shell.clientWidth;
+            const paperWidthPx = paperElement.offsetWidth;
+            const paperHeightPx = paperElement.offsetHeight;
+            const nextScale = paperWidthPx > 0 ? Math.min(1, availableWidth / paperWidthPx) : 1;
+
+            setPreviewFrame({
+                scale: nextScale,
+                width: paperWidthPx ? paperWidthPx * nextScale : null,
+                height: paperHeightPx ? paperHeightPx * nextScale : null,
+            });
+        };
+
+        updatePreviewSize();
+
+        const observer = new ResizeObserver(updatePreviewSize);
+        observer.observe(shell);
+        observer.observe(paperElement);
+
+        window.addEventListener('orientationchange', updatePreviewSize);
+
+        return () => {
+            observer.disconnect();
+            window.removeEventListener('orientationchange', updatePreviewSize);
+        };
+    }, [paperWidth, layout.margin_mm, layout.font_family, layout.font_size, sale.items.length, sections.length]);
 
     const submitPayment = (event) => {
         event.preventDefault();
@@ -81,7 +119,8 @@ export default function Show({ sale, template, paymentMethods, conversionReadine
                     body { background: #fff !important; }
                     nav, header, .print-hidden { display: none !important; }
                     main { padding: 0 !important; }
-                    .ticket-paper { box-shadow: none !important; margin: 0 auto !important; }
+                    .ticket-preview-shell, .ticket-preview-stage { display: contents !important; width: auto !important; height: auto !important; overflow: visible !important; }
+                    .ticket-paper { box-shadow: none !important; margin: 0 auto !important; transform: none !important; }
                     @page { margin: ${layout.margin_mm ?? 8}mm; size: ${paper.page}; }
                 }
             `}</style>
@@ -179,23 +218,35 @@ export default function Show({ sale, template, paymentMethods, conversionReadine
                     </section>
                 ) : null}
 
-                <article
-                    className="ticket-paper mx-auto max-w-full bg-white text-black shadow-lg"
-                    style={{
-                        width: paperWidth,
-                        padding: `${layout.margin_mm ?? 8}mm`,
-                        fontFamily: layout.font_family,
-                        fontSize: `${layout.font_size}px`,
-                        lineHeight: 1.18,
-                    }}
-                >
-                    {sale.status === 'void' ? (
-                        <div className="mb-3 border-2 border-red-600 py-2 text-center text-lg font-bold text-red-700">
-                            ANULADO
-                        </div>
-                    ) : null}
-                    {sections.map(renderSection)}
-                </article>
+                <div ref={previewShellRef} className="ticket-preview-shell mx-auto max-w-full overflow-hidden print:contents">
+                    <div
+                        className="ticket-preview-stage mx-auto print:contents"
+                        style={{
+                            width: previewFrame.width ? `${previewFrame.width}px` : paperWidth,
+                            height: previewFrame.height ? `${previewFrame.height}px` : 'auto',
+                        }}
+                    >
+                        <article
+                            ref={previewPaperRef}
+                            className="ticket-paper origin-top-left bg-white text-black shadow-lg"
+                            style={{
+                                width: paperWidth,
+                                padding: `${layout.margin_mm ?? 8}mm`,
+                                fontFamily: layout.font_family,
+                                fontSize: `${layout.font_size}px`,
+                                lineHeight: 1.18,
+                                transform: `scale(${previewFrame.scale})`,
+                            }}
+                        >
+                            {sale.status === 'void' ? (
+                                <div className="mb-3 border-2 border-red-600 py-2 text-center text-lg font-bold text-red-700">
+                                    ANULADO
+                                </div>
+                            ) : null}
+                            {sections.map(renderSection)}
+                        </article>
+                    </div>
+                </div>
 
                 <div className="print-hidden mx-auto mt-6 grid max-w-4xl gap-6 lg:grid-cols-[1fr_1fr]">
                     <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
