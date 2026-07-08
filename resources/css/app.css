@@ -5,6 +5,8 @@
 :root {
     --color-primary: 37 99 235;
     --color-secondary: 15 23 42;
+    --brand-primary: #2563eb;
+    --brand-secondary: #0f172a;
     --surface-alpha: 0.88;
     --surface-blur: 18px;
     --surface-border: rgb(255 255 255 / 0.68);

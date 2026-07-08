@@ -1,10 +1,16 @@
 import ApplicationLogo from '@/Components/ApplicationLogo';
 import { assetUrl } from '@/Utils/assets';
+import { applyBranding } from '@/Utils/branding';
 import { Link, usePage } from '@inertiajs/react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 export default function GuestLayout({ children }) {
     const { branding } = usePage().props;
+
+    useEffect(() => {
+        applyBranding(branding);
+    }, [branding?.primary, branding?.primaryRgb, branding?.secondary, branding?.secondaryRgb, branding?.logoPath, branding?.themeMode]);
+
     return (
         <div className="flex min-h-screen flex-col items-center bg-gray-100 pt-6 sm:justify-center sm:pt-0 dark:bg-gray-900">
             <div>

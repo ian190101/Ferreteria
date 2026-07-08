@@ -1,7 +1,8 @@
 import ApplicationLogo from '@/Components/ApplicationLogo';
 import AppearanceSwitch from '@/Components/AppearanceSwitch';
 import IconGlyph from '@/Components/Icon';
-import { assetUrl, updateFavicon } from '@/Utils/assets';
+import { assetUrl } from '@/Utils/assets';
+import { applyBranding } from '@/Utils/branding';
 import { Link, usePage } from '@inertiajs/react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { roleLabel } from '../../../app/Modules/Users/Resources/Utils/permissionLabels';
@@ -52,8 +53,8 @@ export default function AuthenticatedLayout({ header, children }) {
     }, [appearance]);
 
     useEffect(() => {
-        updateFavicon(assetUrl(branding?.logoPath));
-    }, [branding?.logoPath]);
+        applyBranding(branding, { applyAppearance: false });
+    }, [branding?.primary, branding?.primaryRgb, branding?.secondary, branding?.secondaryRgb, branding?.logoPath]);
 
     return (
         <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,rgb(var(--color-primary)/0.10),transparent_34rem),linear-gradient(180deg,#f8fafc,#eef2f7)] text-slate-900 dark:bg-[radial-gradient(circle_at_top_left,rgb(var(--color-primary)/0.22),transparent_32rem),linear-gradient(180deg,#020617,#0f172a)] dark:text-slate-100">
