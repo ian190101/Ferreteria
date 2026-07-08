@@ -90,16 +90,27 @@ class SaleReturnController extends Controller
             ]);
 
             $totalAmount = 0.0;
+            $validatedItems = collect($request->validated('items'));
+            $metersByItem = $validatedItems
+                ->groupBy('sale_item_id')
+                ->map(fn ($rows) => round((float) $rows->sum('meters'), 3));
+            $saleItems = SaleItem::query()
+                ->with('product:id,name,inventory_tracking_mode')
+                ->where('sale_id', $sale->id)
+                ->whereIn('id', $metersByItem->keys())
+                ->lockForUpdate()
+                ->get()
+                ->keyBy('id');
+            $returnedByItem = SaleReturnItem::query()
+                ->whereIn('sale_item_id', $metersByItem->keys())
+                ->selectRaw('sale_item_id, SUM(meters) as returned_meters')
+                ->groupBy('sale_item_id')
+                ->pluck('returned_meters', 'sale_item_id');
 
-            foreach ($request->validated('items') as $itemPayload) {
-                $saleItem = SaleItem::query()
-                    ->with('product:id,name,inventory_tracking_mode')
-                    ->where('sale_id', $sale->id)
-                    ->lockForUpdate()
-                    ->findOrFail($itemPayload['sale_item_id']);
-
+            foreach ($validatedItems as $itemPayload) {
+                $saleItem = $saleItems->get($itemPayload['sale_item_id']);
                 $meters = round((float) $itemPayload['meters'], 3);
-                $remainingMeters = $this->remainingMeters($saleItem);
+                $remainingMeters = max(round((float) $saleItem->meters - (float) ($returnedByItem[$saleItem->id] ?? 0), 3), 0);
 
                 if ($meters > $remainingMeters) {
                     throw ValidationException::withMessages([
@@ -174,15 +185,6 @@ class SaleReturnController extends Controller
             })
             ->filter(fn (array $item) => $item['remaining_meters'] > 0)
             ->values();
-    }
-
-    private function remainingMeters(SaleItem $saleItem): float
-    {
-        $returnedMeters = (float) SaleReturnItem::query()
-            ->where('sale_item_id', $saleItem->id)
-            ->sum('meters');
-
-        return max(round((float) $saleItem->meters - $returnedMeters, 3), 0);
     }
 
     private function proportionalDiscount(SaleItem $saleItem, float $meters): float

@@ -122,11 +122,12 @@ class PurchaseController extends Controller
                             'reserved_meters' => 0,
                         ]);
 
+                        $stock = ProductBranchStock::query()->whereKey($stock->id)->lockForUpdate()->firstOrFail();
                         $before = (float) $stock->available_meters;
-                        $stock->increment('available_meters', $item['meters']);
-                        $stock->refresh();
+                        $after = round($before + (float) $item['meters'], 3);
+                        $stock->update(['available_meters' => $after]);
 
-                        $this->movement($purchase, $product->id, null, $request->user()->id, $item['meters'], $before, (float) $stock->available_meters, 'purchase_entry_global');
+                        $this->movement($purchase, $product->id, null, $request->user()->id, $item['meters'], $before, $after, 'purchase_entry_global');
                     }
                 }
 

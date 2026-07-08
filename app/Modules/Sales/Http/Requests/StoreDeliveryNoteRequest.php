@@ -52,33 +52,47 @@ class StoreDeliveryNoteRequest extends FormRequest
             }
 
             $metersByItem = [];
+            $itemIds = collect($this->input('items', []))
+                ->pluck('sale_item_id')
+                ->filter()
+                ->map(fn ($id) => (int) $id)
+                ->unique()
+                ->values();
+            $saleItems = SaleItem::query()
+                ->where('sale_id', $sale->id)
+                ->whereIn('id', $itemIds)
+                ->get(['id', 'meters'])
+                ->keyBy('id');
 
             foreach ($this->input('items', []) as $index => $item) {
                 $itemId = (int) ($item['sale_item_id'] ?? 0);
                 $metersByItem[$itemId] = ($metersByItem[$itemId] ?? 0) + round((float) ($item['meters'] ?? 0), 3);
 
-                $saleItem = SaleItem::query()
-                    ->where('sale_id', $sale->id)
-                    ->find($itemId);
-
-                if (! $saleItem) {
+                if (! $saleItems->has($itemId)) {
                     $validator->errors()->add("items.{$index}.sale_item_id", 'El item no pertenece a la nota seleccionada.');
                 }
             }
 
+            $returnedByItem = SaleReturnItem::query()
+                ->whereIn('sale_item_id', array_keys($metersByItem))
+                ->selectRaw('sale_item_id, SUM(meters) as returned_meters')
+                ->groupBy('sale_item_id')
+                ->pluck('returned_meters', 'sale_item_id');
+            $deliveredByItem = DeliveryNoteItem::query()
+                ->whereIn('sale_item_id', array_keys($metersByItem))
+                ->selectRaw('sale_item_id, SUM(meters) as delivered_meters')
+                ->groupBy('sale_item_id')
+                ->pluck('delivered_meters', 'sale_item_id');
+
             foreach ($metersByItem as $itemId => $meters) {
-                $saleItem = SaleItem::query()->where('sale_id', $sale->id)->find($itemId);
+                $saleItem = $saleItems->get($itemId);
 
                 if (! $saleItem) {
                     continue;
                 }
 
-                $returned = (float) SaleReturnItem::query()
-                    ->where('sale_item_id', $itemId)
-                    ->sum('meters');
-                $delivered = (float) DeliveryNoteItem::query()
-                    ->where('sale_item_id', $itemId)
-                    ->sum('meters');
+                $returned = (float) ($returnedByItem[$itemId] ?? 0);
+                $delivered = (float) ($deliveredByItem[$itemId] ?? 0);
                 $availableToDeliver = max(round((float) $saleItem->meters - $returned - $delivered, 3), 0);
 
                 if ($meters > $availableToDeliver) {

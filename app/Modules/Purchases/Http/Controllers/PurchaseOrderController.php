@@ -64,7 +64,13 @@ class PurchaseOrderController extends Controller
     public function store(StorePurchaseOrderRequest $request): RedirectResponse
     {
         $order = DB::transaction(function () use ($request) {
-            $items = collect($request->validated('items'))->map(fn (array $item) => $this->normalizeItem($item));
+            $payloadItems = collect($request->validated('items'));
+            $products = Product::query()
+                ->with('thickness')
+                ->whereIn('id', $payloadItems->pluck('product_id')->unique()->values())
+                ->get(['id', 'thickness_id', 'name'])
+                ->keyBy('id');
+            $items = $payloadItems->map(fn (array $item) => $this->normalizeItem($item, $products));
             $status = $request->string('status')->toString();
 
             $order = PurchaseOrder::query()->create([
@@ -228,6 +234,9 @@ class PurchaseOrderController extends Controller
                 'line_total' => round($meters * (float) $orderItem->unit_cost, 2),
             ];
         });
+        $receivedMetersByItem = $normalizedItems
+            ->groupBy(fn (array $item) => $item['order_item']->id)
+            ->map(fn ($rows) => round((float) $rows->sum('meters'), 3));
 
         $totalAmount = $normalizedItems->sum('line_total');
         $receiptNumber = 'REC-'.$order->order_number.'-'.now()->format('YmdHis');
@@ -281,10 +290,11 @@ class PurchaseOrderController extends Controller
                     'reserved_meters' => 0,
                 ]);
 
+                $stock = ProductBranchStock::query()->whereKey($stock->id)->lockForUpdate()->firstOrFail();
                 $before = (float) $stock->available_meters;
-                $stock->increment('available_meters', $item['meters']);
-                $stock->refresh();
-                $this->movement($purchase, $orderItem->product_id, null, $user->id, $item['meters'], $before, (float) $stock->available_meters, 'purchase_order_receipt_global');
+                $after = round($before + (float) $item['meters'], 3);
+                $stock->update(['available_meters' => $after]);
+                $this->movement($purchase, $orderItem->product_id, null, $user->id, $item['meters'], $before, $after, 'purchase_order_receipt_global');
             }
 
             $purchaseItem = $purchase->items()->create([
@@ -317,7 +327,7 @@ class PurchaseOrderController extends Controller
             $orderItem->increment('received_meters', $item['meters']);
         }
 
-        $allReceived = $order->items()->get()->every(fn (PurchaseOrderItem $item) => (float) $item->received_meters >= (float) $item->meters);
+        $allReceived = $order->items->every(fn (PurchaseOrderItem $item) => ((float) $item->received_meters + (float) ($receivedMetersByItem[$item->id] ?? 0)) >= (float) $item->meters);
         $order->update([
             'status' => $allReceived ? PurchaseOrder::STATUS_CONVERTED : PurchaseOrder::STATUS_PARTIAL_RECEIVED,
             'converted_purchase_id' => $allReceived ? $purchase->id : $order->converted_purchase_id,
@@ -327,9 +337,9 @@ class PurchaseOrderController extends Controller
         return $purchase;
     }
 
-    private function normalizeItem(array $item): array
+    private function normalizeItem(array $item, $products): array
     {
-        $product = Product::query()->with('thickness')->findOrFail($item['product_id']);
+        $product = $products->get($item['product_id']);
         $kilograms = $this->normalizeKilograms($item);
         $meters = filled($item['meters'] ?? null) ? (float) $item['meters'] : null;
         $kgPerMeter = $product->thickness?->kg_per_meter;

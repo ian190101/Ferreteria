@@ -100,9 +100,7 @@ class PurchasePaymentController extends Controller
             $payment->update(['notes' => $notes]);
             $payment->delete();
 
-            $paidAmount = (float) PurchasePayment::query()
-                ->where('purchase_id', $purchase->id)
-                ->sum('amount');
+            $paidAmount = max(round((float) $purchase->paid_amount - (float) $payment->amount, 2), 0);
             $newBalance = max(round((float) $purchase->total_amount - $paidAmount, 2), 0);
 
             $purchase->update([

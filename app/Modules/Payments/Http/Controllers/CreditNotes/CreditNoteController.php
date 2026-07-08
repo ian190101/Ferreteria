@@ -6,7 +6,6 @@ use App\Http\Controllers\Controller;
 use App\Modules\Payments\Http\Requests\CreditNotes\StoreCreditNoteRequest;
 use App\Modules\Payments\Http\Requests\CreditNotes\VoidCreditNoteRequest;
 use App\Modules\Payments\Models\CreditNote;
-use App\Modules\Payments\Models\SalePayment;
 use App\Modules\Sales\Models\Sale;
 use App\Modules\Sales\Models\SaleReturn;
 use App\Support\BranchAccess;
@@ -121,7 +120,13 @@ class CreditNoteController extends Controller
             $creditNote->update(['notes' => $notes]);
             $creditNote->delete();
 
-            $this->recalculateSaleBalance($sale);
+            $totalToCollect = max(round((float) $sale->total, 2), 0);
+            $newBalance = min(max(round((float) $sale->balance_due + (float) $creditNote->amount, 2), 0), $totalToCollect);
+
+            $sale->update([
+                'balance_due' => $newBalance,
+                'status' => $this->statusForBalance($newBalance, $totalToCollect),
+            ]);
         });
 
         return redirect()->route('payments.credit-notes.index')->with('success', 'Nota de credito anulada correctamente.');
@@ -182,23 +187,6 @@ class CreditNoteController extends Controller
                 'amount' => 'La nota de credito supera el monto disponible de la devolucion.',
             ]);
         }
-    }
-
-    private function recalculateSaleBalance(Sale $sale): void
-    {
-        $activePayments = (float) SalePayment::query()
-            ->where('sale_id', $sale->id)
-            ->sum('amount');
-        $activeCredits = (float) CreditNote::query()
-            ->where('sale_id', $sale->id)
-            ->sum('amount');
-        $totalToCollect = max(round((float) $sale->total, 2), 0);
-        $newBalance = max(round($totalToCollect - $activePayments - $activeCredits, 2), 0);
-
-        $sale->update([
-            'balance_due' => $newBalance,
-            'status' => $this->statusForBalance($newBalance, $totalToCollect),
-        ]);
     }
 
     private function statusForBalance(float $balance, float $totalToCollect): string

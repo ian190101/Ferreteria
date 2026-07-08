@@ -155,9 +155,6 @@ class BankController extends Controller
             ]);
 
             $account->increment('current_balance', $delta);
-
-            // El saldo queda materializado para reportes rapidos; la auditoria guarda cada cambio critico.
-            $transaction->refresh();
         });
 
         $this->bumpSummaryCache();

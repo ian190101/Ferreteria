@@ -180,11 +180,18 @@ class CashRegisterController extends Controller
     private function attachBankTransactionsToSession(CashRegisterSession $session, $closedAt): void
     {
         $this->bankTransactionsInPeriod($session, $closedAt)
+            ->whereNull('cash_register_session_id')
             ->get()
             ->each(fn (BankTransaction $transaction) => $transaction->update([
-                'cash_register_session_id' => $transaction->cash_register_session_id ?: $session->id,
+                'cash_register_session_id' => $session->id,
                 'reconciled_at' => $transaction->reconciled_at ?: now(),
             ]));
+
+        $this->bankTransactionsInPeriod($session, $closedAt)
+            ->where('cash_register_session_id', $session->id)
+            ->whereNull('reconciled_at')
+            ->get()
+            ->each(fn (BankTransaction $transaction) => $transaction->update(['reconciled_at' => now()]));
     }
 
     private function bankTransactionsForSession(CashRegisterSession $session, $closedAt)

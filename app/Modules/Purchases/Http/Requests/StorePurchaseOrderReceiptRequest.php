@@ -32,8 +32,14 @@ class StorePurchaseOrderReceiptRequest extends FormRequest
     {
         $validator->after(function ($validator) {
             $hasQuantity = false;
+            $items = collect($this->input('items', []));
+            $orderItems = PurchaseOrderItem::query()
+                ->with('product:id,inventory_tracking_mode')
+                ->whereIn('id', $items->pluck('purchase_order_item_id')->filter()->unique()->values())
+                ->get(['id', 'product_id', 'meters', 'received_meters'])
+                ->keyBy('id');
 
-            foreach ($this->input('items', []) as $index => $item) {
+            foreach ($items as $index => $item) {
                 $meters = (float) ($item['meters'] ?? 0);
 
                 if ($meters <= 0) {
@@ -41,7 +47,7 @@ class StorePurchaseOrderReceiptRequest extends FormRequest
                 }
 
                 $hasQuantity = true;
-                $orderItem = PurchaseOrderItem::query()->with('product')->find($item['purchase_order_item_id'] ?? null);
+                $orderItem = $orderItems->get($item['purchase_order_item_id'] ?? null);
 
                 if (! $orderItem) {
                     continue;

@@ -76,7 +76,7 @@ class PaymentController extends Controller
                 'notes' => $request->string('notes')->toString() ?: null,
             ]);
 
-            $newBalance = max(round((float) $sale->total - $this->activePaidAmount($sale->id) - $this->activeCreditAmount($sale->id), 2), 0);
+            $newBalance = max(round((float) $sale->balance_due - $amount, 2), 0);
             $sale->update([
                 'balance_due' => $newBalance,
                 'status' => $newBalance <= 0 ? 'paid' : 'partial_paid',
@@ -109,14 +109,12 @@ class PaymentController extends Controller
             $payment->update(['notes' => $notes]);
             $payment->delete();
 
-            $activePayments = (float) SalePayment::query()
-                ->where('sale_id', $sale->id)
-                ->sum('amount');
             $activeCredits = (float) CreditNote::query()
                 ->where('sale_id', $sale->id)
                 ->sum('amount');
             $totalToCollect = max(round((float) $sale->total, 2), 0);
-            $newBalance = max(round($totalToCollect - $activePayments - $activeCredits, 2), 0);
+            $newBalance = max(round((float) $sale->balance_due + (float) $payment->amount, 2), 0);
+            $newBalance = min($newBalance, max(round($totalToCollect - $activeCredits, 2), 0));
 
             $sale->update([
                 'balance_due' => $newBalance,
@@ -134,19 +132,5 @@ class PaymentController extends Controller
         }
 
         return $balance < $totalToCollect ? 'partial_paid' : 'issued';
-    }
-
-    private function activePaidAmount(int $saleId): float
-    {
-        return (float) SalePayment::query()
-            ->where('sale_id', $saleId)
-            ->sum('amount');
-    }
-
-    private function activeCreditAmount(int $saleId): float
-    {
-        return (float) CreditNote::query()
-            ->where('sale_id', $saleId)
-            ->sum('amount');
     }
 }

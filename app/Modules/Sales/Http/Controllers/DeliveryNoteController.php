@@ -96,14 +96,38 @@ class DeliveryNoteController extends Controller
             ]);
 
             $totalMeters = 0.0;
+            $validatedItems = collect($request->validated('items'));
+            $metersByItem = $validatedItems
+                ->groupBy('sale_item_id')
+                ->map(fn ($rows) => round((float) $rows->sum('meters'), 3));
+            $saleItems = SaleItem::query()
+                ->where('sale_id', $sale->id)
+                ->lockForUpdate()
+                ->get()
+                ->keyBy('id');
+            $returnedByItem = SaleReturnItem::query()
+                ->whereIn('sale_item_id', $saleItems->keys())
+                ->selectRaw('sale_item_id, SUM(meters) as returned_meters')
+                ->groupBy('sale_item_id')
+                ->pluck('returned_meters', 'sale_item_id');
+            $deliveredByItem = DeliveryNoteItem::query()
+                ->whereIn('sale_item_id', $saleItems->keys())
+                ->selectRaw('sale_item_id, SUM(meters) as delivered_meters')
+                ->groupBy('sale_item_id')
+                ->pluck('delivered_meters', 'sale_item_id');
+            $pendingByItem = $saleItems->mapWithKeys(fn (SaleItem $saleItem) => [
+                $saleItem->id => max(round(
+                    (float) $saleItem->meters
+                    - (float) ($returnedByItem[$saleItem->id] ?? 0)
+                    - (float) ($deliveredByItem[$saleItem->id] ?? 0),
+                    3
+                ), 0),
+            ]);
 
-            foreach ($request->validated('items') as $itemPayload) {
-                $saleItem = SaleItem::query()
-                    ->where('sale_id', $sale->id)
-                    ->lockForUpdate()
-                    ->findOrFail($itemPayload['sale_item_id']);
+            foreach ($validatedItems as $itemPayload) {
+                $saleItem = $saleItems->get($itemPayload['sale_item_id']);
                 $meters = round((float) $itemPayload['meters'], 3);
-                $pendingMeters = $this->pendingMeters($saleItem);
+                $pendingMeters = (float) ($pendingByItem[$saleItem->id] ?? 0);
 
                 if ($meters > $pendingMeters) {
                     throw ValidationException::withMessages([
@@ -119,11 +143,12 @@ class DeliveryNoteController extends Controller
                 ]);
 
                 $totalMeters += $meters;
+                $pendingByItem[$saleItem->id] = max(round($pendingMeters - $meters, 3), 0);
             }
 
             $delivery->update([
                 'total_meters' => round($totalMeters, 3),
-                'status' => $this->saleIsFullyDelivered($sale) ? 'completed' : 'partial',
+                'status' => $pendingByItem->every(fn (float $pending) => $pending <= 0) ? 'completed' : 'partial',
             ]);
             $sale->update([
                 'internal_notes' => trim(implode("\n", array_filter([
@@ -176,25 +201,5 @@ class DeliveryNoteController extends Controller
             })
             ->filter(fn (array $item) => $item['pending_meters'] > 0)
             ->values();
-    }
-
-    private function pendingMeters(SaleItem $saleItem): float
-    {
-        $returnedMeters = (float) SaleReturnItem::query()
-            ->where('sale_item_id', $saleItem->id)
-            ->sum('meters');
-        $deliveredMeters = (float) DeliveryNoteItem::query()
-            ->where('sale_item_id', $saleItem->id)
-            ->sum('meters');
-
-        return max(round((float) $saleItem->meters - $returnedMeters - $deliveredMeters, 3), 0);
-    }
-
-    private function saleIsFullyDelivered(Sale $sale): bool
-    {
-        return SaleItem::query()
-            ->where('sale_id', $sale->id)
-            ->get()
-            ->every(fn (SaleItem $item) => $this->pendingMeters($item) <= 0);
     }
 }
