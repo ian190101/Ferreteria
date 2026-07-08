@@ -7,10 +7,10 @@ use App\Models\User;
 use App\Modules\Branches\Models\Branch;
 use App\Modules\Users\Http\Requests\StoreUserRequest;
 use App\Modules\Users\Http\Requests\UpdateUserRequest;
+use App\Support\AuthSessionCache;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
-use Illuminate\Support\Facades\Cache;
 use Inertia\Inertia;
 use Inertia\Response;
 use Spatie\Permission\Models\Role;
@@ -140,7 +140,6 @@ class UserController extends Controller
 
     private function bumpAuthCacheVersion(): void
     {
-        Cache::forever('inertia-auth-version', now()->timestamp);
-        Cache::forget('permissions:all-names');
+        AuthSessionCache::bump();
     }
 }

@@ -19,8 +19,10 @@ class UserHomeRoute
             'reports.view' => 'reports.index',
         ];
 
+        $permissions = $user ? AuthSessionCache::permissionNamesFor($user) : [];
+
         foreach ($routesByPermission as $permission => $route) {
-            if ($user?->can($permission)) {
+            if (in_array($permission, $permissions, true)) {
                 return $route;
             }
         }

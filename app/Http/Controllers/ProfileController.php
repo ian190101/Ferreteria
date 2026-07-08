@@ -3,11 +3,11 @@
 namespace App\Http\Controllers;
 
 use App\Http\Requests\ProfileUpdateRequest;
+use App\Support\AuthSessionCache;
 use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Redirect;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -37,8 +37,7 @@ class ProfileController extends Controller
         }
 
         $request->user()->save();
-        Cache::forever('inertia-auth-version', now()->timestamp);
-        Cache::forget('permissions:all-names');
+        AuthSessionCache::bump();
 
         return Redirect::route('profile.edit');
     }

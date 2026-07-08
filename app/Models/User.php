@@ -4,6 +4,7 @@ namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
 use App\Modules\Branches\Models\Branch;
+use App\Support\AuthSessionCache;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -75,7 +76,7 @@ class User extends Authenticatable implements Auditable
 
     public function isSuperAdministrator(): bool
     {
-        return $this->hasRole('superadmin');
+        return AuthSessionCache::isSuperAdministrator($this);
     }
 
     /**
@@ -85,19 +86,6 @@ class User extends Authenticatable implements Auditable
      */
     public function accessibleBranchIds(): array
     {
-        $branchIds = collect([$this->branch_id]);
-
-        if ($this->relationLoaded('accessibleBranches')) {
-            $branchIds = $branchIds->merge($this->accessibleBranches->pluck('id'));
-        } else {
-            $branchIds = $branchIds->merge($this->accessibleBranches()->pluck('branches.id'));
-        }
-
-        return $branchIds
-            ->filter()
-            ->unique()
-            ->map(fn ($id) => (int) $id)
-            ->values()
-            ->all();
+        return AuthSessionCache::accessibleBranchIdsFor($this);
     }
 }

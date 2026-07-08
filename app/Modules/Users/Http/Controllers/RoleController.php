@@ -5,9 +5,9 @@ namespace App\Modules\Users\Http\Controllers;
 use App\Http\Controllers\Controller;
 use App\Modules\Users\Http\Requests\StoreRoleRequest;
 use App\Modules\Users\Http\Requests\UpdateRoleRequest;
+use App\Support\AuthSessionCache;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Cache;
 use Inertia\Inertia;
 use Inertia\Response;
 use Spatie\Permission\Models\Permission;
@@ -95,7 +95,6 @@ class RoleController extends Controller
 
     private function bumpAuthCacheVersion(): void
     {
-        Cache::forever('inertia-auth-version', now()->timestamp);
-        Cache::forget('permissions:all-names');
+        AuthSessionCache::bump();
     }
 }

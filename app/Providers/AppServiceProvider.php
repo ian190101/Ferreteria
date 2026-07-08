@@ -41,6 +41,7 @@ use App\Modules\Sales\Models\ReceiptTemplate;
 use App\Modules\Sales\Models\Sale;
 use App\Modules\Sales\Models\SaleReturn;
 use App\Modules\Sales\Models\SaleType;
+use App\Support\AuthSessionCache;
 use App\Support\SystemCacheInvalidator;
 use App\Support\UiCatalogCache;
 use Illuminate\Support\Facades\Gate;
@@ -64,7 +65,7 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         Gate::before(function (User $user, string $ability) {
-            return $user->hasRole('superadmin') ? true : null;
+            return AuthSessionCache::isSuperAdministrator($user) ? true : null;
         });
 
         if (str_starts_with((string) config('app.url'), 'https://')) {
