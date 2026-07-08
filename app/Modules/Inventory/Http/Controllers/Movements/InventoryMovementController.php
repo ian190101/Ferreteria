@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Modules\Inventory\Models\InventoryMovement;
 use App\Modules\Inventory\Models\ProductCoil;
 use App\Support\BranchAccess;
+use App\Support\SystemCacheInvalidator;
 use App\Support\UiCatalogCache;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -47,13 +48,13 @@ class InventoryMovementController extends Controller
             'movements' => $movements,
             'branches' => UiCatalogCache::activeBranchesForUser($request->user()),
             'products' => Inertia::defer(fn () => UiCatalogCache::activeProducts(['id', 'name', 'sku']), 'kardex-catalogs'),
-            'coils' => Inertia::defer(fn () => Cache::remember("kardex-coils:v1:{$request->user()->id}", now()->addSeconds(60), fn () => ProductCoil::query()
+            'coils' => Inertia::defer(fn () => Cache::remember('kardex-coils:v2:'.SystemCacheInvalidator::operationalVersion().":{$request->user()->id}", now()->addSeconds(60), fn () => ProductCoil::query()
                 ->when(true, fn ($query) => BranchAccess::apply($query, $request->user()))
                 ->where('status', 'available')
                 ->orderByDesc('id')
                 ->limit(500)
                 ->get(['id', 'branch_id', 'product_id', 'barcode', 'lot_number', 'available_meters'])), 'kardex-catalogs'),
-            'types' => Inertia::defer(fn () => Cache::remember('kardex-types:v1', now()->addMinutes(10), fn () => InventoryMovement::query()->select('type')->distinct()->orderBy('type')->pluck('type')), 'kardex-catalogs'),
+            'types' => Inertia::defer(fn () => Cache::remember('kardex-types:v2:'.SystemCacheInvalidator::operationalVersion(), now()->addMinutes(10), fn () => InventoryMovement::query()->select('type')->distinct()->orderBy('type')->pluck('type')), 'kardex-catalogs'),
             'filters' => $request->only(['branch_id', 'product_id', 'product_coil_id', 'type', 'from', 'to', 'per_page']),
         ]);
     }

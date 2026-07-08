@@ -25,7 +25,7 @@ class UiCatalogCache
 
     public static function activeBranches(array $columns = ['id', 'name'])
     {
-        return self::remember('branches:'.implode(',', $columns), fn () => Branch::query()
+        return self::remember('branches:'.SystemCacheInvalidator::operationalVersion().':'.implode(',', $columns), fn () => Branch::query()
             ->where('is_active', true)
             ->orderBy('name')
             ->get($columns));
@@ -41,7 +41,7 @@ class UiCatalogCache
         $branchIds = $user->accessibleBranchIds() ?: [-1];
 
         return self::remember(
-            'branches-user:'.$user->id.':v'.$version.':'.implode(',', $columns).':'.implode(',', $branchIds),
+            'branches-user:'.SystemCacheInvalidator::operationalVersion().':'.$user->id.':v'.$version.':'.implode(',', $columns).':'.implode(',', $branchIds),
             fn () => Branch::query()
                 ->where('is_active', true)
                 ->whereIn('id', $branchIds)
@@ -115,7 +115,7 @@ class UiCatalogCache
 
     public static function availableCoils(int $limit = 500)
     {
-        return Cache::remember("ui-catalog:available-coils:{$limit}", now()->addSeconds(30), fn () => ProductCoil::query()
+        return Cache::remember('ui-catalog:available-coils:'.SystemCacheInvalidator::operationalVersion().":{$limit}", now()->addSeconds(30), fn () => ProductCoil::query()
             ->where('status', 'available')
             ->orderByDesc('id')
             ->limit($limit)
@@ -124,7 +124,7 @@ class UiCatalogCache
 
     public static function activeSuppliers()
     {
-        return self::remember('suppliers', fn () => Supplier::query()
+        return self::remember('suppliers:'.SystemCacheInvalidator::operationalVersion(), fn () => Supplier::query()
             ->where('is_active', true)
             ->orderBy('name')
             ->get(['id', 'name']));
@@ -181,7 +181,7 @@ class UiCatalogCache
 
     public static function recentCustomers(int $limit = 100)
     {
-        return Cache::remember("ui-catalog:recent-customers:{$limit}", now()->addMinutes(5), fn () => Customer::query()
+        return Cache::remember('ui-catalog:recent-customers:'.SystemCacheInvalidator::operationalVersion().":{$limit}", now()->addMinutes(5), fn () => Customer::query()
             ->where('is_active', true)
             ->with('type:id,name')
             ->orderBy('name')

@@ -12,6 +12,7 @@ use App\Modules\Payments\Models\PurchasePayment;
 use App\Modules\Production\Models\ProductionOrder;
 use App\Modules\Purchases\Models\Purchase;
 use App\Modules\Sales\Models\Sale;
+use App\Support\SystemCacheInvalidator;
 use App\Support\UiCatalogCache;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
@@ -43,7 +44,8 @@ class DashboardController extends Controller
         abort_if($branchId && ! in_array($branchId, $allowedBranchIds, true), 403);
 
         $baseCacheKey = sprintf(
-            'dashboard:base:v5:%s:%s:%s:%s',
+            'dashboard:base:v6:%s:%s:%s:%s:%s',
+            SystemCacheInvalidator::operationalVersion(),
             $user->id,
             $branchId ?? 'all',
             $from->toDateString(),
@@ -686,6 +688,6 @@ class DashboardController extends Controller
 
     private function sectionCacheKey(string $section, int $userId, ?int $branchId, Carbon $from, Carbon $to): string
     {
-        return sprintf('dashboard:%s:v5:%s:%s:%s:%s', $section, $userId, $branchId ?? 'all', $from->toDateString(), $to->toDateString());
+        return sprintf('dashboard:%s:v6:%s:%s:%s:%s:%s', $section, SystemCacheInvalidator::operationalVersion(), $userId, $branchId ?? 'all', $from->toDateString(), $to->toDateString());
     }
 }

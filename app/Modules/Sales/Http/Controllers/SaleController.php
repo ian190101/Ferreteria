@@ -19,6 +19,7 @@ use App\Modules\Sales\Models\ReceiptTemplate;
 use App\Modules\Sales\Models\Sale;
 use App\Modules\Sales\Models\SaleItem;
 use App\Support\BranchAccess;
+use App\Support\SystemCacheInvalidator;
 use App\Support\UiCatalogCache;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -750,7 +751,7 @@ class SaleController extends Controller
 
     private function availableCoils(Request $request)
     {
-        return Cache::remember("sales-available-coils:v1:{$request->user()->id}", now()->addSeconds(self::CACHE_SECONDS), fn () => ProductCoil::query()
+        return Cache::remember('sales-available-coils:v2:'.SystemCacheInvalidator::operationalVersion().":{$request->user()->id}", now()->addSeconds(self::CACHE_SECONDS), fn () => ProductCoil::query()
             ->when(true, fn ($query) => BranchAccess::apply($query, $request->user()))
             ->where('status', 'available')
             ->orderByDesc('id')

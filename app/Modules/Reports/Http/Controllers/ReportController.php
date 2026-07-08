@@ -10,6 +10,7 @@ use App\Modules\Payments\Models\PaymentPromise;
 use App\Modules\Purchases\Models\Purchase;
 use App\Modules\Sales\Models\Sale;
 use App\Support\BranchAccess;
+use App\Support\SystemCacheInvalidator;
 use App\Support\UiCatalogCache;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -30,7 +31,8 @@ class ReportController extends Controller
         abort_if($branchId && ! BranchAccess::canAccess($user, $branchId), 403);
 
         $cacheKey = sprintf(
-            'reports:dashboard:v2:%s:%s:%s:%s',
+            'reports:dashboard:v3:%s:%s:%s:%s:%s',
+            SystemCacheInvalidator::operationalVersion(),
             $user->id,
             $branchId ?? 'all',
             $from->toDateString(),
@@ -98,7 +100,7 @@ class ReportController extends Controller
 
     private function sectionCacheKey(string $section, int $userId, ?int $branchId, Carbon $from, Carbon $to): string
     {
-        return sprintf('reports:%s:v2:%s:%s:%s:%s', $section, $userId, $branchId ?? 'all', $from->toDateString(), $to->toDateString());
+        return sprintf('reports:%s:v3:%s:%s:%s:%s:%s', $section, SystemCacheInvalidator::operationalVersion(), $userId, $branchId ?? 'all', $from->toDateString(), $to->toDateString());
     }
 
     private function salesQuery(Carbon $from, Carbon $to, ?int $branchId)
