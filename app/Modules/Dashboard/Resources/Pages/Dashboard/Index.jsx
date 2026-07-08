@@ -15,7 +15,7 @@ const numberFormatter = new Intl.NumberFormat('es-BO', {
 
 export default function Index({
     scope,
-    metrics,
+    metrics = {},
     recentSales = [],
     pendingReceivables = [],
     lowStocks = [],
@@ -34,6 +34,7 @@ export default function Index({
         filterForm.get(route('dashboard'), { preserveScroll: true, preserveState: true });
     };
     const clearFilters = () => router.get(route('dashboard'));
+    const isMetricsLoading = Object.keys(metrics).length === 0;
     const visibleMetrics = [
         metric('Ventas del rango', money(metrics.sales_range_total), `${metrics.sales_range_count ?? 0} documentos`, metrics.sales_range_total, 'default', 'sales'),
         metric('Por cobrar', money(metrics.receivables_total), `${metrics.receivables_count ?? 0} notas pendientes`, metrics.receivables_total, 'warning', 'receivables'),
@@ -80,9 +81,11 @@ export default function Index({
                 </form>
 
                 <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-                    {visibleMetrics.map((item) => (
-                        <MetricCard key={item.title} item={item} />
-                    ))}
+                    {isMetricsLoading
+                        ? Array.from({ length: 4 }).map((_, index) => <MetricSkeleton key={index} />)
+                        : visibleMetrics.map((item) => (
+                            <MetricCard key={item.title} item={item} />
+                        ))}
                 </div>
 
                 <div className="mt-6 grid gap-6 xl:grid-cols-[1.2fr_1fr]">
@@ -534,6 +537,19 @@ function MetricCard({ item }) {
             </div>
             <p className="mt-4 text-2xl font-semibold text-slate-950 dark:text-slate-50">{item.value}</p>
             <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{item.detail}</p>
+        </article>
+    );
+}
+
+function MetricSkeleton() {
+    return (
+        <article className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900" aria-label="Cargando metrica">
+            <div className="flex items-start justify-between gap-3">
+                <span className="h-4 w-28 animate-pulse rounded bg-slate-200 dark:bg-slate-800" />
+                <span className="h-10 w-10 animate-pulse rounded-2xl bg-slate-200 dark:bg-slate-800" />
+            </div>
+            <span className="mt-5 block h-7 w-32 animate-pulse rounded bg-slate-200 dark:bg-slate-800" />
+            <span className="mt-3 block h-4 w-24 animate-pulse rounded bg-slate-200 dark:bg-slate-800" />
         </article>
     );
 }

@@ -12,6 +12,7 @@ use App\Modules\Payments\Models\PurchasePayment;
 use App\Modules\Production\Models\ProductionOrder;
 use App\Modules\Purchases\Models\Purchase;
 use App\Modules\Sales\Models\Sale;
+use App\Support\AuthSessionCache;
 use App\Support\SystemCacheInvalidator;
 use App\Support\UiCatalogCache;
 use Illuminate\Database\Eloquent\Builder;
@@ -43,29 +44,24 @@ class DashboardController extends Controller
 
         abort_if($branchId && ! in_array($branchId, $allowedBranchIds, true), 403);
 
-        $baseCacheKey = sprintf(
-            'dashboard:base:v6:%s:%s:%s:%s:%s',
-            SystemCacheInvalidator::operationalVersion(),
-            $user->id,
-            $branchId ?? 'all',
-            $from->toDateString(),
-            $to->toDateString(),
-        );
+        $permissions = AuthSessionCache::permissionNamesFor($user);
 
-        $payload = Cache::remember($baseCacheKey, now()->addSeconds(self::CACHE_SECONDS), function () use ($user, $branchId, $allowedBranchIds, $from, $to, $today, $branches) {
-            return [
-                'scope' => [
-                    'branch_id' => $branchId,
-                    'label' => $branchId
-                        ? ($branches->firstWhere('id', $branchId)?->name ?? 'Sucursal seleccionada')
-                        : 'Todas las sucursales permitidas',
-                    'date' => $today->toDateString(),
-                    'from' => $from->toDateString(),
-                    'to' => $to->toDateString(),
-                ],
-                'metrics' => $this->metrics($user, $branchId, $allowedBranchIds, $from, $to, $today),
-            ];
-        });
+        $payload = [
+            'scope' => [
+                'branch_id' => $branchId,
+                'label' => $branchId
+                    ? ($branches->firstWhere('id', $branchId)?->name ?? 'Sucursal seleccionada')
+                    : 'Todas las sucursales permitidas',
+                'date' => $today->toDateString(),
+                'from' => $from->toDateString(),
+                'to' => $to->toDateString(),
+            ],
+        ];
+
+        $payload['metrics'] = Inertia::defer(
+            fn () => Cache::remember($this->sectionCacheKey('metrics', $user->id, $branchId, $from, $to), now()->addSeconds(self::CACHE_SECONDS), fn () => $this->metrics($permissions, $branchId, $allowedBranchIds, $from, $to, $today)),
+            'dashboard-metrics',
+        );
 
         $payload['recentSales'] = Inertia::defer(
             fn () => Cache::remember($this->sectionCacheKey('recent-sales', $user->id, $branchId, $from, $to), now()->addSeconds(self::CACHE_SECONDS), fn () => $this->recentSales($user, $branchId, $allowedBranchIds, $from, $to)),
@@ -97,23 +93,23 @@ class DashboardController extends Controller
         return Inertia::render('Dashboard/Index', $payload);
     }
 
-    private function metrics($user, ?int $branchId, array $branchIds, Carbon $from, Carbon $to, Carbon $today): array
+    private function metrics(array $permissions, ?int $branchId, array $branchIds, Carbon $from, Carbon $to, Carbon $today): array
     {
         return [
-            'sales_range_total' => $user->can('sales.view') ? (float) $this->salesQuery($branchId, $branchIds)->whereBetween('sold_at', [$from, $to])->sum('total') : null,
-            'sales_range_count' => $user->can('sales.view') ? $this->salesQuery($branchId, $branchIds)->whereBetween('sold_at', [$from, $to])->count() : null,
-            'receivables_total' => $user->can('payments.view') ? (float) $this->receivablesQuery($branchId, $branchIds)->sum('balance_due') : null,
-            'receivables_count' => $user->can('payments.view') ? $this->receivablesQuery($branchId, $branchIds)->count() : null,
-            'open_cash_count' => $user->can('cash.view') ? $this->cashQuery($branchId, $branchIds)->count() : null,
-            'payment_promises_overdue_count' => $user->can('payment-promises.view') ? $this->paymentPromisesQuery($branchId, $branchIds)->whereDate('promised_date', '<', $today)->count() : null,
-            'payment_promises_today_count' => $user->can('payment-promises.view') ? $this->paymentPromisesQuery($branchId, $branchIds)->whereDate('promised_date', $today)->count() : null,
-            'low_stock_count' => $user->can('inventory.products.view') ? $this->lowStockQuery($branchId, $branchIds)->count() : null,
-            'active_coils' => $user->can('inventory.coils.manage') ? $this->coilQuery($branchId, $branchIds)->where('status', 'available')->count() : null,
-            'production_range_count' => $user->can('production.view') ? $this->productionQuery($branchId, $branchIds)->whereBetween('produced_at', [$from, $to])->count() : null,
-            'purchases_range_total' => $user->can('purchases.view') ? (float) $this->purchaseQuery($branchId, $branchIds)->whereBetween('purchase_date', [$from->toDateString(), $to->toDateString()])->sum('total_amount') : null,
-            'purchase_payments_range_total' => $user->can('purchases.view') ? (float) $this->purchasePaymentsQuery($branchId, $branchIds)->whereBetween('paid_at', [$from, $to])->sum('amount') : null,
-            'expenses_range_total' => $user->can('expenses.view') ? (float) $this->expenseQuery($branchId, $branchIds)->whereBetween('spent_at', [$from, $to])->sum('amount') : null,
-            'profit_range_total' => $user->can('payments.view') || $user->can('purchases.view') || $user->can('expenses.view') ? $this->profitForRange($user, $branchId, $branchIds, $from, $to) : null,
+            'sales_range_total' => $this->can($permissions, 'sales.view') ? (float) $this->salesQuery($branchId, $branchIds)->whereBetween('sold_at', [$from, $to])->sum('total') : null,
+            'sales_range_count' => $this->can($permissions, 'sales.view') ? $this->salesQuery($branchId, $branchIds)->whereBetween('sold_at', [$from, $to])->count() : null,
+            'receivables_total' => $this->can($permissions, 'payments.view') ? (float) $this->receivablesQuery($branchId, $branchIds)->sum('balance_due') : null,
+            'receivables_count' => $this->can($permissions, 'payments.view') ? $this->receivablesQuery($branchId, $branchIds)->count() : null,
+            'open_cash_count' => $this->can($permissions, 'cash.view') ? $this->cashQuery($branchId, $branchIds)->count() : null,
+            'payment_promises_overdue_count' => $this->can($permissions, 'payment-promises.view') ? $this->paymentPromisesQuery($branchId, $branchIds)->whereDate('promised_date', '<', $today)->count() : null,
+            'payment_promises_today_count' => $this->can($permissions, 'payment-promises.view') ? $this->paymentPromisesQuery($branchId, $branchIds)->whereDate('promised_date', $today)->count() : null,
+            'low_stock_count' => $this->can($permissions, 'inventory.products.view') ? $this->lowStockQuery($branchId, $branchIds)->count() : null,
+            'active_coils' => $this->can($permissions, 'inventory.coils.manage') ? $this->coilQuery($branchId, $branchIds)->where('status', 'available')->count() : null,
+            'production_range_count' => $this->can($permissions, 'production.view') ? $this->productionQuery($branchId, $branchIds)->whereBetween('produced_at', [$from, $to])->count() : null,
+            'purchases_range_total' => $this->can($permissions, 'purchases.view') ? (float) $this->purchaseQuery($branchId, $branchIds)->whereBetween('purchase_date', [$from->toDateString(), $to->toDateString()])->sum('total_amount') : null,
+            'purchase_payments_range_total' => $this->can($permissions, 'purchases.view') ? (float) $this->purchasePaymentsQuery($branchId, $branchIds)->whereBetween('paid_at', [$from, $to])->sum('amount') : null,
+            'expenses_range_total' => $this->can($permissions, 'expenses.view') ? (float) $this->expenseQuery($branchId, $branchIds)->whereBetween('spent_at', [$from, $to])->sum('amount') : null,
+            'profit_range_total' => $this->canAny($permissions, ['payments.view', 'purchases.view', 'expenses.view']) ? $this->profitForRange($permissions, $branchId, $branchIds, $from, $to) : null,
         ];
     }
 
@@ -324,9 +320,9 @@ class DashboardController extends Controller
         })->values()->all();
     }
 
-    private function profitForRange($user, ?int $branchId, array $branchIds, Carbon $from, Carbon $to): float
+    private function profitForRange(array $permissions, ?int $branchId, array $branchIds, Carbon $from, Carbon $to): float
     {
-        $income = $user->can('payments.view')
+        $income = $this->can($permissions, 'payments.view')
             ? DB::table('sale_payments')
                 ->whereNull('sale_payments.deleted_at')
                 ->when(true, fn ($query) => $this->applyBranchScope($query, $branchId, $branchIds, 'sale_payments.branch_id'))
@@ -334,7 +330,7 @@ class DashboardController extends Controller
                 ->sum('sale_payments.amount_bob')
             : 0;
 
-        $expenses = $user->can('expenses.view')
+        $expenses = $this->can($permissions, 'expenses.view')
             ? DB::table('expenses')
                 ->whereNull('expenses.deleted_at')
                 ->where('expenses.status', Expense::STATUS_REGISTERED)
@@ -343,7 +339,7 @@ class DashboardController extends Controller
                 ->sum('expenses.amount')
             : 0;
 
-        $purchasePayments = $user->can('purchases.view')
+        $purchasePayments = $this->can($permissions, 'purchases.view')
             ? DB::table('purchase_payments')
                 ->whereNull('purchase_payments.deleted_at')
                 ->when(true, fn ($query) => $this->applyBranchScope($query, $branchId, $branchIds, 'purchase_payments.branch_id'))
@@ -688,6 +684,19 @@ class DashboardController extends Controller
 
     private function sectionCacheKey(string $section, int $userId, ?int $branchId, Carbon $from, Carbon $to): string
     {
-        return sprintf('dashboard:%s:v6:%s:%s:%s:%s:%s', $section, SystemCacheInvalidator::operationalVersion(), $userId, $branchId ?? 'all', $from->toDateString(), $to->toDateString());
+        return sprintf('dashboard:%s:v7:%s:%s:%s:%s:%s:%s', $section, SystemCacheInvalidator::operationalVersion(), AuthSessionCache::version(), $userId, $branchId ?? 'all', $from->toDateString(), $to->toDateString());
+    }
+
+    private function can(array $permissions, string $permission): bool
+    {
+        return in_array($permission, $permissions, true);
+    }
+
+    /**
+     * Evita llamadas repetidas al Gate en agregaciones del panel; el permiso ya viene cacheado por sesion.
+     */
+    private function canAny(array $permissions, array $required): bool
+    {
+        return count(array_intersect($required, $permissions)) > 0;
     }
 }
