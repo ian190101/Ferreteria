@@ -50,8 +50,15 @@ class StorePurchaseRequest extends FormRequest
                 return;
             }
 
-            foreach ($this->input('items', []) as $index => $item) {
-                $product = Product::query()->with('thickness')->find($item['product_id'] ?? null);
+            $items = collect($this->input('items', []));
+            $products = Product::query()
+                ->with('thickness:id')
+                ->whereIn('id', $items->pluck('product_id')->filter()->unique()->values())
+                ->get(['id', 'thickness_id', 'inventory_tracking_mode'])
+                ->keyBy('id');
+
+            foreach ($items as $index => $item) {
+                $product = $products->get($item['product_id'] ?? null);
 
                 if (! $product) {
                     continue;

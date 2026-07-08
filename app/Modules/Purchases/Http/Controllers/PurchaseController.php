@@ -51,10 +51,15 @@ class PurchaseController extends Controller
     public function store(StorePurchaseRequest $request): RedirectResponse
     {
         $purchase = DB::transaction(function () use ($request) {
-            $items = collect($request->validated('items'))->map(function (array $item) {
-                $product = Product::query()
-                    ->with(['thickness', 'unit:id,symbol', 'productCategory.attributes.unit:id,symbol'])
-                    ->findOrFail($item['product_id']);
+            $validatedItems = collect($request->validated('items'));
+            $products = Product::query()
+                ->with(['thickness', 'unit:id,symbol', 'productCategory.attributes.unit:id,symbol'])
+                ->whereIn('id', $validatedItems->pluck('product_id')->unique()->values())
+                ->get(['id', 'thickness_id', 'product_category_id', 'product_unit_id', 'name', 'base_unit', 'inventory_tracking_mode', 'attributes'])
+                ->keyBy('id');
+
+            $items = $validatedItems->map(function (array $item) use ($products) {
+                $product = $products->get($item['product_id']);
                 $kilograms = $this->normalizeKilograms($item);
                 $meters = filled($item['meters'] ?? null) ? (float) $item['meters'] : null;
                 $kgPerMeter = $product->thickness?->kg_per_meter;
@@ -93,7 +98,7 @@ class PurchaseController extends Controller
             ]);
 
             foreach ($items as $item) {
-                $product = Product::query()->findOrFail($item['product_id']);
+                $product = $products->get($item['product_id']);
                 $coil = null;
 
                 if ($request->string('status')->toString() === 'received') {

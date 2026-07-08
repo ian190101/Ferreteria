@@ -75,10 +75,15 @@ class SaleController extends Controller
                 : null;
 
             $canOverridePrices = $request->user()->can('sales.prices.override');
-            $items = collect($request->validated('items'))->map(function (array $item) use ($canOverridePrices) {
-                $product = Product::query()
-                    ->with(['unit:id,symbol', 'productCategory.attributes.unit:id,symbol'])
-                    ->find($item['product_id']);
+            $validatedItems = collect($request->validated('items'));
+            $products = Product::query()
+                ->with(['unit:id,symbol', 'productCategory.attributes.unit:id,symbol'])
+                ->whereIn('id', $validatedItems->pluck('product_id')->unique()->values())
+                ->get(['id', 'product_category_id', 'product_unit_id', 'name', 'sale_price', 'attributes'])
+                ->keyBy('id');
+
+            $items = $validatedItems->map(function (array $item) use ($canOverridePrices, $products) {
+                $product = $products->get($item['product_id']);
 
                 $item['display_quantity'] = $item['display_quantity'] ?? 1;
                 $item['display_unit_label'] = $item['display_unit_label'] ?? $product?->unit?->symbol ?? $item['unit_label'];
@@ -394,7 +399,7 @@ class SaleController extends Controller
 
             if (! $message && $free < $required) {
                 $missing = round($required - $free, 3);
-                $message = "Faltan ".$this->formatReadinessQuantity($missing, $unit).' libres para convertir este item.';
+                $message = 'Faltan '.$this->formatReadinessQuantity($missing, $unit).' libres para convertir este item.';
                 $action = $product->inventory_tracking_mode === Product::TRACKING_COIL
                     ? [
                         'label' => 'Ir a bobinas',
@@ -407,7 +412,7 @@ class SaleController extends Controller
             }
 
             if ($message) {
-                $issues[] = "Item ".($index + 1).": {$message}";
+                $issues[] = 'Item '.($index + 1).": {$message}";
             }
 
             return [

@@ -2,11 +2,11 @@
 
 namespace App\Modules\Sales\Http\Requests;
 
+use App\Modules\Cash\Support\CashSessionGuard;
+use App\Modules\Inventory\Models\InventoryReservation;
 use App\Modules\Inventory\Models\Product;
 use App\Modules\Inventory\Models\ProductBranchStock;
 use App\Modules\Inventory\Models\ProductCoil;
-use App\Modules\Inventory\Models\InventoryReservation;
-use App\Modules\Cash\Support\CashSessionGuard;
 use App\Modules\Sales\Models\Sale;
 use App\Support\BranchAccess;
 use Illuminate\Foundation\Http\FormRequest;
@@ -89,11 +89,16 @@ class StoreSaleDocumentRequest extends FormRequest
             }
 
             $items = collect($this->input('items', []));
+            $productIds = $items->pluck('product_id')->filter()->unique()->values();
+            $products = Product::query()
+                ->whereIn('id', $productIds)
+                ->get(['id', 'inventory_tracking_mode'])
+                ->keyBy('id');
             $globalMetersByProduct = [];
             $coilMetersById = [];
 
             foreach ($items as $index => $item) {
-                $product = Product::query()->find($item['product_id'] ?? null);
+                $product = $products->get($item['product_id'] ?? null);
 
                 if (! $product) {
                     continue;
@@ -122,37 +127,52 @@ class StoreSaleDocumentRequest extends FormRequest
                 $globalMetersByProduct[$product->id] = ($globalMetersByProduct[$product->id] ?? 0) + $meters;
             }
 
-            foreach ($globalMetersByProduct as $productId => $meters) {
-                $stock = ProductBranchStock::query()
+            if ($globalMetersByProduct !== []) {
+                $stocks = ProductBranchStock::query()
                     ->where('branch_id', $this->integer('branch_id'))
-                    ->where('product_id', $productId)
-                    ->first();
-                $available = $stock ? (float) $stock->available_meters - (float) $stock->reserved_meters : 0;
+                    ->whereIn('product_id', array_keys($globalMetersByProduct))
+                    ->get(['product_id', 'available_meters', 'reserved_meters'])
+                    ->keyBy('product_id');
 
-                if ($available < $meters) {
-                    $validator->errors()->add('items', 'La sucursal no tiene stock global libre suficiente para uno o mas productos.');
+                foreach ($globalMetersByProduct as $productId => $meters) {
+                    $stock = $stocks->get($productId);
+                    $available = $stock ? (float) $stock->available_meters - (float) $stock->reserved_meters : 0;
+
+                    if ($available < $meters) {
+                        $validator->errors()->add('items', 'La sucursal no tiene stock global libre suficiente para uno o mas productos.');
+                    }
                 }
             }
 
-            foreach ($coilMetersById as $coilId => $meters) {
-                $coil = ProductCoil::query()
+            if ($coilMetersById !== []) {
+                $coils = ProductCoil::query()
                     ->where('branch_id', $this->integer('branch_id'))
                     ->where('status', 'available')
-                    ->find($coilId);
+                    ->whereIn('id', array_keys($coilMetersById))
+                    ->get(['id', 'available_meters'])
+                    ->keyBy('id');
 
-                if (! $coil) {
-                    $validator->errors()->add('items', 'Una bobina seleccionada no esta disponible en la sucursal.');
-
-                    continue;
-                }
-
-                $reserved = (float) InventoryReservation::query()
-                    ->where('product_coil_id', $coil->id)
+                $reservedByCoil = InventoryReservation::query()
+                    ->whereIn('product_coil_id', array_keys($coilMetersById))
                     ->where('status', InventoryReservation::STATUS_ACTIVE)
-                    ->sum('meters');
+                    ->selectRaw('product_coil_id, SUM(meters) as reserved_meters')
+                    ->groupBy('product_coil_id')
+                    ->pluck('reserved_meters', 'product_coil_id');
 
-                if (((float) $coil->available_meters - $reserved) < $meters) {
-                    $validator->errors()->add('items', 'Una bobina seleccionada no tiene metraje suficiente.');
+                foreach ($coilMetersById as $coilId => $meters) {
+                    $coil = $coils->get($coilId);
+
+                    if (! $coil) {
+                        $validator->errors()->add('items', 'Una bobina seleccionada no esta disponible en la sucursal.');
+
+                        continue;
+                    }
+
+                    $reserved = (float) ($reservedByCoil[$coil->id] ?? 0);
+
+                    if (((float) $coil->available_meters - $reserved) < $meters) {
+                        $validator->errors()->add('items', 'Una bobina seleccionada no tiene metraje suficiente.');
+                    }
                 }
             }
         });
