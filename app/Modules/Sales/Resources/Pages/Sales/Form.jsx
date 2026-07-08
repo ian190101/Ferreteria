@@ -33,10 +33,22 @@ const DEFAULT_ITEM = {
     discount_amount: '0',
 };
 
-export default function Form({ documentType, branches, saleTypes, currencies, advanceOptions, products, coils, customers, sequencePreviews, quotations = [] }) {
+export default function Form({
+    documentType = 'sale_note',
+    branches = [],
+    saleTypes = [],
+    currencies = [],
+    advanceOptions = [],
+    products = [],
+    coils = [],
+    customers = [],
+    sequencePreviews = {},
+    quotations = [],
+}) {
     const title = documentType === 'quotation' ? 'Nueva cotizacion' : 'Nueva nota de venta';
     const permissions = usePage().props.auth.permissions;
     const canOverridePrices = permissions.includes('sales.prices.override');
+    const catalogsReady = products.length > 0;
     const { data, setData, post, processing, errors, transform } = useForm({
         document_type: documentType,
         source_quotation_id: '',
@@ -292,7 +304,9 @@ export default function Form({ documentType, branches, saleTypes, currencies, ad
                     </div>
 
                     <div className="flex items-center gap-3">
-                        <PrimaryButton disabled={processing}>Guardar documento</PrimaryButton>
+                        <PrimaryButton disabled={processing || !catalogsReady}>
+                            {catalogsReady ? 'Guardar documento' : 'Cargando productos...'}
+                        </PrimaryButton>
                         <Link href={route('sales.index')} className="text-sm text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white">Cancelar</Link>
                     </div>
                 </form>

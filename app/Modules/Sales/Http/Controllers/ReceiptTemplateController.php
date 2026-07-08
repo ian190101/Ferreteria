@@ -10,6 +10,7 @@ use App\Support\BranchAccess;
 use App\Support\UiCatalogCache;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -54,6 +55,8 @@ class ReceiptTemplateController extends Controller
             ReceiptTemplate::query()->create($data);
         });
 
+        $this->bumpTemplateCacheVersion();
+
         return redirect()->route('sales.templates.index')->with('success', 'Plantilla creada correctamente.');
     }
 
@@ -91,6 +94,8 @@ class ReceiptTemplateController extends Controller
             $template->update($data);
         });
 
+        $this->bumpTemplateCacheVersion();
+
         return redirect()->route('sales.templates.index')->with('success', 'Plantilla actualizada correctamente.');
     }
 
@@ -100,7 +105,14 @@ class ReceiptTemplateController extends Controller
 
         $template->delete();
 
+        $this->bumpTemplateCacheVersion();
+
         return redirect()->route('sales.templates.index')->with('success', 'Plantilla desactivada correctamente.');
+    }
+
+    private function bumpTemplateCacheVersion(): void
+    {
+        Cache::forever('receipt-template-version', now()->timestamp);
     }
 
     private function branches(Request $request)

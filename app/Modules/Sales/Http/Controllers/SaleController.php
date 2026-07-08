@@ -22,6 +22,7 @@ use App\Support\BranchAccess;
 use App\Support\UiCatalogCache;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
@@ -29,9 +30,25 @@ use Inertia\Response;
 
 class SaleController extends Controller
 {
+    private const CACHE_SECONDS = 30;
+
     public function index(Request $request): Response
     {
         $sales = Sale::query()
+            ->select([
+                'id',
+                'branch_id',
+                'user_id',
+                'sale_type_id',
+                'currency_id',
+                'receipt_number',
+                'document_type',
+                'customer_name',
+                'sold_at',
+                'total',
+                'balance_due',
+                'status',
+            ])
             ->with(['branch:id,name', 'user:id,name', 'saleType:id,name', 'currency:id,name,code,symbol'])
             ->when(true, fn ($query) => BranchAccess::apply($query, $request->user()))
             ->when($request->filled('document_type'), fn ($query) => $query->where('document_type', $request->string('document_type')->toString()))
@@ -47,19 +64,21 @@ class SaleController extends Controller
 
     public function create(Request $request): Response
     {
+        $documentType = $request->string('type', 'sale_note')->toString();
+
         return Inertia::render('Sales/Form', [
-            'documentType' => $request->string('type', 'sale_note')->toString(),
+            'documentType' => $documentType,
             'branches' => UiCatalogCache::activeBranchesForUser($request->user(), ['id', 'name', 'address', 'phone', 'secondary_phone', 'point_of_sale_name']),
             'saleTypes' => UiCatalogCache::saleTypes(),
             'currencies' => UiCatalogCache::currencies(),
             'advanceOptions' => UiCatalogCache::advanceOptions(),
-            'products' => UiCatalogCache::activeProductsWithThickness(),
-            'coils' => $this->availableCoils($request),
-            'customers' => UiCatalogCache::recentCustomers(),
-            'sequencePreviews' => $this->sequencePreviews($request),
-            'quotations' => $request->string('type', 'sale_note')->toString() === 'sale_note'
+            'products' => Inertia::defer(fn () => UiCatalogCache::activeProductsWithThickness(), 'sales-form-catalogs'),
+            'coils' => Inertia::defer(fn () => $this->availableCoils($request), 'sales-form-catalogs'),
+            'customers' => Inertia::defer(fn () => UiCatalogCache::recentCustomers(), 'sales-form-catalogs'),
+            'sequencePreviews' => Inertia::defer(fn () => $this->sequencePreviews($request), 'sales-form-catalogs'),
+            'quotations' => Inertia::defer(fn () => $documentType === 'sale_note'
                 ? $this->convertibleQuotations($request)
-                : [],
+                : [], 'sales-form-catalogs'),
         ]);
     }
 
@@ -158,14 +177,25 @@ class SaleController extends Controller
     {
         abort_unless(BranchAccess::canAccess(request()->user(), (int) $sale->branch_id), 403);
 
-        $sale->load(['branch.setting', 'user:id,name', 'saleType', 'currency', 'advanceOption', 'items.product:id,name,sku,inventory_tracking_mode', 'items.coil:id,barcode,lot_number,available_meters,status', 'payments.method:id,name']);
+        $sale->load([
+            'branch:id,name,address,phone,secondary_phone,point_of_sale_name',
+            'branch.setting:id,branch_id,logo_path',
+            'user:id,name',
+            'saleType:id,name',
+            'currency:id,name,code,symbol,exchange_rate_to_bob',
+            'advanceOption:id,name,percentage',
+            'items.product:id,name,sku,inventory_tracking_mode',
+            'items.coil:id,barcode,lot_number,available_meters,status',
+            'payments:id,sale_id,payment_method_id,amount,paid_at',
+            'payments.method:id,name',
+        ]);
         $template = $this->templateFor($sale);
 
         return Inertia::render('Sales/Show', [
             'sale' => $sale,
             'template' => $template,
-            'paymentMethods' => UiCatalogCache::activePaymentMethods(),
-            'conversionReadiness' => $this->conversionReadiness($sale),
+            'paymentMethods' => Inertia::defer(fn () => UiCatalogCache::activePaymentMethods(), 'sales-show-actions'),
+            'conversionReadiness' => Inertia::defer(fn () => $this->conversionReadiness($sale), 'sales-show-actions'),
         ]);
     }
 
@@ -187,6 +217,14 @@ class SaleController extends Controller
 
             $autoSelectedCoils = [];
             $usedMetersByCoil = [];
+            $coilProductIds = $quotation->items
+                ->filter(fn (SaleItem $item) => $item->product->inventory_tracking_mode === Product::TRACKING_COIL && ! $item->product_coil_id)
+                ->pluck('product_id')
+                ->unique()
+                ->values()
+                ->all();
+            $coilsByProduct = $this->availableCoilsByProduct((int) $quotation->branch_id, $coilProductIds);
+            $reservedByCoil = $this->reservedMetersByCoil($coilsByProduct->flatten(1)->pluck('id')->values()->all());
 
             foreach ($quotation->items as $index => $item) {
                 if ($item->product->inventory_tracking_mode !== Product::TRACKING_COIL) {
@@ -199,7 +237,7 @@ class SaleController extends Controller
                     continue;
                 }
 
-                $coil = $this->availableCoilForItem($quotation, $item, $usedMetersByCoil);
+                $coil = $this->pickAvailableCoilForItem($item, $coilsByProduct, $reservedByCoil, $usedMetersByCoil);
 
                 if (! $coil) {
                     throw ValidationException::withMessages([
@@ -323,7 +361,31 @@ class SaleController extends Controller
 
         $issues = [];
         $usedMetersByCoil = [];
-        $items = $sale->items->map(function (SaleItem $item, int $index) use ($sale, &$issues, &$usedMetersByCoil) {
+        $coilItems = $sale->items->filter(fn (SaleItem $item) => $item->product?->inventory_tracking_mode === Product::TRACKING_COIL);
+        $selectedCoilIds = $coilItems->pluck('product_coil_id')->filter()->unique()->values()->all();
+        $coilsByProduct = $this->availableCoilsByProduct(
+            (int) $sale->branch_id,
+            $coilItems
+                ->filter(fn (SaleItem $item) => ! $item->product_coil_id || ! $item->coil)
+                ->pluck('product_id')
+                ->unique()
+                ->values()
+                ->all(),
+        );
+        $reservedByCoil = $this->reservedMetersByCoil(array_values(array_unique([
+            ...$selectedCoilIds,
+            ...$coilsByProduct->flatten(1)->pluck('id')->values()->all(),
+        ])));
+        $reservedForQuotationByCoil = $this->reservedMetersForQuotationByCoil((int) $sale->id, $selectedCoilIds);
+        $productIds = $sale->items->pluck('product_id')->filter()->unique()->values()->all();
+        $stocksByProduct = ProductBranchStock::query()
+            ->where('branch_id', $sale->branch_id)
+            ->whereIn('product_id', $productIds)
+            ->get(['product_id', 'available_meters', 'reserved_meters'])
+            ->keyBy('product_id');
+        $reservedForQuotationByProduct = $this->reservedMetersForQuotationByProduct((int) $sale->id, $productIds);
+
+        $items = $sale->items->map(function (SaleItem $item, int $index) use (&$issues, &$usedMetersByCoil, $coilsByProduct, $reservedByCoil, $reservedForQuotationByCoil, $stocksByProduct, $reservedForQuotationByProduct) {
             $required = (float) $item->meters;
             $product = $item->product;
             $unit = $this->readinessUnit($item);
@@ -341,14 +403,11 @@ class SaleController extends Controller
                 ];
             } elseif ($product->inventory_tracking_mode === Product::TRACKING_COIL) {
                 if (! $item->product_coil_id || ! $item->coil) {
-                    $coil = $this->availableCoilForItem($sale, $item, $usedMetersByCoil);
+                    $coil = $this->pickAvailableCoilForItem($item, $coilsByProduct, $reservedByCoil, $usedMetersByCoil);
 
                     if ($coil) {
                         $available = (float) $coil->available_meters;
-                        $reservedByOthers = (float) InventoryReservation::query()
-                            ->where('product_coil_id', $coil->id)
-                            ->where('status', InventoryReservation::STATUS_ACTIVE)
-                            ->sum('meters');
+                        $reservedByOthers = (float) ($reservedByCoil[$coil->id] ?? 0);
                         $free = max($available - $reservedByOthers - ($usedMetersByCoil[$coil->id] ?? 0), 0);
                         $usedMetersByCoil[$coil->id] = ($usedMetersByCoil[$coil->id] ?? 0) + $required;
                     } else {
@@ -366,33 +425,17 @@ class SaleController extends Controller
                     ];
                 } else {
                     $available = (float) $item->coil->available_meters;
-                    $reservedForQuotation = (float) InventoryReservation::query()
-                        ->where('sale_id', $sale->id)
-                        ->where('product_coil_id', $item->product_coil_id)
-                        ->where('status', InventoryReservation::STATUS_ACTIVE)
-                        ->sum('meters');
-                    $reserved = (float) InventoryReservation::query()
-                        ->where('product_coil_id', $item->product_coil_id)
-                        ->where('status', InventoryReservation::STATUS_ACTIVE)
-                        ->sum('meters');
+                    $reservedForQuotation = (float) ($reservedForQuotationByCoil[$item->product_coil_id] ?? 0);
+                    $reserved = (float) ($reservedByCoil[$item->product_coil_id] ?? 0);
                     $reservedByOthers = max($reserved - $reservedForQuotation, 0);
                     $free = max($available - $reservedByOthers - ($usedMetersByCoil[$item->product_coil_id] ?? 0), 0);
                     $usedMetersByCoil[$item->product_coil_id] = ($usedMetersByCoil[$item->product_coil_id] ?? 0) + $required;
                 }
             } else {
-                $stock = ProductBranchStock::query()
-                    ->where('branch_id', $sale->branch_id)
-                    ->where('product_id', $item->product_id)
-                    ->first();
-
+                $stock = $stocksByProduct->get($item->product_id);
                 $available = (float) ($stock?->available_meters ?? 0);
                 $reserved = (float) ($stock?->reserved_meters ?? 0);
-                $reservedForQuotation = (float) InventoryReservation::query()
-                    ->where('sale_id', $sale->id)
-                    ->where('product_id', $item->product_id)
-                    ->whereNull('product_coil_id')
-                    ->where('status', InventoryReservation::STATUS_ACTIVE)
-                    ->sum('meters');
+                $reservedForQuotation = (float) ($reservedForQuotationByProduct[$item->product_id] ?? 0);
                 $reservedByOthers = max($reserved - $reservedForQuotation, 0);
                 $free = max($available - $reservedByOthers, 0);
             }
@@ -445,21 +488,73 @@ class SaleController extends Controller
             : 'm';
     }
 
-    private function availableCoilForItem(Sale $sale, SaleItem $item, array $usedMetersByCoil = []): ?ProductCoil
+    private function availableCoilsByProduct(int $branchId, array $productIds)
+    {
+        if ($productIds === []) {
+            return collect();
+        }
+
+        return ProductCoil::query()
+            ->where('branch_id', $branchId)
+            ->whereIn('product_id', $productIds)
+            ->where('status', 'available')
+            ->orderBy('available_meters')
+            ->get(['id', 'branch_id', 'product_id', 'available_meters', 'status'])
+            ->groupBy('product_id');
+    }
+
+    private function reservedMetersByCoil(array $coilIds)
+    {
+        if ($coilIds === []) {
+            return collect();
+        }
+
+        return InventoryReservation::query()
+            ->whereIn('product_coil_id', $coilIds)
+            ->where('status', InventoryReservation::STATUS_ACTIVE)
+            ->selectRaw('product_coil_id, SUM(meters) as reserved_meters')
+            ->groupBy('product_coil_id')
+            ->pluck('reserved_meters', 'product_coil_id');
+    }
+
+    private function reservedMetersForQuotationByCoil(int $saleId, array $coilIds)
+    {
+        if ($coilIds === []) {
+            return collect();
+        }
+
+        return InventoryReservation::query()
+            ->where('sale_id', $saleId)
+            ->whereIn('product_coil_id', $coilIds)
+            ->where('status', InventoryReservation::STATUS_ACTIVE)
+            ->selectRaw('product_coil_id, SUM(meters) as reserved_meters')
+            ->groupBy('product_coil_id')
+            ->pluck('reserved_meters', 'product_coil_id');
+    }
+
+    private function reservedMetersForQuotationByProduct(int $saleId, array $productIds)
+    {
+        if ($productIds === []) {
+            return collect();
+        }
+
+        return InventoryReservation::query()
+            ->where('sale_id', $saleId)
+            ->whereIn('product_id', $productIds)
+            ->whereNull('product_coil_id')
+            ->where('status', InventoryReservation::STATUS_ACTIVE)
+            ->selectRaw('product_id, SUM(meters) as reserved_meters')
+            ->groupBy('product_id')
+            ->pluck('reserved_meters', 'product_id');
+    }
+
+    private function pickAvailableCoilForItem(SaleItem $item, $coilsByProduct, $reservedByCoil, array $usedMetersByCoil = []): ?ProductCoil
     {
         $required = (float) $item->meters;
 
-        return ProductCoil::query()
-            ->where('branch_id', $sale->branch_id)
-            ->where('product_id', $item->product_id)
-            ->where('status', 'available')
-            ->orderBy('available_meters')
-            ->get()
-            ->first(function (ProductCoil $coil) use ($required, $usedMetersByCoil) {
-                $reserved = (float) InventoryReservation::query()
-                    ->where('product_coil_id', $coil->id)
-                    ->where('status', InventoryReservation::STATUS_ACTIVE)
-                    ->sum('meters');
+        return ($coilsByProduct->get($item->product_id) ?? collect())
+            ->first(function (ProductCoil $coil) use ($required, $reservedByCoil, $usedMetersByCoil) {
+                $reserved = (float) ($reservedByCoil[$coil->id] ?? 0);
                 $alreadyPlanned = (float) ($usedMetersByCoil[$coil->id] ?? 0);
 
                 return ((float) $coil->available_meters - $reserved - $alreadyPlanned) >= $required;
@@ -655,12 +750,12 @@ class SaleController extends Controller
 
     private function availableCoils(Request $request)
     {
-        return ProductCoil::query()
+        return Cache::remember("sales-available-coils:v1:{$request->user()->id}", now()->addSeconds(self::CACHE_SECONDS), fn () => ProductCoil::query()
             ->when(true, fn ($query) => BranchAccess::apply($query, $request->user()))
             ->where('status', 'available')
             ->orderByDesc('id')
             ->limit(500)
-            ->get(['id', 'branch_id', 'product_id', 'barcode', 'lot_number', 'available_meters']);
+            ->get(['id', 'branch_id', 'product_id', 'barcode', 'lot_number', 'available_meters']));
     }
 
     private function convertibleQuotations(Request $request)
@@ -730,36 +825,41 @@ class SaleController extends Controller
 
     private function templateFor(Sale $sale): array
     {
-        $template = ReceiptTemplate::query()
-            ->where('is_active', true)
-            ->where(function ($query) use ($sale) {
-                $query->where('document_type', $sale->document_type)
-                    ->orWhere('document_type', 'both');
-            })
-            ->where(function ($query) use ($sale) {
-                $query->where('branch_id', $sale->branch_id)
-                    ->orWhereNull('branch_id');
-            })
-            ->orderByRaw('branch_id IS NULL')
-            ->orderByDesc('is_default')
-            ->latest('id')
-            ->first();
+        $version = Cache::get('receipt-template-version', 1);
+        $cacheKey = "receipt-template:v{$version}:{$sale->branch_id}:{$sale->document_type}";
 
-        if (! $template) {
+        return Cache::remember($cacheKey, now()->addSeconds(self::CACHE_SECONDS), function () use ($sale) {
+            $template = ReceiptTemplate::query()
+                ->where('is_active', true)
+                ->where(function ($query) use ($sale) {
+                    $query->where('document_type', $sale->document_type)
+                        ->orWhere('document_type', 'both');
+                })
+                ->where(function ($query) use ($sale) {
+                    $query->where('branch_id', $sale->branch_id)
+                        ->orWhereNull('branch_id');
+                })
+                ->orderByRaw('branch_id IS NULL')
+                ->orderByDesc('is_default')
+                ->latest('id')
+                ->first();
+
+            if (! $template) {
+                return [
+                    'paper_type' => 'letter',
+                    'thermal_width_mm' => null,
+                    'use_branding' => true,
+                    'layout' => ReceiptTemplate::defaultLayout(),
+                ];
+            }
+
             return [
-                'paper_type' => 'letter',
-                'thermal_width_mm' => null,
-                'use_branding' => true,
-                'layout' => ReceiptTemplate::defaultLayout(),
+                'paper_type' => $template->paper_type,
+                'thermal_width_mm' => $template->thermal_width_mm,
+                'use_branding' => $template->use_branding,
+                'layout' => array_replace_recursive(ReceiptTemplate::defaultLayout(), $template->layout ?? []),
             ];
-        }
-
-        return [
-            'paper_type' => $template->paper_type,
-            'thermal_width_mm' => $template->thermal_width_mm,
-            'use_branding' => $template->use_branding,
-            'layout' => array_replace_recursive(ReceiptTemplate::defaultLayout(), $template->layout ?? []),
-        ];
+        });
     }
 
     private function saleItemAttributes(?Product $product, array $payloadAttributes): array

@@ -13,14 +13,14 @@ const PAPER_SIZES = {
     thermal: { width: null, page: 'auto' },
 };
 
-export default function Show({ sale, template, paymentMethods, conversionReadiness }) {
+export default function Show({ sale, template, paymentMethods = [], conversionReadiness = { can_convert: false, issues: [], items: [] } }) {
     const documentTitle = sale.document_type === 'quotation' ? 'COTIZACION' : 'NOTA DE VENTA';
     const page = usePage();
     const permissions = page.props.auth.permissions;
     const errors = page.props.errors ?? {};
     const canManagePayments = permissions.includes('payments.manage');
     const canManageSales = permissions.includes('sales.manage');
-    const canConvertQuotation = canManageSales && sale.document_type === 'quotation' && sale.status === 'quoted' && (conversionReadiness?.can_convert ?? true);
+    const canConvertQuotation = canManageSales && sale.document_type === 'quotation' && sale.status === 'quoted' && (conversionReadiness?.can_convert ?? false);
     const currency = sale.currency ?? { symbol: 'Bs', code: 'BOB' };
     const branch = sale.branch ?? {};
     const layout = template.layout;
@@ -56,6 +56,12 @@ export default function Show({ sale, template, paymentMethods, conversionReadine
         });
         paymentForm.clearErrors();
     }, [sale.id]);
+
+    useEffect(() => {
+        if (!paymentForm.data.payment_method_id && paymentMethods[0]?.id) {
+            paymentForm.setData('payment_method_id', paymentMethods[0].id);
+        }
+    }, [paymentMethods]);
 
     useEffect(() => {
         const shell = previewShellRef.current;
@@ -271,6 +277,7 @@ export default function Show({ sale, template, paymentMethods, conversionReadine
                             <h3 className="mb-4 font-semibold text-slate-900 dark:text-slate-100">Registrar pago</h3>
                             <form onSubmit={submitPayment} className="grid gap-4">
                                 <SelectField label="Metodo" name="payment_method_id" value={paymentForm.data.payment_method_id} onChange={(event) => paymentForm.setData('payment_method_id', event.target.value)} error={paymentForm.errors.payment_method_id} required>
+                                    {!paymentMethods.length ? <option value="">Cargando metodos...</option> : null}
                                     {paymentMethods.map((method) => <option key={method.id} value={method.id}>{method.name}</option>)}
                                 </SelectField>
                                 <div className="grid gap-4 sm:grid-cols-2">
@@ -278,7 +285,7 @@ export default function Show({ sale, template, paymentMethods, conversionReadine
                                     <FormField label="Monto" name="amount" type="number" step="0.01" min="0.01" max={sale.balance_due} value={paymentForm.data.amount} onChange={(event) => paymentForm.setData('amount', event.target.value)} error={paymentForm.errors.amount} required />
                                 </div>
                                 <FormField label="Referencia" name="reference" value={paymentForm.data.reference} onChange={(event) => paymentForm.setData('reference', event.target.value)} error={paymentForm.errors.reference} />
-                                <button disabled={paymentForm.processing} className="rounded-md bg-brand-primary px-4 py-2 text-sm font-semibold text-white" type="submit">
+                                <button disabled={paymentForm.processing || !paymentMethods.length} className="rounded-md bg-brand-primary px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60" type="submit">
                                     Guardar pago
                                 </button>
                             </form>
