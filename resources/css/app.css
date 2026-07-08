@@ -70,7 +70,7 @@
         @apply text-slate-700 dark:text-slate-200;
         border-collapse: separate;
         border-spacing: 0;
-        width: max-content;
+        width: 100%;
         min-width: 100%;
     }
 
@@ -88,30 +88,6 @@
     main :where(.overflow-hidden, .overflow-x-auto):has(table)::-webkit-scrollbar-thumb {
         background: rgb(148 163 184 / 0.55);
         border-radius: 999px;
-    }
-
-    main :where(.overflow-hidden, .overflow-x-auto):has(table) :where(th:first-child, td:first-child) {
-        position: sticky;
-        left: 0;
-        z-index: 10;
-        max-width: min(14rem, 58vw);
-        background: rgb(255 255 255 / 0.96);
-        box-shadow: 12px 0 18px -18px rgb(15 23 42 / 0.60);
-        white-space: normal;
-    }
-
-    main :where(.overflow-hidden, .overflow-x-auto):has(table) thead th:first-child {
-        z-index: 20;
-        background: rgb(241 245 249 / 0.98);
-    }
-
-    .dark main :where(.overflow-hidden, .overflow-x-auto):has(table) :where(th:first-child, td:first-child) {
-        background: rgb(15 23 42 / 0.98);
-        box-shadow: 12px 0 18px -18px rgb(0 0 0 / 0.95);
-    }
-
-    .dark main :where(.overflow-hidden, .overflow-x-auto):has(table) thead th:first-child {
-        background: rgb(30 41 59 / 0.98);
     }
 
     thead {
@@ -189,6 +165,52 @@
         select,
         textarea {
             font-size: 16px;
+        }
+    }
+
+    @media (max-width: 1024px) {
+        main :where(.overflow-hidden, .overflow-x-auto):has(table) {
+            overflow-x: auto !important;
+        }
+
+        main :where(.overflow-hidden, .overflow-x-auto):has(table) table {
+            width: max-content;
+            min-width: 100%;
+        }
+
+        main :where(.overflow-hidden, .overflow-x-auto):has(table) :where(th:first-child, td:first-child) {
+            position: sticky;
+            left: 0;
+            z-index: 10;
+            max-width: min(13rem, 56vw);
+            background-clip: padding-box;
+            background-color: rgb(255 255 255 / 0.98);
+            border-right: 1px solid rgb(226 232 240 / 0.92);
+            box-shadow: 6px 0 10px -12px rgb(15 23 42 / 0.55);
+            white-space: normal;
+        }
+
+        main :where(.overflow-hidden, .overflow-x-auto):has(table) tbody tr:hover td:first-child {
+            background-color: rgb(248 250 252 / 0.98);
+        }
+
+        main :where(.overflow-hidden, .overflow-x-auto):has(table) thead th:first-child {
+            z-index: 20;
+            background-color: rgb(241 245 249 / 0.98);
+        }
+
+        .dark main :where(.overflow-hidden, .overflow-x-auto):has(table) :where(th:first-child, td:first-child) {
+            background-color: rgb(15 23 42 / 0.98);
+            border-right-color: rgb(51 65 85 / 0.95);
+            box-shadow: 6px 0 10px -12px rgb(0 0 0 / 0.90);
+        }
+
+        .dark main :where(.overflow-hidden, .overflow-x-auto):has(table) tbody tr:hover td:first-child {
+            background-color: rgb(30 41 59 / 0.98);
+        }
+
+        .dark main :where(.overflow-hidden, .overflow-x-auto):has(table) thead th:first-child {
+            background-color: rgb(30 41 59 / 0.98);
         }
     }
 }
