@@ -22,6 +22,19 @@ class PurchaseController extends Controller
     public function index(Request $request): Response
     {
         $purchases = Purchase::query()
+            ->select([
+                'id',
+                'branch_id',
+                'supplier_id',
+                'user_id',
+                'document_number',
+                'purchase_date',
+                'total_amount',
+                'paid_amount',
+                'balance_due',
+                'payment_status',
+                'status',
+            ])
             ->with(['branch:id,name', 'supplier:id,name', 'user:id,name'])
             ->when(true, fn ($query) => BranchAccess::apply($query, $request->user()))
             ->when($request->string('search')->isNotEmpty(), function ($query) use ($request) {
@@ -39,12 +52,12 @@ class PurchaseController extends Controller
         ]);
     }
 
-    public function create(): Response
+    public function create(Request $request): Response
     {
         return Inertia::render('Purchases/Form', [
-            'branches' => UiCatalogCache::activeBranchesForUser(request()->user()),
-            'suppliers' => UiCatalogCache::activeSuppliers(),
-            'products' => UiCatalogCache::activeProductsWithThickness(),
+            'branches' => UiCatalogCache::activeBranchesForUser($request->user()),
+            'suppliers' => Inertia::defer(fn () => UiCatalogCache::activeSuppliers(), 'purchase-form-catalogs'),
+            'products' => Inertia::defer(fn () => UiCatalogCache::activeProductsWithThickness(), 'purchase-form-catalogs'),
         ]);
     }
 

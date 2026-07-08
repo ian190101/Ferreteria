@@ -9,7 +9,7 @@ const numberFormatter = new Intl.NumberFormat('es-BO', {
     maximumFractionDigits: 3,
 });
 
-export default function Index({ movements, branches, products, coils, types, filters }) {
+export default function Index({ movements, branches = [], products = [], coils = [], types = [], filters = {} }) {
     const { data, setData, get, processing } = useForm({
         branch_id: filters.branch_id ?? '',
         product_id: filters.product_id ?? '',

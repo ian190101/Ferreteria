@@ -4,6 +4,7 @@ import FormField from '../../../../Shared/Resources/Components/FormField';
 import ModuleHeader from '../../../../Shared/Resources/Components/ModuleHeader';
 import SelectField from '../../../../Shared/Resources/Components/SelectField';
 import { Head, Link, useForm } from '@inertiajs/react';
+import { useMemo } from 'react';
 
 const moneyFormatter = new Intl.NumberFormat('es-BO', {
     minimumFractionDigits: 2,
@@ -32,7 +33,8 @@ const DEFAULT_ITEM = {
     description: '',
 };
 
-export default function Form({ branches, suppliers, products }) {
+export default function Form({ branches = [], suppliers = [], products = [] }) {
+    const catalogsReady = products.length > 0;
     const { data, setData, post, processing, errors, transform } = useForm({
         branch_id: branches[0]?.id ?? '',
         supplier_id: '',
@@ -42,7 +44,7 @@ export default function Form({ branches, suppliers, products }) {
         items: [{ ...DEFAULT_ITEM }],
     });
 
-    const productMap = new Map(products.map((product) => [String(product.id), product]));
+    const productMap = useMemo(() => new Map(products.map((product) => [String(product.id), product])), [products]);
     const updateItem = (index, field, value) => {
         setData('items', data.items.map((item, itemIndex) => (itemIndex === index ? { ...item, [field]: value } : item)));
     };
@@ -180,7 +182,9 @@ export default function Form({ branches, suppliers, products }) {
                     </div>
 
                     <div className="flex items-center gap-3">
-                        <PrimaryButton disabled={processing}>Registrar compra</PrimaryButton>
+                        <PrimaryButton disabled={processing || !catalogsReady}>
+                            {catalogsReady ? 'Registrar compra' : 'Cargando productos...'}
+                        </PrimaryButton>
                         <Link href={route('purchases.index')} className="text-sm text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white">Cancelar</Link>
                     </div>
                 </form>

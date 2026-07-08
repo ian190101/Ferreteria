@@ -14,7 +14,16 @@ const numberFormatter = new Intl.NumberFormat('es-BO', {
     maximumFractionDigits: 3,
 });
 
-export default function Index({ filters, branches, metrics, recentSales, lowStocks, agingBuckets, agingReceivables, latestMovements }) {
+export default function Index({
+    filters,
+    branches = [],
+    metrics = {},
+    recentSales = [],
+    lowStocks = [],
+    agingBuckets = {},
+    agingReceivables = { data: [], links: [] },
+    latestMovements = [],
+}) {
     const { data, setData, get, processing } = useForm({
         branch_id: filters.branch_id ?? '',
         from: filters.from ?? '',

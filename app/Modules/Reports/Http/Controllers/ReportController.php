@@ -3,7 +3,6 @@
 namespace App\Modules\Reports\Http\Controllers;
 
 use App\Http\Controllers\Controller;
-use App\Modules\Branches\Models\Branch;
 use App\Modules\Expenses\Models\Expense;
 use App\Modules\Inventory\Models\ProductBranchStock;
 use App\Modules\Inventory\Models\ProductCoil;
@@ -20,22 +19,25 @@ use Inertia\Response;
 
 class ReportController extends Controller
 {
+    private const CACHE_SECONDS = 60;
+
     public function index(Request $request): Response
     {
+        $user = $request->user();
         $from = $request->date('from')?->startOfDay() ?? now()->startOfMonth();
         $to = $request->date('to')?->endOfDay() ?? now()->endOfDay();
         $branchId = $request->integer('branch_id') ?: null;
-        abort_if($branchId && ! BranchAccess::canAccess($request->user(), $branchId), 403);
+        abort_if($branchId && ! BranchAccess::canAccess($user, $branchId), 403);
 
         $cacheKey = sprintf(
-            'reports:dashboard:%s:%s:%s:%s',
+            'reports:dashboard:v2:%s:%s:%s:%s',
+            $user->id,
             $branchId ?? 'all',
             $from->toDateString(),
             $to->toDateString(),
-            $this->reportCacheVersion($branchId),
         );
 
-        $metrics = Cache::remember($cacheKey, now()->addMinutes(5), function () use ($from, $to, $branchId) {
+        $metrics = Cache::remember($cacheKey, now()->addSeconds(self::CACHE_SECONDS), function () use ($from, $to, $branchId) {
             return [
                 'sales_total' => (float) $this->salesQuery($from, $to, $branchId)->sum('total'),
                 'sales_count' => $this->salesQuery($from, $to, $branchId)->count(),
@@ -57,26 +59,46 @@ class ReportController extends Controller
             ],
             'branches' => UiCatalogCache::activeBranchesForUser($request->user()),
             'metrics' => $metrics,
-            'recentSales' => $this->salesQuery($from, $to, $branchId)
-                ->with(['branch:id,name', 'currency:id,symbol,code'])
-                ->latest('sold_at')
-                ->limit(8)
-                ->get(['id', 'branch_id', 'currency_id', 'receipt_number', 'document_type', 'customer_name', 'sold_at', 'total', 'status']),
-            'lowStocks' => $this->lowStockQuery($branchId)
-                ->with(['branch:id,name', 'product:id,name,sku,minimum_stock_meters'])
-                ->orderBy('available_meters')
-                ->limit(10)
-                ->get(['id', 'branch_id', 'product_id', 'available_meters', 'reserved_meters']),
-            'agingBuckets' => $this->agingBuckets($branchId),
-            'agingReceivables' => $this->agingReceivables($branchId, $request),
-            'latestMovements' => ProductCoil::query()
-                ->with(['branch:id,name', 'product:id,name,sku'])
-                ->when(true, fn ($query) => BranchAccess::apply($query, $request->user()))
-                ->when($branchId, fn ($query) => $query->where('branch_id', $branchId))
-                ->latest('id')
-                ->limit(8)
-                ->get(['id', 'branch_id', 'product_id', 'barcode', 'lot_number', 'available_meters', 'status', 'created_at']),
+            'recentSales' => Inertia::defer(fn () => Cache::remember($this->sectionCacheKey('recent-sales', $user->id, $branchId, $from, $to), now()->addSeconds(self::CACHE_SECONDS), fn () => $this->recentSales($from, $to, $branchId)), 'reports-lists'),
+            'lowStocks' => Inertia::defer(fn () => Cache::remember($this->sectionCacheKey('low-stocks', $user->id, $branchId, $from, $to), now()->addSeconds(self::CACHE_SECONDS), fn () => $this->lowStocks($branchId)), 'reports-lists'),
+            'agingBuckets' => Inertia::defer(fn () => Cache::remember($this->sectionCacheKey('aging-buckets', $user->id, $branchId, $from, $to), now()->addSeconds(self::CACHE_SECONDS), fn () => $this->agingBuckets($branchId)), 'reports-lists'),
+            'agingReceivables' => Inertia::defer(fn () => $this->agingReceivables($branchId, $request), 'reports-lists'),
+            'latestMovements' => Inertia::defer(fn () => Cache::remember($this->sectionCacheKey('latest-movements', $user->id, $branchId, $from, $to), now()->addSeconds(self::CACHE_SECONDS), fn () => $this->latestMovements($request, $branchId)), 'reports-lists'),
         ]);
+    }
+
+    private function recentSales(Carbon $from, Carbon $to, ?int $branchId)
+    {
+        return $this->salesQuery($from, $to, $branchId)
+            ->with(['branch:id,name', 'currency:id,symbol,code'])
+            ->latest('sold_at')
+            ->limit(8)
+            ->get(['id', 'branch_id', 'currency_id', 'receipt_number', 'document_type', 'customer_name', 'sold_at', 'total', 'status']);
+    }
+
+    private function lowStocks(?int $branchId)
+    {
+        return $this->lowStockQuery($branchId)
+            ->with(['branch:id,name', 'product:id,name,sku,minimum_stock_meters'])
+            ->orderBy('available_meters')
+            ->limit(10)
+            ->get(['id', 'branch_id', 'product_id', 'available_meters', 'reserved_meters']);
+    }
+
+    private function latestMovements(Request $request, ?int $branchId)
+    {
+        return ProductCoil::query()
+            ->with(['branch:id,name', 'product:id,name,sku'])
+            ->when(true, fn ($query) => BranchAccess::apply($query, $request->user()))
+            ->when($branchId, fn ($query) => $query->where('branch_id', $branchId))
+            ->latest('id')
+            ->limit(8)
+            ->get(['id', 'branch_id', 'product_id', 'barcode', 'lot_number', 'available_meters', 'status', 'created_at']);
+    }
+
+    private function sectionCacheKey(string $section, int $userId, ?int $branchId, Carbon $from, Carbon $to): string
+    {
+        return sprintf('reports:%s:v2:%s:%s:%s:%s', $section, $userId, $branchId ?? 'all', $from->toDateString(), $to->toDateString());
     }
 
     private function salesQuery(Carbon $from, Carbon $to, ?int $branchId)
@@ -196,26 +218,5 @@ class ReportController extends Controller
             ->select('product_branch_stocks.*')
             ->when(true, fn ($query) => BranchAccess::apply($query, request()->user(), 'product_branch_stocks.branch_id'))
             ->when($branchId, fn ($query) => $query->where('product_branch_stocks.branch_id', $branchId));
-    }
-
-    private function reportCacheVersion(?int $branchId): string
-    {
-        // La version evita servir metricas viejas cuando cambian ventas, compras o inventario dentro del mismo rango.
-        return collect([
-            $this->tableVersion(Sale::query(), $branchId),
-            $this->tableVersion(PaymentPromise::query(), $branchId),
-            $this->tableVersion(Purchase::query(), $branchId),
-            $this->tableVersion(Expense::query(), $branchId),
-            $this->tableVersion(ProductBranchStock::query(), $branchId),
-            $this->tableVersion(ProductCoil::query(), $branchId),
-        ])->implode('|');
-    }
-
-    private function tableVersion($query, ?int $branchId): string
-    {
-        BranchAccess::apply($query, request()->user());
-        $query->when($branchId, fn ($query) => $query->where('branch_id', $branchId));
-
-        return $query->count().':'.($query->max('updated_at') ?? 'none');
     }
 }

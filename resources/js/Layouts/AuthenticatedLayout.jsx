@@ -3,7 +3,7 @@ import AppearanceSwitch from '@/Components/AppearanceSwitch';
 import IconGlyph from '@/Components/Icon';
 import { assetUrl, updateFavicon } from '@/Utils/assets';
 import { Link, usePage } from '@inertiajs/react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { roleLabel } from '../../../app/Modules/Users/Resources/Utils/permissionLabels';
 
 const iconPaths = {
@@ -123,6 +123,30 @@ export default function AuthenticatedLayout({ header, children }) {
 }
 
 function SidebarContent({ navigation, user, branding, onNavigate }) {
+    const navRef = useRef(null);
+
+    useEffect(() => {
+        const nav = navRef.current;
+
+        if (!nav) {
+            return undefined;
+        }
+
+        const savedScroll = Number(sessionStorage.getItem('app-sidebar-scroll') ?? 0);
+        nav.scrollTop = Number.isFinite(savedScroll) ? savedScroll : 0;
+
+        const saveScroll = () => {
+            sessionStorage.setItem('app-sidebar-scroll', String(nav.scrollTop));
+        };
+
+        nav.addEventListener('scroll', saveScroll, { passive: true });
+
+        return () => {
+            saveScroll();
+            nav.removeEventListener('scroll', saveScroll);
+        };
+    }, []);
+
     return (
         <>
             <div className="flex h-20 items-center gap-3 border-b border-slate-200 px-5 dark:border-slate-800">
@@ -135,7 +159,7 @@ function SidebarContent({ navigation, user, branding, onNavigate }) {
                 </div>
             </div>
 
-            <nav className="flex-1 space-y-6 overflow-y-auto px-4 py-5">
+            <nav ref={navRef} className="flex-1 space-y-6 overflow-y-auto px-4 py-5">
                 {navigation.map((section) => (
                     <div key={section.label}>
                         <p className="mb-2 px-3 text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400 dark:text-slate-500">{section.label}</p>
