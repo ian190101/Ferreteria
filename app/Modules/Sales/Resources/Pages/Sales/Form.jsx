@@ -54,10 +54,12 @@ export default function Form({
         customer_document: '',
         customer_contact: '',
         sold_at: '',
+        advance_amount_input: '',
         terms: '',
         internal_notes: '',
         items: [{ ...DEFAULT_ITEM }],
     });
+    const selectedAdvance = advanceOptions.find((option) => String(option.id) === String(data.advance_option_id));
 
     const updateItem = (index, field, value) => {
         setData('items', data.items.map((item, itemIndex) => (itemIndex === index ? { ...item, [field]: value } : item)));
@@ -115,6 +117,7 @@ export default function Form({
             customer_name: quotation.customer_name ?? '',
             customer_document: quotation.customer_document ?? '',
             customer_contact: quotation.customer_contact ?? '',
+            advance_amount_input: quotation.advance_option?.type === 'amount' ? quotation.advance_amount ?? '' : '',
             terms: quotation.terms ?? '',
             internal_notes: `Generada desde cotizacion ${quotation.receipt_number}`,
             items: (quotation.items ?? []).map((item) => saleItemFromQuotation(item, products, canOverridePrices)),
@@ -185,8 +188,11 @@ export default function Form({
                         </SelectField>
                         <SelectField label="Anticipo" name="advance_option_id" value={data.advance_option_id} onChange={(event) => setData('advance_option_id', event.target.value)} error={errors.advance_option_id}>
                             <option value="">Sin anticipo</option>
-                            {advanceOptions.map((option) => <option key={option.id} value={option.id}>{option.name}</option>)}
+                            {advanceOptions.map((option) => <option key={option.id} value={option.id}>{advanceOptionLabel(option)}</option>)}
                         </SelectField>
+                        {selectedAdvance?.type === 'amount' ? (
+                            <FormField label="Monto de anticipo" name="advance_amount_input" type="number" step={decimalStep(decimalFormat.decimalsFor('money'))} min="0" value={data.advance_amount_input} onChange={(event) => setData('advance_amount_input', event.target.value)} error={errors.advance_amount_input} required />
+                        ) : null}
                         <FormField label="Fecha" name="sold_at" value="Se registrara automaticamente al guardar" disabled className="mt-1 block w-full rounded-md border-gray-300 bg-slate-100 shadow-sm dark:border-gray-700 dark:bg-slate-800 dark:text-gray-300" />
                     </div>
 
@@ -492,6 +498,14 @@ function trackingLabel(product) {
 
 function productSalePrice(product) {
     return product?.sale_price ?? '0';
+}
+
+function advanceOptionLabel(option) {
+    if (option.type === 'amount') {
+        return `${option.name} - Bs ${Number(option.amount ?? 0).toFixed(2)}`;
+    }
+
+    return `${option.name} - ${Number(option.percentage ?? 0).toFixed(2)}%`;
 }
 
 function baseQuantityFieldValue(item, product, summary, decimalFormat) {

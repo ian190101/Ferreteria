@@ -31,7 +31,9 @@ return new class extends Migration
         Schema::create('advance_options', function (Blueprint $table) {
             $table->id();
             $table->string('name');
-            $table->decimal('percentage', 5, 2)->unique();
+            $table->string('type', 24)->default('percentage')->index();
+            $table->decimal('percentage', 5, 2)->nullable()->unique();
+            $table->decimal('amount', 18, 2)->nullable();
             $table->boolean('is_active')->default(true)->index();
             $table->timestamps();
             $table->softDeletes();

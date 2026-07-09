@@ -25,7 +25,7 @@ class SalesSettingController extends Controller
         return Inertia::render('Sales/Settings', [
             'saleTypes' => SaleType::query()->orderBy('name')->paginate(15, ['*'], 'sale_types_page'),
             'currencies' => Currency::query()->orderByDesc('is_base')->orderBy('name')->paginate(15, ['*'], 'currencies_page'),
-            'advanceOptions' => AdvanceOption::query()->orderBy('percentage')->paginate(15, ['*'], 'advance_options_page'),
+            'advanceOptions' => AdvanceOption::query()->orderBy('type')->orderBy('percentage')->orderBy('amount')->paginate(15, ['*'], 'advance_options_page'),
             'documentSequences' => DocumentSequence::query()
                 ->with('branch:id,name')
                 ->when(true, fn ($query) => BranchAccess::apply($query, $request->user()))
@@ -109,9 +109,13 @@ class SalesSettingController extends Controller
 
     private function storeAdvanceOption(array $data): void
     {
+        $isPercentage = $data['type'] === AdvanceOption::TYPE_PERCENTAGE;
+
         AdvanceOption::query()->create([
             'name' => $data['name'],
-            'percentage' => $data['percentage'],
+            'type' => $data['type'],
+            'percentage' => $isPercentage ? $data['percentage'] : null,
+            'amount' => $isPercentage ? null : $data['amount'],
             'is_active' => $data['is_active'],
         ]);
     }
@@ -166,9 +170,13 @@ class SalesSettingController extends Controller
 
     private function updateAdvanceOption(int $setting, array $data): void
     {
+        $isPercentage = $data['type'] === AdvanceOption::TYPE_PERCENTAGE;
+
         AdvanceOption::query()->findOrFail($setting)->update([
             'name' => $data['name'],
-            'percentage' => $data['percentage'],
+            'type' => $data['type'],
+            'percentage' => $isPercentage ? $data['percentage'] : null,
+            'amount' => $isPercentage ? null : $data['amount'],
             'is_active' => $data['is_active'],
         ]);
     }

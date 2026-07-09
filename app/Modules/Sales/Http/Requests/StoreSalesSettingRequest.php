@@ -5,6 +5,7 @@ namespace App\Modules\Sales\Http\Requests;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 use App\Support\BranchAccess;
+use App\Modules\Sales\Models\AdvanceOption;
 
 class StoreSalesSettingRequest extends FormRequest
 {
@@ -17,7 +18,9 @@ class StoreSalesSettingRequest extends FormRequest
     {
         $nameRules = ['required', 'string', 'max:255'];
         $codeRules = ['required_if:kind,currency', 'nullable', 'string', 'max:8'];
-        $percentageRules = ['required_if:kind,advance_option', 'nullable', 'numeric', 'min:0', 'max:100'];
+        $advanceTypeRules = ['required_if:kind,advance_option', 'nullable', Rule::in([AdvanceOption::TYPE_PERCENTAGE, AdvanceOption::TYPE_AMOUNT])];
+        $percentageRules = [Rule::requiredIf(fn () => $this->input('kind') === 'advance_option' && $this->input('type') === AdvanceOption::TYPE_PERCENTAGE), 'nullable', 'numeric', 'min:0', 'max:100'];
+        $amountRules = [Rule::requiredIf(fn () => $this->input('kind') === 'advance_option' && $this->input('type') === AdvanceOption::TYPE_AMOUNT), 'nullable', 'numeric', 'min:0', 'max:999999999999.99'];
         $documentTypeRules = ['required_if:kind,document_sequence', 'nullable', Rule::in(['quotation', 'sale_note'])];
 
         if ($this->input('kind') === 'sale_type') {
@@ -28,7 +31,7 @@ class StoreSalesSettingRequest extends FormRequest
             $codeRules[] = Rule::unique('currencies', 'code');
         }
 
-        if ($this->input('kind') === 'advance_option') {
+        if ($this->input('kind') === 'advance_option' && $this->input('type') === AdvanceOption::TYPE_PERCENTAGE) {
             $percentageRules[] = Rule::unique('advance_options', 'percentage');
         }
 
@@ -41,12 +44,23 @@ class StoreSalesSettingRequest extends FormRequest
             'symbol' => ['required_if:kind,currency', 'nullable', 'string', 'max:8'],
             'exchange_rate_to_bob' => ['required_if:kind,currency', 'nullable', 'numeric', 'gt:0', 'max:999999999999.999999'],
             'is_base' => ['nullable', 'boolean'],
+            'type' => $advanceTypeRules,
             'percentage' => $percentageRules,
+            'amount' => $amountRules,
             'prefix' => ['required_if:kind,document_sequence', 'nullable', 'string', 'max:24'],
             'next_number' => ['required_if:kind,document_sequence', 'nullable', 'integer', 'min:1', 'max:999999999999'],
             'padding' => ['required_if:kind,document_sequence', 'nullable', 'integer', 'min:1', 'max:12'],
             'is_active' => ['required', 'boolean'],
         ];
+    }
+
+    protected function prepareForValidation(): void
+    {
+        if ($this->input('kind') === 'advance_option') {
+            $this->merge([
+                'type' => $this->input('type', AdvanceOption::TYPE_PERCENTAGE),
+            ]);
+        }
     }
 
     public function withValidator($validator): void

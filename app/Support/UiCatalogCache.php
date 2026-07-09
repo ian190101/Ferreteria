@@ -176,8 +176,10 @@ class UiCatalogCache
     {
         return self::remember('advance-options', fn () => AdvanceOption::query()
             ->where('is_active', true)
+            ->orderBy('type')
             ->orderBy('percentage')
-            ->get(['id', 'name', 'percentage']));
+            ->orderBy('amount')
+            ->get(['id', 'name', 'type', 'percentage', 'amount']));
     }
 
     public static function recentCustomers(int $limit = 100)

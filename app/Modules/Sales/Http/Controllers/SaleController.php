@@ -119,8 +119,7 @@ class SaleController extends Controller
             $subtotal = round($items->sum(fn ($item) => (float) $item['meters'] * (float) $item['unit_price']), 2);
             $discountTotal = round($items->sum(fn ($item) => (float) $item['discount_amount']), 2);
             $total = round($items->sum('total'), 2);
-            $advancePercentage = $advanceOption ? (float) $advanceOption->percentage : 0;
-            $advanceAmount = round($total * ($advancePercentage / 100), 2);
+            [$advancePercentage, $advanceAmount] = $this->advanceValues($advanceOption, $total, (float) $request->input('advance_amount_input', 0));
 
             $sourceQuotation = $request->filled('source_quotation_id')
                 ? Sale::query()
@@ -131,7 +130,7 @@ class SaleController extends Controller
                 : null;
 
             $sale = Sale::query()->create([
-                ...$request->safe()->except(['items', 'source_quotation_id']),
+                ...$request->safe()->except(['items', 'source_quotation_id', 'advance_amount_input']),
                 'receipt_number' => $request->filled('receipt_number')
                     ? $request->validated('receipt_number')
                     : $this->nextReceiptNumber($request->integer('branch_id'), $request->string('document_type')->toString()),
@@ -184,7 +183,7 @@ class SaleController extends Controller
             'user:id,name',
             'saleType:id,name',
             'currency:id,name,code,symbol,exchange_rate_to_bob',
-            'advanceOption:id,name,percentage',
+            'advanceOption:id,name,type,percentage,amount',
             'items.product:id,name,sku,inventory_tracking_mode,base_unit,product_unit_id',
             'items.product.unit:id,name,symbol',
             'items.coil:id,barcode,lot_number,available_meters,status',
@@ -767,7 +766,7 @@ class SaleController extends Controller
                 'branch:id,name',
                 'currency:id,name,code,symbol,exchange_rate_to_bob',
                 'saleType:id,name',
-                'advanceOption:id,name,percentage',
+                'advanceOption:id,name,type,percentage,amount',
                 'items.product:id,name,sku,inventory_tracking_mode',
             ])
             ->when(true, fn ($query) => BranchAccess::apply($query, $request->user()))
@@ -782,6 +781,7 @@ class SaleController extends Controller
                 'currency_id',
                 'customer_id',
                 'advance_option_id',
+                'advance_amount',
                 'receipt_number',
                 'customer_name',
                 'customer_document',
@@ -823,6 +823,21 @@ class SaleController extends Controller
         } while (Sale::query()->where('receipt_number', $receiptNumber)->exists());
 
         return $receiptNumber;
+    }
+
+    private function advanceValues(?AdvanceOption $advanceOption, float $total, float $manualAmount): array
+    {
+        if (! $advanceOption) {
+            return [0, 0];
+        }
+
+        if ($advanceOption->type === AdvanceOption::TYPE_AMOUNT) {
+            return [0, round(min(max($manualAmount, 0), $total), 2)];
+        }
+
+        $percentage = (float) $advanceOption->percentage;
+
+        return [$percentage, round($total * ($percentage / 100), 2)];
     }
 
     private function templateFor(Sale $sale): array

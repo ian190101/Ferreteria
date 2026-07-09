@@ -22,8 +22,8 @@ const catalogs = {
     },
     advance_option: {
         title: 'Anticipos',
-        description: 'Porcentajes preconfigurados para cobrar adelantos.',
-        columns: ['name', 'percentage', 'is_active'],
+        description: 'Anticipos preconfigurados por porcentaje o monto fijo.',
+        columns: ['name', 'type', 'percentage', 'amount', 'is_active'],
     },
     document_sequence: {
         title: 'Secuencias',
@@ -57,7 +57,7 @@ export default function Settings({ saleTypes, currencies, advanceOptions, docume
 
         post(route('sales.settings.store'), {
             preserveScroll: true,
-            onSuccess: () => reset('name', 'code', 'symbol', 'percentage'),
+            onSuccess: () => reset('name', 'code', 'symbol', 'percentage', 'amount'),
         });
     };
 
@@ -81,7 +81,9 @@ export default function Settings({ saleTypes, currencies, advanceOptions, docume
             symbol: row.symbol ?? '',
             exchange_rate_to_bob: row.exchange_rate_to_bob ?? '1',
             is_base: Boolean(row.is_base),
+            type: row.type ?? 'percentage',
             percentage: row.percentage ?? '',
+            amount: row.amount ?? '',
             branch_id: row.branch_id ?? branches[0]?.id ?? '',
             document_type: row.document_type ?? 'sale_note',
             prefix: row.prefix ?? '',
@@ -107,7 +109,7 @@ export default function Settings({ saleTypes, currencies, advanceOptions, docume
         <AuthenticatedLayout header={<h2 className="text-xl font-semibold leading-tight text-gray-800 dark:text-gray-200">Ventas</h2>}>
             <Head title="Catalogos de ventas" />
             <section className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-                <ModuleHeader title="Catalogos de ventas" description="Gestiona tipos de venta, monedas y porcentajes de anticipo usados por cotizaciones y notas." />
+                <ModuleHeader title="Catalogos de ventas" description="Gestiona tipos de venta, monedas y anticipos usados por cotizaciones y notas." />
 
                 <form onSubmit={submit} className="mb-8 grid gap-5 rounded-lg border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:grid-cols-3">
                     <SelectField label="Catalogo" name="kind" value={data.kind} onChange={(event) => changeKind(event.target.value)} error={errors.kind} disabled={Boolean(editing)}>
@@ -129,7 +131,17 @@ export default function Settings({ saleTypes, currencies, advanceOptions, docume
                         </>
                     ) : null}
                     {data.kind === 'advance_option' ? (
-                        <FormField label="Porcentaje" name="percentage" type="number" step="0.01" min="0" max="100" value={data.percentage} onChange={(event) => setData('percentage', event.target.value)} error={errors.percentage} required />
+                        <>
+                            <SelectField label="Tipo de anticipo" name="type" value={data.type} onChange={(event) => setData('type', event.target.value)} error={errors.type} required>
+                                <option value="percentage">Porcentaje</option>
+                                <option value="amount">Monto fijo</option>
+                            </SelectField>
+                            {data.type === 'amount' ? (
+                                <FormField label="Monto" name="amount" type="number" step="0.01" min="0" value={data.amount} onChange={(event) => setData('amount', event.target.value)} error={errors.amount} required />
+                            ) : (
+                                <FormField label="Porcentaje" name="percentage" type="number" step="0.01" min="0" max="100" value={data.percentage} onChange={(event) => setData('percentage', event.target.value)} error={errors.percentage} required />
+                            )}
+                        </>
                     ) : null}
                     {data.kind === 'document_sequence' ? (
                         <>
@@ -177,7 +189,9 @@ function emptyForm() {
         symbol: '',
         exchange_rate_to_bob: '1',
         is_base: false,
+        type: 'percentage',
         percentage: '',
+        amount: '',
         branch_id: '',
         document_type: 'sale_note',
         prefix: '',
@@ -232,7 +246,9 @@ function label(column) {
         symbol: 'Simbolo',
         exchange_rate_to_bob: 'Cambio a Bs',
         is_base: 'Base',
+        type: 'Tipo',
         percentage: 'Porcentaje',
+        amount: 'Monto',
         branch: 'Sucursal',
         document_type: 'Documento',
         prefix: 'Prefijo',
@@ -252,7 +268,15 @@ function formatValue(column, value) {
     }
 
     if (column === 'percentage') {
-        return `${Number(value ?? 0).toFixed(2)}%`;
+        return value === null || value === undefined ? '-' : `${Number(value ?? 0).toFixed(2)}%`;
+    }
+
+    if (column === 'amount') {
+        return value === null || value === undefined ? '-' : `Bs ${Number(value ?? 0).toFixed(2)}`;
+    }
+
+    if (column === 'type') {
+        return value === 'amount' ? 'Monto fijo' : 'Porcentaje';
     }
 
     if (column === 'exchange_rate_to_bob') {

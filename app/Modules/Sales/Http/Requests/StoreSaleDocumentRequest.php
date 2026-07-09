@@ -28,6 +28,7 @@ class StoreSaleDocumentRequest extends FormRequest
             'currency_id' => ['required', 'integer', 'exists:currencies,id'],
             'customer_id' => ['nullable', 'integer', 'exists:customers,id'],
             'advance_option_id' => ['nullable', 'integer', 'exists:advance_options,id'],
+            'advance_amount_input' => ['nullable', 'numeric', 'min:0', 'max:999999999999.99'],
             'source_quotation_id' => ['nullable', 'integer', 'exists:sales,id'],
             'receipt_number' => ['nullable', 'string', 'max:80', 'unique:sales,receipt_number'],
             'customer_name' => ['required_without:customer_id', 'nullable', 'string', 'max:255'],

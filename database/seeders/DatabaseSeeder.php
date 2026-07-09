@@ -146,7 +146,7 @@ class DatabaseSeeder extends Seeder
         foreach ([10, 30, 50] as $percentage) {
             AdvanceOption::firstOrCreate(
                 ['percentage' => $percentage],
-                ['name' => "{$percentage}%", 'is_active' => true],
+                ['name' => "{$percentage}%", 'type' => AdvanceOption::TYPE_PERCENTAGE, 'amount' => null, 'is_active' => true],
             );
         }
 

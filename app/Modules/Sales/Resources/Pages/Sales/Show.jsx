@@ -476,7 +476,7 @@ function TotalsSection({ sale, currency, fields }) {
             {fields.subtotal ? <TotalLine label="Subtotal" value={sale.subtotal} /> : null}
             {fields.discount ? <TotalLine label="Descuento" value={sale.discount_total} /> : null}
             <TotalLine label="Total" value={`${currency.symbol} ${sale.total}`} strong />
-            {fields.advance ? <TotalLine label={`Anticipo ${sale.advance_percentage}%`} value={sale.advance_amount} /> : null}
+            {fields.advance ? <TotalLine label={advanceLabel(sale)} value={sale.advance_amount} /> : null}
             {fields.balance_due ? <TotalLine label="Saldo por pagar" value={sale.balance_due} /> : null}
             <p className="mt-2 font-bold">Son: {amountToLiteral(Number(sale.total ?? 0), currency.name ?? currency.code)}</p>
         </section>
@@ -490,6 +490,14 @@ function TotalLine({ label, value, strong = false }) {
             <span className="text-right">{value}</span>
         </div>
     );
+}
+
+function advanceLabel(sale) {
+    if (sale.advanceOption?.type === 'amount' || sale.advance_option?.type === 'amount') {
+        return 'Anticipo';
+    }
+
+    return `Anticipo ${sale.advance_percentage}%`;
 }
 
 function TermsSection({ sale }) {

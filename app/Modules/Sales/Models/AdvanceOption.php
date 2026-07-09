@@ -10,14 +10,20 @@ class AdvanceOption extends AuditableModel
 {
     use SoftDeletes;
 
+    public const TYPE_PERCENTAGE = 'percentage';
+    public const TYPE_AMOUNT = 'amount';
+
     protected $fillable = [
         'name',
+        'type',
         'percentage',
+        'amount',
         'is_active',
     ];
 
     protected $casts = [
         'percentage' => 'decimal:2',
+        'amount' => 'decimal:2',
         'is_active' => 'boolean',
     ];
 
