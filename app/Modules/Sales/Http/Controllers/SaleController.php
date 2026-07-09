@@ -189,6 +189,7 @@ class SaleController extends Controller
             'items.product:id,name,sku,inventory_tracking_mode,base_unit,product_unit_id',
             'items.product.unit:id,name,symbol',
             'items.coil:id,barcode,lot_number,available_meters,status',
+            'items.deliveryItems:id,sale_item_id,meters,display_quantity,display_unit_label',
             'payments:id,sale_id,payment_method_id,amount,paid_at',
             'payments.method:id,name',
         ]);

@@ -236,6 +236,10 @@ export default function Show({ sale, template, paymentMethods = [], conversionRe
                     </section>
                 ) : null}
 
+                {sale.document_type === 'sale_note' ? (
+                    <DeliveryProgress sale={sale} />
+                ) : null}
+
                 <div ref={previewShellRef} className="ticket-preview-shell mx-auto max-w-full overflow-hidden print:contents">
                     <div
                         className="ticket-preview-stage mx-auto print:contents"
@@ -470,6 +474,60 @@ function itemAttributeValue(item, code) {
 
     return attribute?.value ? attribute.value : '-';
 }
+
+function DeliveryProgress({ sale }) {
+    const rows = (sale.items ?? []).map((item) => {
+        const deliveries = item.delivery_items ?? item.deliveryItems ?? [];
+        const delivered = deliveries.reduce((sum, deliveryItem) => sum + Number(deliveryItem.display_quantity || deliveryItem.meters || 0), 0);
+        const total = Number(item.display_quantity || item.meters || 0);
+        const pending = Math.max(total - delivered, 0);
+
+        return {
+            id: item.id,
+            description: item.description,
+            unit: item.display_unit_label ?? item.unit_label ?? '',
+            total,
+            delivered,
+            pending,
+            completed: pending <= 0,
+        };
+    });
+    const completed = rows.length > 0 && rows.every((row) => row.completed);
+
+    return (
+        <section className="print-hidden mx-auto mb-4 max-w-4xl rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                    <h3 className="font-semibold text-slate-950 dark:text-white">Estado de despacho</h3>
+                    <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Seguimiento de entrega por producto de esta nota de venta.</p>
+                </div>
+                <span className={`rounded-full px-3 py-1 text-xs font-semibold ${completed ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-200' : 'bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-200'}`}>
+                    {completed ? 'Todo entregado' : 'Entrega parcial'}
+                </span>
+            </div>
+            <div className="mt-4 grid gap-2">
+                {rows.map((row) => (
+                    <div key={row.id} className="rounded-lg border border-slate-100 px-3 py-2 text-sm dark:border-slate-800">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                            <span className="font-medium text-slate-900 dark:text-slate-100">{row.description}</span>
+                            <span className={row.completed ? 'text-emerald-600 dark:text-emerald-300' : 'text-amber-700 dark:text-amber-300'}>
+                                {row.completed ? 'Entregado completo' : 'Pendiente'}
+                            </span>
+                        </div>
+                        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                            Total: {formatDeliveryQuantity(row.total, row.unit)} | Entregado: {formatDeliveryQuantity(row.delivered, row.unit)} | Pendiente: {formatDeliveryQuantity(row.pending, row.unit)}
+                        </p>
+                    </div>
+                ))}
+            </div>
+        </section>
+    );
+}
+
+function formatDeliveryQuantity(value, unit) {
+    return `${Number(value ?? 0).toLocaleString('es-BO', { maximumFractionDigits: 3 })} ${unit ?? ''}`.trim();
+}
+
 function TotalsSection({ sale, currency, fields }) {
     return (
         <section className="mt-2 border-t border-black pt-2">

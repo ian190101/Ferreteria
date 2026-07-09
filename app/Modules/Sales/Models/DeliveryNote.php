@@ -17,6 +17,10 @@ class DeliveryNote extends AuditableModel
         'sale_id',
         'branch_id',
         'user_id',
+        'delivery_driver_id',
+        'delivery_truck_id',
+        'manual_driver',
+        'manual_truck',
         'delivery_number',
         'delivered_at',
         'total_meters',
@@ -32,6 +36,8 @@ class DeliveryNote extends AuditableModel
     protected $casts = [
         'delivered_at' => 'datetime',
         'total_meters' => 'decimal:3',
+        'manual_driver' => 'boolean',
+        'manual_truck' => 'boolean',
     ];
 
     public function sale(): BelongsTo
@@ -47,6 +53,16 @@ class DeliveryNote extends AuditableModel
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    public function driver(): BelongsTo
+    {
+        return $this->belongsTo(DeliveryDriver::class, 'delivery_driver_id');
+    }
+
+    public function truck(): BelongsTo
+    {
+        return $this->belongsTo(DeliveryTruck::class, 'delivery_truck_id');
     }
 
     public function items(): HasMany

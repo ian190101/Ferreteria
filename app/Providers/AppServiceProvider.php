@@ -35,7 +35,9 @@ use App\Modules\Purchases\Models\PurchaseOrderReceipt;
 use App\Modules\Purchases\Models\Supplier;
 use App\Modules\Sales\Models\AdvanceOption;
 use App\Modules\Sales\Models\Currency;
+use App\Modules\Sales\Models\DeliveryDriver;
 use App\Modules\Sales\Models\DeliveryNote;
+use App\Modules\Sales\Models\DeliveryTruck;
 use App\Modules\Sales\Models\DocumentSequence;
 use App\Modules\Sales\Models\ReceiptTemplate;
 use App\Modules\Sales\Models\Sale;
@@ -115,7 +117,9 @@ class AppServiceProvider extends ServiceProvider
             Supplier::class,
             AdvanceOption::class,
             Currency::class,
+            DeliveryDriver::class,
             DeliveryNote::class,
+            DeliveryTruck::class,
             DocumentSequence::class,
             ReceiptTemplate::class,
             Sale::class,

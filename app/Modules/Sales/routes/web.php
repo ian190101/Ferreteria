@@ -41,6 +41,18 @@ Route::middleware(['auth', 'verified'])
         Route::post('/deliveries', [DeliveryNoteController::class, 'store'])
             ->middleware('permission:sales.deliveries.manage')
             ->name('deliveries.store');
+        Route::post('/deliveries/drivers', [DeliveryNoteController::class, 'storeDriver'])
+            ->middleware('permission:sales.deliveries.manage')
+            ->name('deliveries.drivers.store');
+        Route::put('/deliveries/drivers/{driver}', [DeliveryNoteController::class, 'updateDriver'])
+            ->middleware('permission:sales.deliveries.manage')
+            ->name('deliveries.drivers.update');
+        Route::post('/deliveries/trucks', [DeliveryNoteController::class, 'storeTruck'])
+            ->middleware('permission:sales.deliveries.manage')
+            ->name('deliveries.trucks.store');
+        Route::put('/deliveries/trucks/{truck}', [DeliveryNoteController::class, 'updateTruck'])
+            ->middleware('permission:sales.deliveries.manage')
+            ->name('deliveries.trucks.update');
 
         Route::get('/settings/catalogs', [SalesSettingController::class, 'index'])
             ->middleware('permission:settings.manage')

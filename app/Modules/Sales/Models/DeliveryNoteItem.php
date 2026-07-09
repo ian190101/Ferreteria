@@ -15,10 +15,13 @@ class DeliveryNoteItem extends Model
         'product_id',
         'product_coil_id',
         'meters',
+        'display_quantity',
+        'display_unit_label',
     ];
 
     protected $casts = [
         'meters' => 'decimal:3',
+        'display_quantity' => 'decimal:3',
     ];
 
     public function deliveryNote(): BelongsTo
