@@ -30,6 +30,7 @@ export default function Form({
     saleTypes = [],
     currencies = [],
     advanceOptions = [],
+    units = [],
     products = [],
     coils = [],
     customers = [],
@@ -131,7 +132,7 @@ export default function Form({
         event.preventDefault();
         transform((payload) => ({
             ...payload,
-            items: payload.items.map((item) => prepareSaleItem(item, products, decimalFormat)),
+            items: payload.items.map((item) => prepareSaleItem(item, products, decimalFormat, units)),
         }));
         post(route('sales.store'), { preserveScroll: true });
     };
@@ -225,8 +226,12 @@ export default function Form({
                                     <div className="sm:col-span-2">
                                         <FormField label="Descripcion" name={`items.${index}.description`} value={item.description} onChange={(event) => updateItem(index, 'description', event.target.value)} error={errors[`items.${index}.description`]} required />
                                     </div>
-                                    <FormField label="Cantidad" name={`items.${index}.display_quantity`} type="number" step={decimalStep(decimalFormat.decimalsFor('quantity'))} value={item.display_quantity} onChange={(event) => updateItem(index, 'display_quantity', event.target.value)} error={errors[`items.${index}.display_quantity`]} required />
-                                    <FormField label="Unidad" name={`items.${index}.display_unit_label`} value={item.display_unit_label || productUnitSymbol(product)} onChange={(event) => updateItem(index, 'display_unit_label', event.target.value)} error={errors[`items.${index}.display_unit_label`]} required />
+                                    <FormField label="Cantidad" name={`items.${index}.display_quantity`} type="number" step={decimalStep(decimalFormat.decimalsFor(quantityKindForItem(item, product, units)))} value={item.display_quantity} onChange={(event) => updateItem(index, 'display_quantity', event.target.value)} error={errors[`items.${index}.display_quantity`]} required />
+                                    <SelectField label="Unidad" name={`items.${index}.display_unit_label`} value={item.display_unit_label || productUnitSymbol(product)} onChange={(event) => updateItem(index, 'display_unit_label', event.target.value)} error={errors[`items.${index}.display_unit_label`]} required>
+                                        {documentUnits(units, product).map((unit) => (
+                                            <option key={unit.symbol} value={unit.symbol}>{unit.name} ({unit.symbol})</option>
+                                        ))}
+                                    </SelectField>
                                     <SelectField label="Calculo opcional" name={`items.${index}.quantity_mode`} value={item.quantity_mode ?? 'direct'} onChange={(event) => updateItem(index, 'quantity_mode', event.target.value)}>
                                         <option value="direct">Sin calculo</option>
                                         <option value="length">Cantidad x largo</option>
@@ -244,7 +249,7 @@ export default function Form({
                                         <FormField label={`Cantidad base (${productUnitSymbol(product)})`} name={`items.${index}.meters`} type="number" step={decimalStep(decimalFormat.decimalsFor(quantityKind(product)))} value={baseQuantityFieldValue(item, product, summary, decimalFormat)} onChange={(event) => updateItem(index, 'meters', event.target.value)} error={errors[`items.${index}.meters`]} required />
                                     ) : (
                                         <div className="rounded-md border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300">
-                                            Se guardara {decimalFormat.quantity(item.display_quantity || 0)} {item.display_unit_label || productUnitSymbol(product)}
+                                            Se guardara {decimalFormat.format(item.display_quantity || 0, quantityKindForItem(item, product, units))} {item.display_unit_label || productUnitSymbol(product)}
                                         </div>
                                     )}
                                     {productAttributes(product).length ? (
@@ -283,7 +288,7 @@ export default function Form({
                                     ) : null}
                                     <FormField label="Desc." name={`items.${index}.discount_amount`} type="number" step={decimalStep(decimalFormat.decimalsFor('money'))} value={item.discount_amount} onChange={(event) => updateItem(index, 'discount_amount', event.target.value)} error={errors[`items.${index}.discount_amount`]} required />
                                     <div className="rounded-md border border-slate-200 bg-slate-50 px-4 py-3 text-sm dark:border-slate-800 dark:bg-slate-950 sm:col-span-6">
-                                        <p className="text-slate-500 dark:text-slate-400">{item.quantity_mode === 'direct' ? 'Cantidad' : 'Equivalente'}: <span className="font-semibold text-emerald-600">{item.quantity_mode === 'direct' ? formatProductQuantity(summary.meters, product, decimalFormat) : `${decimalFormat.measure(summary.meters)} m`}</span></p>
+                                        <p className="text-slate-500 dark:text-slate-400">{item.quantity_mode === 'direct' ? 'Cantidad' : 'Equivalente'}: <span className="font-semibold text-emerald-600">{item.quantity_mode === 'direct' ? formatDocumentQuantity(summary.meters, item, product, units, decimalFormat) : `${decimalFormat.measure(summary.meters)} m`}</span></p>
                                         <p className="mt-1 text-slate-500 dark:text-slate-400">Subtotal: <span className="font-semibold text-slate-950 dark:text-slate-50">Bs {decimalFormat.money(summary.total)}</span></p>
                                         {item.quantity_mode === 'weight' && !product?.thickness?.kg_per_meter ? (
                                             <p className="mt-1 text-xs text-red-600">Este producto necesita espesor con kg/m para convertir peso a metros.</p>
@@ -313,7 +318,7 @@ export default function Form({
     );
 }
 
-function prepareSaleItem(item, products, decimalFormat) {
+function prepareSaleItem(item, products, decimalFormat, units) {
     const product = selectedProduct(products, item);
     const summary = saleItemSummary(item, product);
 
@@ -328,7 +333,7 @@ function prepareSaleItem(item, products, decimalFormat) {
         calculation_mode: item.quantity_mode || 'direct',
         meters: item.quantity_mode === 'weight'
             ? (summary.meters ? decimalFormat.fixed(summary.meters, 'measure') : '')
-            : (summary.meters ? decimalFormat.fixed(summary.meters, item.quantity_mode === 'direct' ? quantityKind(product) : 'measure') : item.display_quantity),
+            : (summary.meters ? decimalFormat.fixed(summary.meters, item.quantity_mode === 'direct' ? quantityKindForItem(item, product, units) : 'measure') : item.display_quantity),
         unit_price: item.price_mode === 'ton'
             ? (summary.unitPrice ? decimalFormat.fixed(summary.unitPrice, 'cost') : '')
             : item.unit_price,
@@ -484,10 +489,39 @@ function quantityKind(product) {
     return 'quantity';
 }
 
+function quantityKindForItem(item, product, units) {
+    const unit = units.find((entry) => entry.symbol === (item.display_unit_label || productUnitSymbol(product)));
+
+    return unit ? precisionKind(unit.kind) : quantityKind(product);
+}
+
+function documentUnits(units, product) {
+    const productSymbol = productUnitSymbol(product);
+    const existing = units.some((unit) => unit.symbol === productSymbol);
+    const options = existing ? units : [{ id: `product-${productSymbol}`, name: productSymbol, symbol: productSymbol, kind: quantityKind(product) }, ...units];
+
+    return options;
+}
+
+function precisionKind(kind) {
+    return {
+        cantidad: 'quantity',
+        longitud: 'measure',
+        medida: 'measure',
+        peso: 'weight',
+    }[String(kind ?? '').toLowerCase()] ?? 'quantity';
+}
+
 function formatProductQuantity(value, product, decimalFormat) {
     const unit = productUnitSymbol(product);
 
     return `${decimalFormat.format(value, quantityKind(product))} ${unit}`;
+}
+
+function formatDocumentQuantity(value, item, product, units, decimalFormat) {
+    const unit = item.display_unit_label || productUnitSymbol(product);
+
+    return `${decimalFormat.format(value, quantityKindForItem(item, product, units))} ${unit}`;
 }
 
 function trackingLabel(product) {

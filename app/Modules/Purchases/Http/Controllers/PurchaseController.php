@@ -56,6 +56,7 @@ class PurchaseController extends Controller
     {
         return Inertia::render('Purchases/Form', [
             'branches' => UiCatalogCache::activeBranchesForUser($request->user()),
+            'units' => UiCatalogCache::productUnits(),
             'suppliers' => Inertia::defer(fn () => UiCatalogCache::activeSuppliers(), 'purchase-form-catalogs'),
             'products' => Inertia::defer(fn () => UiCatalogCache::activeProductsWithThickness(), 'purchase-form-catalogs'),
         ]);

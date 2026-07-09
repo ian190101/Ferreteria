@@ -73,6 +73,7 @@ class SaleController extends Controller
             'saleTypes' => UiCatalogCache::saleTypes(),
             'currencies' => UiCatalogCache::currencies(),
             'advanceOptions' => UiCatalogCache::advanceOptions(),
+            'units' => UiCatalogCache::productUnits(),
             'products' => Inertia::defer(fn () => UiCatalogCache::activeProductsWithThickness(), 'sales-form-catalogs'),
             'coils' => Inertia::defer(fn () => $this->availableCoils($request), 'sales-form-catalogs'),
             'customers' => Inertia::defer(fn () => UiCatalogCache::recentCustomers(), 'sales-form-catalogs'),
