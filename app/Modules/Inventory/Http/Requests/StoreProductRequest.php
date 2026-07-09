@@ -4,13 +4,11 @@ namespace App\Modules\Inventory\Http\Requests;
 
 use App\Modules\Inventory\Models\Product;
 use App\Modules\Inventory\Models\ProductCategory;
-use App\Modules\Inventory\Models\ProductCategoryAttribute;
 use App\Modules\Inventory\Models\ProductUnit;
 use App\Modules\Inventory\Support\ProductCodeGenerator;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
-use Illuminate\Validation\Validator;
 
 class StoreProductRequest extends FormRequest
 {
@@ -45,13 +43,6 @@ class StoreProductRequest extends FormRequest
         ];
     }
 
-    public function withValidator(Validator $validator): void
-    {
-        $validator->after(function (Validator $validator) {
-            $this->validateCategoryAttributes($validator);
-        });
-    }
-
     protected function prepareForValidation(): void
     {
         $category = ProductCategory::query()
@@ -68,42 +59,6 @@ class StoreProductRequest extends FormRequest
             'attributes' => $this->normalizedAttributes(),
             'custom_attributes' => $this->normalizedCustomAttributes(),
         ]);
-    }
-
-    private function validateCategoryAttributes(Validator $validator): void
-    {
-        $categoryId = $this->integer('product_category_id');
-
-        if (! $categoryId) {
-            return;
-        }
-
-        $definitions = ProductCategoryAttribute::query()
-            ->where('product_category_id', $categoryId)
-            ->where('is_active', true)
-            ->get(['code', 'name', 'type', 'options', 'is_required']);
-        $values = $this->input('attributes', []);
-
-        foreach ($definitions as $definition) {
-            $value = $values[$definition->code] ?? null;
-
-            if ($definition->is_required && blank($value) && $value !== false && $value !== 0 && $value !== '0') {
-                $validator->errors()->add("attributes.{$definition->code}", "La caracteristica {$definition->name} es obligatoria.");
-                continue;
-            }
-
-            if (blank($value) && $value !== false && $value !== 0 && $value !== '0') {
-                continue;
-            }
-
-            if ($definition->type === ProductCategoryAttribute::TYPE_NUMBER && ! is_numeric($value)) {
-                $validator->errors()->add("attributes.{$definition->code}", "La caracteristica {$definition->name} debe ser numerica.");
-            }
-
-            if ($definition->type === ProductCategoryAttribute::TYPE_SELECT && ! in_array($value, $definition->options ?? [], true)) {
-                $validator->errors()->add("attributes.{$definition->code}", "La caracteristica {$definition->name} no tiene una opcion valida.");
-            }
-        }
     }
 
     private function normalizedAttributes(): array

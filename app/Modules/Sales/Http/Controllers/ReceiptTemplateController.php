@@ -181,13 +181,14 @@ class ReceiptTemplateController extends Controller
 
     private function attributeFields(): array
     {
-        return UiCatalogCache::productCategories()
-            ->flatMap(fn ($category) => $category->attributes)
+        return UiCatalogCache::activeProductsWithThickness()
+            ->flatMap(fn ($product) => $product->custom_attributes ?? [])
+            ->filter(fn ($attribute) => filled($attribute['code'] ?? null))
             ->unique('code')
             ->map(fn ($attribute) => [
-                'field' => 'item_attribute_'.$attribute->code,
-                'code' => $attribute->code,
-                'label' => $this->printableAttributeName($attribute->name, $attribute->unit?->symbol),
+                'field' => 'item_attribute_'.$attribute['code'],
+                'code' => $attribute['code'],
+                'label' => $this->printableAttributeName($attribute['name'] ?? $attribute['code'], $attribute['unit'] ?? null),
             ])
             ->values()
             ->all();

@@ -97,7 +97,7 @@ class ProductController extends Controller
     public function edit(Product $product): Response
     {
         return Inertia::render('Inventory/Products/Form', [
-            'product' => $product->load(['thickness', 'productCategory.attributes.unit', 'unit']),
+            'product' => $product->load(['thickness', 'productCategory', 'unit']),
             'thicknesses' => $this->activeThicknesses(),
             'categories' => $this->activeCategories(),
             'units' => $this->activeUnits(),

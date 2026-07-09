@@ -99,7 +99,7 @@ class SaleController extends Controller
             $canOverridePrices = $request->user()->can('sales.prices.override');
             $validatedItems = collect($request->validated('items'));
             $products = Product::query()
-                ->with(['unit:id,symbol', 'productCategory.attributes.unit:id,symbol'])
+                ->with(['unit:id,symbol'])
                 ->whereIn('id', $validatedItems->pluck('product_id')->unique()->values())
                 ->get(['id', 'product_category_id', 'product_unit_id', 'name', 'sale_price', 'attributes', 'custom_attributes'])
                 ->keyBy('id');
@@ -885,20 +885,7 @@ class SaleController extends Controller
     {
         $payloadByCode = collect($payloadAttributes)->keyBy('code');
 
-        $categoryAttributes = $product?->productCategory?->attributes
-            ->map(function ($definition) use ($product, $payloadByCode) {
-                $payload = $payloadByCode->get($definition->code, []);
-                $defaultValue = data_get($product->attributes ?? [], $definition->code);
-                $value = data_get($payload, 'value', $defaultValue);
-
-                return [
-                    'code' => $definition->code,
-                    'name' => $definition->name,
-                    'value' => blank($value) ? '-' : (string) $value,
-                    'unit' => $definition->unit?->symbol,
-                ];
-            }) ?? collect();
-        $customAttributes = collect($product?->custom_attributes ?? [])
+        return collect($product?->custom_attributes ?? [])
             ->map(function (array $definition) use ($payloadByCode) {
                 $code = $definition['code'] ?? '';
                 $payload = $payloadByCode->get($code, []);
@@ -909,10 +896,7 @@ class SaleController extends Controller
                     'value' => data_get($payload, 'value', $definition['value'] ?? ''),
                     'unit' => $definition['unit'] ?? '',
                 ];
-            });
-
-        return $categoryAttributes
-            ->concat($customAttributes)
+            })
             ->filter(fn ($attribute) => filled($attribute['code'] ?? null))
             ->unique('code')
             ->values()

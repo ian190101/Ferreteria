@@ -64,11 +64,6 @@ class UiCatalogCache
             ->with([
                 'thickness:id,name,kg_to_meter_factor,kg_per_meter',
                 'unit:id,name,symbol,kind',
-                'productCategory.attributes' => fn ($query) => $query
-                    ->where('is_active', true)
-                    ->with('unit:id,name,symbol')
-                    ->orderBy('sort_order')
-                    ->orderBy('name'),
             ])
             ->where('is_active', true)
             ->orderBy('name')
@@ -96,11 +91,7 @@ class UiCatalogCache
     public static function productCategories()
     {
         return self::remember('product-categories', fn () => ProductCategory::query()
-            ->with(['defaultUnit:id,name,symbol', 'attributes' => fn ($query) => $query
-                ->where('is_active', true)
-                ->with('unit:id,name,symbol')
-                ->orderBy('sort_order')
-                ->orderBy('name')])
+            ->with(['defaultUnit:id,name,symbol'])
             ->where('is_active', true)
             ->orderBy('name')
             ->get(['id', 'default_unit_id', 'name', 'default_tracking_mode', 'requires_thickness']));

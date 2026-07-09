@@ -71,7 +71,6 @@ export default function Form({ product, thicknesses, categories, units }) {
             base_unit: unit?.symbol ?? data.base_unit,
             inventory_tracking_mode: category?.default_tracking_mode ?? data.inventory_tracking_mode,
             thickness_id: category?.requires_thickness ? data.thickness_id : '',
-            attributes: normalizeAttributesForCategory(category, data.attributes),
         });
     };
 
@@ -85,12 +84,6 @@ export default function Form({ product, thicknesses, categories, units }) {
         });
     };
 
-    const setAttribute = (code, value) => {
-        setData('attributes', {
-            ...data.attributes,
-            [code]: value,
-        });
-    };
     const addCustomAttribute = () => setData('custom_attributes', [
         ...(data.custom_attributes ?? []),
         { code: '', name: '', value: '', unit: '' },
@@ -190,38 +183,6 @@ export default function Form({ product, thicknesses, categories, units }) {
                     </SelectField>
 
                     <div className="sm:col-span-2">
-                        <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950">
-                            <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-                                <div>
-                                    <h3 className="text-sm font-semibold text-slate-950 dark:text-white">Caracteristicas de {selectedCategory?.name ?? 'categoria'}</h3>
-                                    <p className="text-xs text-slate-500 dark:text-slate-400">Estos campos cambian segun la categoria seleccionada.</p>
-                                </div>
-                                <Link href={route('inventory.products.catalogs.index')} className="text-sm font-semibold text-brand-primary hover:underline">
-                                    Gestionar categorias
-                                </Link>
-                            </div>
-
-                            {selectedCategory?.attributes?.length ? (
-                                <div className="mt-4 grid gap-4 sm:grid-cols-2">
-                                    {selectedCategory.attributes.map((attribute) => (
-                                        <AttributeField
-                                            key={attribute.id}
-                                            attribute={attribute}
-                                            value={data.attributes?.[attribute.code] ?? ''}
-                                            error={errors[`attributes.${attribute.code}`]}
-                                            onChange={(value) => setAttribute(attribute.code, value)}
-                                        />
-                                    ))}
-                                </div>
-                            ) : (
-                                <p className="mt-4 rounded-lg border border-dashed border-slate-300 px-4 py-3 text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
-                                    Esta categoria aun no tiene caracteristicas configuradas.
-                                </p>
-                            )}
-                        </div>
-                    </div>
-
-                    <div className="sm:col-span-2">
                         <div className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-950/40">
                             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                                 <div>
@@ -283,61 +244,6 @@ function unitLabel(unit) {
         galon: 'galones',
         rollo: 'rollos',
     }[unit] ?? unit;
-}
-
-function normalizeAttributesForCategory(category, currentAttributes) {
-    if (!category?.attributes?.length) {
-        return {};
-    }
-
-    return category.attributes.reduce((values, attribute) => ({
-        ...values,
-        [attribute.code]: currentAttributes?.[attribute.code] ?? '',
-    }), {});
-}
-
-function AttributeField({ attribute, value, error, onChange }) {
-    const label = `${attribute.name}${attribute.is_required ? ' *' : ''}${attribute.unit ? ` (${attribute.unit.symbol})` : ''}`;
-
-    if (attribute.type === 'boolean') {
-        return (
-            <label className="flex min-h-[4.25rem] items-center gap-3 rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm dark:border-slate-800 dark:bg-slate-900">
-                <input
-                    type="checkbox"
-                    checked={Boolean(value)}
-                    onChange={(event) => onChange(event.target.checked)}
-                    className="h-5 w-5 rounded border-slate-300 text-brand-primary focus:ring-brand-primary"
-                />
-                <span className="font-medium text-slate-700 dark:text-slate-200">{label}</span>
-            </label>
-        );
-    }
-
-    if (attribute.type === 'select') {
-        return (
-            <SelectField label={label} name={`attributes.${attribute.code}`} value={value} onChange={(event) => onChange(event.target.value)} error={error} required={attribute.is_required}>
-                <option value="">Seleccione</option>
-                {(attribute.options ?? []).map((option) => (
-                    <option key={option} value={option}>
-                        {option}
-                    </option>
-                ))}
-            </SelectField>
-        );
-    }
-
-    return (
-        <FormField
-            label={label}
-            name={`attributes.${attribute.code}`}
-            type={attribute.type === 'number' ? 'number' : 'text'}
-            step={attribute.type === 'number' ? '0.001' : undefined}
-            value={value}
-            onChange={(event) => onChange(event.target.value)}
-            error={error}
-            required={attribute.is_required}
-        />
-    );
 }
 
 function GeneratedField({ label, name, value, onChange, error, onGenerate }) {

@@ -68,7 +68,7 @@ class PurchaseController extends Controller
         $purchase = DB::transaction(function () use ($request) {
             $validatedItems = collect($request->validated('items'));
             $products = Product::query()
-                ->with(['thickness', 'unit:id,symbol', 'productCategory.attributes.unit:id,symbol'])
+                ->with(['thickness', 'unit:id,symbol'])
                 ->whereIn('id', $validatedItems->pluck('product_id')->unique()->values())
                 ->get(['id', 'thickness_id', 'product_category_id', 'product_unit_id', 'name', 'base_unit', 'inventory_tracking_mode', 'attributes', 'custom_attributes'])
                 ->keyBy('id');
@@ -221,20 +221,7 @@ class PurchaseController extends Controller
     {
         $payloadByCode = collect($payloadAttributes)->keyBy('code');
 
-        $categoryAttributes = $product->productCategory?->attributes
-            ->map(function ($definition) use ($product, $payloadByCode) {
-                $payload = $payloadByCode->get($definition->code, []);
-                $defaultValue = data_get($product->attributes ?? [], $definition->code);
-                $value = data_get($payload, 'value', $defaultValue);
-
-                return [
-                    'code' => $definition->code,
-                    'name' => $definition->name,
-                    'value' => blank($value) ? '-' : (string) $value,
-                    'unit' => $definition->unit?->symbol,
-                ];
-            }) ?? collect();
-        $customAttributes = collect($product->custom_attributes ?? [])
+        return collect($product->custom_attributes ?? [])
             ->map(function (array $definition) use ($payloadByCode) {
                 $code = $definition['code'] ?? '';
                 $payload = $payloadByCode->get($code, []);
@@ -245,10 +232,7 @@ class PurchaseController extends Controller
                     'value' => data_get($payload, 'value', $definition['value'] ?? ''),
                     'unit' => $definition['unit'] ?? '',
                 ];
-            });
-
-        return $categoryAttributes
-            ->concat($customAttributes)
+            })
             ->filter(fn ($attribute) => filled($attribute['code'] ?? null))
             ->unique('code')
             ->values()

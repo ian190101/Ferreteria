@@ -324,15 +324,12 @@ function normalizedItemAttributes(item, product) {
 }
 
 function productAttributes(product) {
-    const categoryAttributes = product?.product_category?.attributes ?? product?.productCategory?.attributes ?? [];
-    const customAttributes = (product?.custom_attributes ?? []).map((attribute) => ({
+    return (product?.custom_attributes ?? []).map((attribute) => ({
         ...attribute,
         type: 'text',
         options: [],
         is_required: false,
-    }));
-
-    return [...categoryAttributes, ...customAttributes].filter((attribute, index, attributes) => (
+    })).filter((attribute, index, attributes) => (
         attribute?.code && attributes.findIndex((entry) => entry.code === attribute.code) === index
     ));
 }

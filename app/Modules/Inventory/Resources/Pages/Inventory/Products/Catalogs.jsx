@@ -5,22 +5,15 @@ import FormField from '../../../../../Shared/Resources/Components/FormField';
 import ModuleHeader from '../../../../../Shared/Resources/Components/ModuleHeader';
 import SelectField from '../../../../../Shared/Resources/Components/SelectField';
 import { Head, Link, useForm } from '@inertiajs/react';
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 
 export default function Catalogs({ categories, units, thicknesses = [] }) {
     const [editingUnit, setEditingUnit] = useState(null);
     const [editingThickness, setEditingThickness] = useState(null);
     const [editingCategory, setEditingCategory] = useState(null);
-    const [editingAttribute, setEditingAttribute] = useState(null);
-    const [selectedCategoryId, setSelectedCategoryId] = useState(categories[0]?.id ?? '');
-    const selectedCategory = useMemo(
-        () => categories.find((category) => Number(category.id) === Number(selectedCategoryId)),
-        [categories, selectedCategoryId],
-    );
     const unitForm = useForm(unitDefaults());
     const thicknessForm = useForm(thicknessDefaults());
     const categoryForm = useForm(categoryDefaults(units[0]));
-    const attributeForm = useForm(attributeDefaults());
 
     const submitUnit = (event) => {
         event.preventDefault();
@@ -80,22 +73,6 @@ export default function Catalogs({ categories, units, thicknesses = [] }) {
         });
     };
 
-    const submitAttribute = (event) => {
-        event.preventDefault();
-
-        const options = { preserveScroll: true, onSuccess: () => {
-            attributeForm.reset();
-            setEditingAttribute(null);
-        } };
-
-        if (editingAttribute) {
-            attributeForm.put(route('inventory.products.catalogs.attributes.update', editingAttribute.id), options);
-            return;
-        }
-
-        attributeForm.post(route('inventory.products.catalogs.attributes.store', selectedCategory.id), options);
-    };
-
     const editUnit = (unit) => {
         setEditingUnit(unit);
         unitForm.setData({
@@ -118,20 +95,6 @@ export default function Catalogs({ categories, units, thicknesses = [] }) {
         });
     };
 
-    const editAttribute = (attribute) => {
-        setEditingAttribute(attribute);
-        attributeForm.setData({
-            name: attribute.name,
-            code: attribute.code,
-            type: attribute.type,
-            product_unit_id: attribute.product_unit_id ?? '',
-            options_text: (attribute.options ?? []).join('\n'),
-            is_required: attribute.is_required,
-            is_active: attribute.is_active,
-            sort_order: attribute.sort_order ?? 0,
-        });
-    };
-
     return (
         <AuthenticatedLayout header={<h2 className="text-xl font-semibold leading-tight text-gray-800 dark:text-gray-200">Inventario</h2>}>
             <Head title="Categorias y caracteristicas" />
@@ -139,8 +102,8 @@ export default function Catalogs({ categories, units, thicknesses = [] }) {
             <section className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
                 <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                     <ModuleHeader
-                        title="Categorias y caracteristicas"
-                        description="Define unidades, categorias y campos dinamicos para productos de ferreteria."
+                        title="Catalogos de productos"
+                        description="Define unidades, espesores y categorias. Las caracteristicas se configuran directamente dentro de cada producto."
                     />
                     <Link href={route('inventory.products.index')} className="rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 transition hover:border-brand-primary hover:text-brand-primary dark:border-slate-800 dark:text-slate-300">
                         Volver a productos
@@ -252,74 +215,11 @@ export default function Catalogs({ categories, units, thicknesses = [] }) {
                                 category.is_active ? 'Activa' : 'Inactiva',
                                 <div key={category.id} className="flex items-center gap-2">
                                     <IconButton icon="edit" label="Editar" onClick={() => editCategory(category)} />
-                                    <button type="button" className="text-xs font-semibold text-brand-primary hover:underline" onClick={() => setSelectedCategoryId(category.id)}>
-                                        Caracteristicas
-                                    </button>
                                 </div>,
                             ])}
                         />
                     </Panel>
                 </div>
-
-                <Panel title={`Caracteristicas de ${selectedCategory?.name ?? 'categoria'}`} className="mt-6">
-                    {selectedCategory ? (
-                        <div className="grid gap-6 lg:grid-cols-[0.8fr_1.2fr]">
-                            <form onSubmit={submitAttribute} className="grid gap-4 sm:grid-cols-2">
-                                <FormField label="Nombre" name="attribute_name" value={attributeForm.data.name} onChange={(event) => attributeForm.setData('name', event.target.value)} error={attributeForm.errors.name} required />
-                                <FormField label="Codigo" name="code" value={attributeForm.data.code} onChange={(event) => attributeForm.setData('code', normalizeCode(event.target.value))} error={attributeForm.errors.code} required />
-                                <SelectField label="Tipo de dato" name="type" value={attributeForm.data.type} onChange={(event) => attributeForm.setData('type', event.target.value)} error={attributeForm.errors.type} required>
-                                    <option value="text">Texto</option>
-                                    <option value="number">Numero</option>
-                                    <option value="boolean">Si / No</option>
-                                    <option value="select">Lista de opciones</option>
-                                </SelectField>
-                                <SelectField label="Unidad asociada" name="product_unit_id" value={attributeForm.data.product_unit_id} onChange={(event) => attributeForm.setData('product_unit_id', event.target.value)} error={attributeForm.errors.product_unit_id}>
-                                    <option value="">Sin unidad</option>
-                                    {units.map((unit) => (
-                                        <option key={unit.id} value={unit.id}>{unit.name} ({unit.symbol})</option>
-                                    ))}
-                                </SelectField>
-                                <SelectField label="Obligatoria" name="is_required" value={attributeForm.data.is_required ? '1' : '0'} onChange={(event) => attributeForm.setData('is_required', event.target.value === '1')} error={attributeForm.errors.is_required}>
-                                    <option value="1">Si</option>
-                                    <option value="0">No</option>
-                                </SelectField>
-                                <FormField label="Orden" name="sort_order" type="number" value={attributeForm.data.sort_order} onChange={(event) => attributeForm.setData('sort_order', event.target.value)} error={attributeForm.errors.sort_order} required />
-                                <SelectField label="Estado" name="attribute_active" value={attributeForm.data.is_active ? '1' : '0'} onChange={(event) => attributeForm.setData('is_active', event.target.value === '1')} error={attributeForm.errors.is_active}>
-                                    <option value="1">Activa</option>
-                                    <option value="0">Inactiva</option>
-                                </SelectField>
-                                <div className="sm:col-span-2">
-                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Opciones para lista</label>
-                                    <textarea
-                                        value={attributeForm.data.options_text}
-                                        onChange={(event) => attributeForm.setData('options_text', event.target.value)}
-                                        className="mt-1 min-h-28 w-full rounded-lg border-slate-300 bg-white text-sm shadow-sm focus:border-brand-primary focus:ring-brand-primary dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
-                                        placeholder="Una opcion por linea"
-                                    />
-                                    {attributeForm.errors.options_text ? <p className="mt-1 text-sm text-red-600">{attributeForm.errors.options_text}</p> : null}
-                                </div>
-                                <div className="flex items-center gap-3 sm:col-span-2">
-                                    <PrimaryButton disabled={attributeForm.processing}>{editingAttribute ? 'Actualizar caracteristica' : 'Crear caracteristica'}</PrimaryButton>
-                                    {editingAttribute ? <button type="button" className="text-sm text-slate-500" onClick={() => { setEditingAttribute(null); attributeForm.setData(attributeDefaults()); }}>Cancelar</button> : null}
-                                </div>
-                            </form>
-
-                            <SimpleTable
-                                headers={['Caracteristica', 'Tipo', 'Unidad', 'Obligatoria', 'Estado', '']}
-                                rows={(selectedCategory.attributes ?? []).map((attribute) => [
-                                    `${attribute.name} (${attribute.code})`,
-                                    attributeTypeLabel(attribute.type),
-                                    attribute.unit ? `${attribute.unit.name} (${attribute.unit.symbol})` : '-',
-                                    attribute.is_required ? 'Si' : 'No',
-                                    attribute.is_active ? 'Activa' : 'Inactiva',
-                                    <IconButton key={attribute.id} icon="edit" label="Editar" onClick={() => editAttribute(attribute)} />,
-                                ])}
-                            />
-                        </div>
-                    ) : (
-                        <p className="text-sm text-slate-500">Crea una categoria para configurar sus caracteristicas.</p>
-                    )}
-                </Panel>
             </section>
         </AuthenticatedLayout>
     );
@@ -389,19 +289,6 @@ function thicknessDefaults() {
     };
 }
 
-function attributeDefaults() {
-    return {
-        name: '',
-        code: '',
-        type: 'text',
-        product_unit_id: '',
-        options_text: '',
-        is_required: false,
-        is_active: true,
-        sort_order: 0,
-    };
-}
-
 function conversionFactor(kgPerMeter) {
     const value = Number(kgPerMeter);
 
@@ -410,22 +297,4 @@ function conversionFactor(kgPerMeter) {
     }
 
     return `${(1 / value).toLocaleString('es-BO', { maximumFractionDigits: 6 })} m por kg`;
-}
-
-function normalizeCode(value) {
-    return String(value)
-        .normalize('NFD')
-        .replace(/[\u0300-\u036f]/g, '')
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, '_')
-        .replace(/^_+|_+$/g, '');
-}
-
-function attributeTypeLabel(type) {
-    return {
-        text: 'Texto',
-        number: 'Numero',
-        boolean: 'Si / No',
-        select: 'Lista',
-    }[type] ?? type;
 }

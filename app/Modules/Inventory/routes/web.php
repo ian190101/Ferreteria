@@ -34,8 +34,6 @@ Route::middleware(['auth', 'verified'])
             Route::put('/products/catalogs/thicknesses/{thickness}', [ProductCatalogController::class, 'updateThickness'])->name('products.catalogs.thicknesses.update');
             Route::post('/products/catalogs/categories', [ProductCatalogController::class, 'storeCategory'])->name('products.catalogs.categories.store');
             Route::put('/products/catalogs/categories/{category}', [ProductCatalogController::class, 'updateCategory'])->name('products.catalogs.categories.update');
-            Route::post('/products/catalogs/categories/{category}/attributes', [ProductCatalogController::class, 'storeAttribute'])->name('products.catalogs.attributes.store');
-            Route::put('/products/catalogs/attributes/{attribute}', [ProductCatalogController::class, 'updateAttribute'])->name('products.catalogs.attributes.update');
 
             Route::get('/thicknesses/create', [ThicknessController::class, 'create'])->name('thicknesses.create');
             Route::post('/thicknesses', [ThicknessController::class, 'store'])->name('thicknesses.store');
