@@ -230,7 +230,7 @@ export default function Form({
                                     </SelectField>
                                     <SelectField label="Producto" name={`items.${index}.product_id`} value={item.product_id} onChange={(event) => selectProduct(index, event.target.value)} error={errors[`items.${index}.product_id`]}>
                                         <option value="">Seleccionar</option>
-                                        {productsForCategory(products, item.product_category_id).map((product) => <option key={product.id} value={product.id}>{product.name} ({trackingLabel(product)})</option>)}
+                                        {productsForCategory(products, item.product_category_id, data.branch_id).map((product) => <option key={product.id} value={product.id}>{product.name} ({trackingLabel(product)})</option>)}
                                     </SelectField>
                                     {documentType === 'sale_note' && product?.inventory_tracking_mode === 'coil' ? (
                                         <SelectField label="Lote/unidad fisica" name={`items.${index}.product_coil_id`} value={item.product_coil_id} onChange={(event) => updateItem(index, 'product_coil_id', event.target.value)} error={errors[`items.${index}.product_coil_id`]}>
@@ -594,12 +594,21 @@ function selectedProduct(products, item) {
     return products.find((product) => String(product.id) === String(item.product_id));
 }
 
-function productsForCategory(products, categoryId) {
-    if (!categoryId) {
-        return products;
+function productsForCategory(products, categoryId, branchId) {
+    return products.filter((product) => (
+        productAvailableForBranch(product, branchId)
+        && (!categoryId || Number(product.product_category_id) === Number(categoryId))
+    ));
+}
+
+function productAvailableForBranch(product, branchId) {
+    if (!branchId) {
+        return true;
     }
 
-    return products.filter((product) => Number(product.product_category_id) === Number(categoryId));
+    const stocks = product.branch_stocks ?? product.branchStocks ?? [];
+
+    return stocks.some((stock) => Number(stock.branch_id) === Number(branchId) && Boolean(stock.is_enabled));
 }
 
 function availableCoils(coils, branchId, productId) {

@@ -6,9 +6,13 @@ import SelectField from '../../../../../Shared/Resources/Components/SelectField'
 import { Head, Link, useForm } from '@inertiajs/react';
 import { decimalStep, useDecimalFormatter } from '@/Utils/formatters';
 
-export default function Form({ product, thicknesses, categories, units }) {
+export default function Form({ product, thicknesses, categories, units, branches = [] }) {
     const isEditing = Boolean(product);
     const decimalFormat = useDecimalFormatter('inventory');
+    const initialBranchIds = (product?.branch_stocks ?? product?.branchStocks ?? [])
+        .filter((stock) => stock.is_enabled)
+        .map((stock) => Number(stock.branch_id));
+    const isGlobal = !isEditing || (branches.length > 0 && branches.every((branch) => initialBranchIds.includes(Number(branch.id))));
     const firstCategory = categories[0] ?? null;
     const initialCategory = product?.product_category_id
         ? categories.find((category) => Number(category.id) === Number(product.product_category_id))
@@ -33,6 +37,8 @@ export default function Form({ product, thicknesses, categories, units }) {
         sale_price: product?.sale_price ?? '0',
         minimum_stock_meters: product?.minimum_stock_meters ?? '0',
         is_active: product?.is_active ?? true,
+        branch_scope: isGlobal ? 'global' : 'specific',
+        branch_ids: isGlobal ? branches.map((branch) => Number(branch.id)) : initialBranchIds,
     });
     const selectedCategory = categories.find((category) => Number(category.id) === Number(data.product_category_id));
     const selectedUnit = units.find((unit) => Number(unit.id) === Number(data.product_unit_id));
@@ -95,6 +101,21 @@ export default function Form({ product, thicknesses, categories, units }) {
     };
     const removeCustomAttribute = (index) => {
         setData('custom_attributes', (data.custom_attributes ?? []).filter((_, attributeIndex) => attributeIndex !== index));
+    };
+    const setBranchScope = (scope) => {
+        setData({
+            ...data,
+            branch_scope: scope,
+            branch_ids: scope === 'global' ? branches.map((branch) => Number(branch.id)) : data.branch_ids,
+        });
+    };
+    const toggleBranch = (branchId) => {
+        const id = Number(branchId);
+        const current = (data.branch_ids ?? []).map((value) => Number(value));
+
+        setData('branch_ids', current.includes(id)
+            ? current.filter((value) => value !== id)
+            : [...current, id]);
     };
 
     return (
@@ -181,6 +202,48 @@ export default function Form({ product, thicknesses, categories, units }) {
                         <option value="1">Activo</option>
                         <option value="0">Inactivo</option>
                     </SelectField>
+
+                    <div className="sm:col-span-2">
+                        <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950/40">
+                            <div className="flex flex-col gap-1">
+                                <h3 className="text-sm font-semibold text-slate-950 dark:text-white">Disponibilidad por sucursal</h3>
+                                <p className="text-xs text-slate-500 dark:text-slate-400">Define en que sucursales se podra comprar, vender, ajustar o reservar este producto. No borra stock existente, solo habilita o deshabilita su uso.</p>
+                            </div>
+                            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                                <label className="flex items-center gap-3 rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm dark:border-slate-800 dark:bg-slate-900">
+                                    <input type="radio" name="branch_scope" value="global" checked={data.branch_scope === 'global'} onChange={() => setBranchScope('global')} className="h-4 w-4 text-brand-primary focus:ring-brand-primary" />
+                                    <span>
+                                        <span className="block font-semibold text-slate-900 dark:text-slate-100">Todas las sucursales permitidas</span>
+                                        <span className="text-xs text-slate-500">Global para el alcance del usuario.</span>
+                                    </span>
+                                </label>
+                                <label className="flex items-center gap-3 rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm dark:border-slate-800 dark:bg-slate-900">
+                                    <input type="radio" name="branch_scope" value="specific" checked={data.branch_scope === 'specific'} onChange={() => setBranchScope('specific')} className="h-4 w-4 text-brand-primary focus:ring-brand-primary" />
+                                    <span>
+                                        <span className="block font-semibold text-slate-900 dark:text-slate-100">Solo sucursales seleccionadas</span>
+                                        <span className="text-xs text-slate-500">Elige una o varias sucursales.</span>
+                                    </span>
+                                </label>
+                            </div>
+                            {data.branch_scope === 'specific' ? (
+                                <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                                    {branches.map((branch) => (
+                                        <label key={branch.id} className="flex items-center gap-3 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm dark:border-slate-800 dark:bg-slate-900">
+                                            <input
+                                                type="checkbox"
+                                                checked={(data.branch_ids ?? []).map((id) => Number(id)).includes(Number(branch.id))}
+                                                onChange={() => toggleBranch(branch.id)}
+                                                className="h-4 w-4 rounded border-slate-300 text-brand-primary focus:ring-brand-primary"
+                                            />
+                                            <span>{branch.name}</span>
+                                        </label>
+                                    ))}
+                                </div>
+                            ) : null}
+                            {errors.branch_ids ? <p className="mt-2 text-sm text-red-600">{errors.branch_ids}</p> : null}
+                            {errors.branch_scope ? <p className="mt-2 text-sm text-red-600">{errors.branch_scope}</p> : null}
+                        </div>
+                    </div>
 
                     <div className="sm:col-span-2">
                         <div className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-950/40">

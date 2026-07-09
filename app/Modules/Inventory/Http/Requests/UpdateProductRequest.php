@@ -9,6 +9,7 @@ use App\Modules\Inventory\Support\ProductCodeGenerator;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\Validator;
 
 class UpdateProductRequest extends FormRequest
 {
@@ -42,7 +43,17 @@ class UpdateProductRequest extends FormRequest
             'sale_price' => ['required', 'numeric', 'min:0', 'max:999999999999.9999'],
             'minimum_stock_meters' => ['required', 'numeric', 'min:0', 'max:999999999999.999'],
             'is_active' => ['required', 'boolean'],
+            'branch_scope' => ['required', Rule::in(['global', 'specific'])],
+            'branch_ids' => ['nullable', 'array'],
+            'branch_ids.*' => ['integer', 'exists:branches,id'],
         ];
+    }
+
+    public function withValidator(Validator $validator): void
+    {
+        $validator->after(function (Validator $validator) {
+            $this->validateBranchScope($validator);
+        });
     }
 
     protected function prepareForValidation(): void
@@ -91,5 +102,29 @@ class UpdateProductRequest extends FormRequest
             ->unique('code')
             ->values()
             ->all();
+    }
+
+    private function validateBranchScope(Validator $validator): void
+    {
+        $branchIds = collect($this->input('branch_ids', []))
+            ->map(fn ($id) => (int) $id)
+            ->filter()
+            ->unique()
+            ->values();
+
+        if ($this->input('branch_scope') === 'specific' && $branchIds->isEmpty()) {
+            $validator->errors()->add('branch_ids', 'Seleccione al menos una sucursal para este producto.');
+        }
+
+        if ($this->user()?->isSuperAdministrator()) {
+            return;
+        }
+
+        $allowed = collect($this->user()?->accessibleBranchIds() ?? []);
+        $unauthorized = $branchIds->diff($allowed);
+
+        if ($unauthorized->isNotEmpty()) {
+            $validator->errors()->add('branch_ids', 'Solo puede asignar el producto a sus sucursales permitidas.');
+        }
     }
 }

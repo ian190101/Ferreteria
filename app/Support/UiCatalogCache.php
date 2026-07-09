@@ -53,6 +53,7 @@ class UiCatalogCache
     public static function activeProducts(array $columns = ['id', 'name', 'sku', 'inventory_tracking_mode'])
     {
         return self::remember('products:'.implode(',', $columns), fn () => Product::query()
+            ->with('branchStocks:id,product_id,branch_id,is_enabled')
             ->where('is_active', true)
             ->orderBy('name')
             ->get($columns));
@@ -64,6 +65,7 @@ class UiCatalogCache
             ->with([
                 'thickness:id,name,kg_to_meter_factor,kg_per_meter',
                 'unit:id,name,symbol,kind',
+                'branchStocks:id,product_id,branch_id,is_enabled',
             ])
             ->where('is_active', true)
             ->orderBy('name')
@@ -73,7 +75,7 @@ class UiCatalogCache
     public static function activeCoilProducts()
     {
         return self::remember('coil-products', fn () => Product::query()
-            ->with('unit:id,name,symbol,kind')
+            ->with(['unit:id,name,symbol,kind', 'branchStocks:id,product_id,branch_id,is_enabled'])
             ->where('is_active', true)
             ->where('inventory_tracking_mode', Product::TRACKING_COIL)
             ->orderBy('name')

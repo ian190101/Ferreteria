@@ -7,9 +7,11 @@ use App\Modules\Branches\Models\Branch;
 use App\Modules\Inventory\Http\Requests\StoreProductRequest;
 use App\Modules\Inventory\Http\Requests\UpdateProductRequest;
 use App\Modules\Inventory\Models\Product;
+use App\Modules\Inventory\Models\ProductBranchStock;
 use App\Support\UiCatalogCache;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -64,27 +66,17 @@ class ProductController extends Controller
             'thicknesses' => $this->activeThicknesses(),
             'categories' => $this->activeCategories(),
             'units' => $this->activeUnits(),
+            'branches' => $this->activeBranches(request()),
         ]);
     }
 
     public function store(StoreProductRequest $request): RedirectResponse
     {
         DB::transaction(function () use ($request) {
-            $product = Product::query()->create($request->validated());
+            $validated = $request->validated();
+            $product = Product::query()->create(Arr::except($validated, ['branch_scope', 'branch_ids']));
 
-            Branch::query()
-                ->where('is_active', true)
-                ->select('id')
-                ->chunkById(100, function ($branches) use ($product) {
-                    foreach ($branches as $branch) {
-            $product->branchStocks()->firstOrCreate([
-                            'branch_id' => $branch->id,
-                        ], [
-                            'available_meters' => 0,
-                            'reserved_meters' => 0,
-                        ]);
-                    }
-                });
+            $this->syncProductBranches($product, $request, $validated);
         });
 
         UiCatalogCache::forgetProductCatalogs();
@@ -97,16 +89,22 @@ class ProductController extends Controller
     public function edit(Product $product): Response
     {
         return Inertia::render('Inventory/Products/Form', [
-            'product' => $product->load(['thickness', 'productCategory', 'unit']),
+            'product' => $product->load(['thickness', 'productCategory', 'unit', 'branchStocks:id,product_id,branch_id,is_enabled']),
             'thicknesses' => $this->activeThicknesses(),
             'categories' => $this->activeCategories(),
             'units' => $this->activeUnits(),
+            'branches' => $this->activeBranches(request()),
         ]);
     }
 
     public function update(UpdateProductRequest $request, Product $product): RedirectResponse
     {
-        $product->update($request->validated());
+        DB::transaction(function () use ($request, $product) {
+            $validated = $request->validated();
+            $product->update(Arr::except($validated, ['branch_scope', 'branch_ids']));
+            $this->syncProductBranches($product, $request, $validated);
+        });
+
         UiCatalogCache::forgetProductCatalogs();
 
         return redirect()
@@ -139,5 +137,35 @@ class ProductController extends Controller
     private function activeUnits()
     {
         return UiCatalogCache::productUnits();
+    }
+
+    private function activeBranches(Request $request)
+    {
+        return UiCatalogCache::activeBranchesForUser($request->user(), ['id', 'name']);
+    }
+
+    private function syncProductBranches(Product $product, Request $request, array $validated): void
+    {
+        $availableBranchIds = $this->activeBranches($request)->pluck('id')->map(fn ($id) => (int) $id)->values();
+        $enabledBranchIds = ($validated['branch_scope'] ?? 'global') === 'global'
+            ? $availableBranchIds
+            : collect($validated['branch_ids'] ?? [])->map(fn ($id) => (int) $id)->intersect($availableBranchIds)->values();
+
+        Branch::query()
+            ->whereIn('id', $availableBranchIds)
+            ->select('id')
+            ->chunkById(100, function ($branches) use ($product, $enabledBranchIds) {
+                foreach ($branches as $branch) {
+                    $stock = ProductBranchStock::query()->firstOrCreate([
+                        'branch_id' => $branch->id,
+                        'product_id' => $product->id,
+                    ], [
+                        'available_meters' => 0,
+                        'reserved_meters' => 0,
+                    ]);
+
+                    $stock->update(['is_enabled' => $enabledBranchIds->contains((int) $branch->id)]);
+                }
+            });
     }
 }

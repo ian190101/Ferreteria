@@ -14,6 +14,7 @@ use App\Support\UiCatalogCache;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -72,6 +73,7 @@ class PurchaseController extends Controller
                 ->whereIn('id', $validatedItems->pluck('product_id')->unique()->values())
                 ->get(['id', 'thickness_id', 'product_category_id', 'product_unit_id', 'name', 'base_unit', 'inventory_tracking_mode', 'attributes', 'custom_attributes'])
                 ->keyBy('id');
+            $this->ensureProductsEnabledForBranch($validatedItems->pluck('product_id')->all(), $request->integer('branch_id'));
 
             $items = $validatedItems->map(function (array $item) use ($products) {
                 $product = $products->get($item['product_id']);
@@ -237,5 +239,22 @@ class PurchaseController extends Controller
             ->unique('code')
             ->values()
             ->all();
+    }
+
+    private function ensureProductsEnabledForBranch(array $productIds, int $branchId): void
+    {
+        $productIds = collect($productIds)->map(fn ($id) => (int) $id)->unique()->values();
+        $enabledCount = ProductBranchStock::query()
+            ->where('branch_id', $branchId)
+            ->where('is_enabled', true)
+            ->whereIn('product_id', $productIds)
+            ->distinct('product_id')
+            ->count('product_id');
+
+        if ($enabledCount !== $productIds->count()) {
+            throw ValidationException::withMessages([
+                'items' => 'Uno o mas productos no estan habilitados para la sucursal seleccionada.',
+            ]);
+        }
     }
 }

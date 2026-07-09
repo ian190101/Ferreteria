@@ -117,6 +117,7 @@ class SaleController extends Controller
 
                 return $item;
             });
+            $this->ensureProductsEnabledForBranch($items->pluck('product_id')->all(), $request->integer('branch_id'));
 
             $subtotal = round($items->sum(fn ($item) => (float) $item['meters'] * (float) $item['unit_price']), 2);
             $discountTotal = round($items->sum(fn ($item) => (float) $item['discount_amount']), 2);
@@ -902,5 +903,22 @@ class SaleController extends Controller
             ->unique('code')
             ->values()
             ->all();
+    }
+
+    private function ensureProductsEnabledForBranch(array $productIds, int $branchId): void
+    {
+        $productIds = collect($productIds)->map(fn ($id) => (int) $id)->unique()->values();
+        $enabledCount = ProductBranchStock::query()
+            ->where('branch_id', $branchId)
+            ->where('is_enabled', true)
+            ->whereIn('product_id', $productIds)
+            ->distinct('product_id')
+            ->count('product_id');
+
+        if ($enabledCount !== $productIds->count()) {
+            throw ValidationException::withMessages([
+                'items' => 'Uno o mas productos no estan habilitados para la sucursal seleccionada.',
+            ]);
+        }
     }
 }

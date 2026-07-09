@@ -13,11 +13,13 @@ class ProductBranchStock extends Model
         'product_id',
         'available_meters',
         'reserved_meters',
+        'is_enabled',
     ];
 
     protected $casts = [
         'available_meters' => 'decimal:3',
         'reserved_meters' => 'decimal:3',
+        'is_enabled' => 'boolean',
     ];
 
     public function branch(): BelongsTo

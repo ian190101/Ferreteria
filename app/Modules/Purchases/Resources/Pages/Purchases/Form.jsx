@@ -132,7 +132,7 @@ export default function Form({ branches = [], suppliers = [], units = [], catego
                                         </SelectField>
                                         <SelectField label="Producto" name={`items.${index}.product_id`} value={item.product_id} onChange={(event) => selectProduct(index, event.target.value)} error={errors[`items.${index}.product_id`]}>
                                             <option value="">Seleccionar</option>
-                                            {productsForCategory(products, item.product_category_id).map((product) => <option key={product.id} value={product.id}>{product.name} ({product.sku}) - {trackingLabel(product)}</option>)}
+                                            {productsForCategory(products, item.product_category_id, data.branch_id).map((product) => <option key={product.id} value={product.id}>{product.name} ({product.sku}) - {trackingLabel(product)}</option>)}
                                         </SelectField>
                                         <FormField label="Cantidad" name={`items.${index}.display_quantity`} type="number" step={decimalStep(decimalFormat.decimalsFor(quantityKindForItem(item, product, units)))} value={item.display_quantity} onChange={(event) => updateItem(index, 'display_quantity', event.target.value)} error={errors[`items.${index}.display_quantity`]} required />
                                         <SelectField label="Unidad" name={`items.${index}.display_unit_label`} value={item.display_unit_label || productUnitSymbol(product)} onChange={(event) => updateItem(index, 'display_unit_label', event.target.value)} error={errors[`items.${index}.display_unit_label`]} required>
@@ -410,12 +410,21 @@ function trackingLabel(product) {
         : 'Global por sucursal';
 }
 
-function productsForCategory(products, categoryId) {
-    if (!categoryId) {
-        return products;
+function productsForCategory(products, categoryId, branchId) {
+    return products.filter((product) => (
+        productAvailableForBranch(product, branchId)
+        && (!categoryId || Number(product.product_category_id) === Number(categoryId))
+    ));
+}
+
+function productAvailableForBranch(product, branchId) {
+    if (!branchId) {
+        return true;
     }
 
-    return products.filter((product) => Number(product.product_category_id) === Number(categoryId));
+    const stocks = product.branch_stocks ?? product.branchStocks ?? [];
+
+    return stocks.some((stock) => Number(stock.branch_id) === Number(branchId) && Boolean(stock.is_enabled));
 }
 
 function weightInKg(weight, unit) {
