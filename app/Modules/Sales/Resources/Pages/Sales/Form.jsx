@@ -7,6 +7,7 @@ import { Head, Link, useForm, usePage } from '@inertiajs/react';
 import { decimalStep, useDecimalFormatter } from '@/Utils/formatters';
 
 const DEFAULT_ITEM = {
+    product_category_id: '',
     product_id: '',
     product_coil_id: '',
     description: '',
@@ -31,6 +32,7 @@ export default function Form({
     currencies = [],
     advanceOptions = [],
     units = [],
+    categories = [],
     products = [],
     coils = [],
     customers = [],
@@ -71,6 +73,7 @@ export default function Form({
 
         setData('items', data.items.map((item, itemIndex) => (itemIndex === index ? {
             ...item,
+            product_category_id: product?.product_category_id ?? item.product_category_id,
             product_id: value,
             product_coil_id: '',
             description: product?.name ?? item.description,
@@ -82,6 +85,18 @@ export default function Form({
             price_mode: 'meter',
             price_per_ton: '',
             unit_price: productSalePrice(product),
+        } : item)));
+    };
+    const selectItemCategory = (index, value) => {
+        setData('items', data.items.map((item, itemIndex) => (itemIndex === index ? {
+            ...item,
+            product_category_id: value,
+            product_id: '',
+            product_coil_id: '',
+            description: '',
+            display_unit_label: '',
+            item_attributes: [],
+            unit_price: '0',
         } : item)));
     };
 
@@ -209,9 +224,13 @@ export default function Form({
 
                                 return (
                                 <div key={index} className="grid gap-3 border-t border-slate-100 pt-4 dark:border-slate-800 sm:grid-cols-6">
+                                    <SelectField label="Categoria" name={`items.${index}.product_category_id`} value={item.product_category_id} onChange={(event) => selectItemCategory(index, event.target.value)}>
+                                        <option value="">Todas</option>
+                                        {categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
+                                    </SelectField>
                                     <SelectField label="Producto" name={`items.${index}.product_id`} value={item.product_id} onChange={(event) => selectProduct(index, event.target.value)} error={errors[`items.${index}.product_id`]}>
                                         <option value="">Seleccionar</option>
-                                        {products.map((product) => <option key={product.id} value={product.id}>{product.name} ({trackingLabel(product)})</option>)}
+                                        {productsForCategory(products, item.product_category_id).map((product) => <option key={product.id} value={product.id}>{product.name} ({trackingLabel(product)})</option>)}
                                     </SelectField>
                                     {documentType === 'sale_note' && product?.inventory_tracking_mode === 'coil' ? (
                                         <SelectField label="Lote/unidad fisica" name={`items.${index}.product_coil_id`} value={item.product_coil_id} onChange={(event) => updateItem(index, 'product_coil_id', event.target.value)} error={errors[`items.${index}.product_coil_id`]}>
@@ -348,6 +367,7 @@ function saleItemFromQuotation(item, products, canOverridePrices) {
 
     return {
         ...DEFAULT_ITEM,
+        product_category_id: product?.product_category_id ?? '',
         product_id: item.product_id ?? '',
         product_coil_id: item.product_coil_id ?? '',
         description: item.description ?? product?.name ?? '',
@@ -383,7 +403,8 @@ function saleItemSummary(item, product) {
 }
 
 function AttributeField({ attribute, value, onChange }) {
-    const label = `${attribute.name}${attribute.unit ? ` (${attribute.unit.symbol})` : ''}`;
+    const unit = typeof attribute.unit === 'string' ? attribute.unit : attribute.unit?.symbol;
+    const label = `${attribute.name}${unit ? ` (${unit})` : ''}`;
 
     if (attribute.type === 'select') {
         return (
@@ -437,8 +458,8 @@ function defaultItemAttributes(product) {
     return productAttributes(product).map((attribute) => ({
         code: attribute.code,
         name: attribute.name,
-        value: product?.attributes?.[attribute.code] ?? '',
-        unit: attribute.unit?.symbol ?? '',
+        value: product?.attributes?.[attribute.code] ?? attribute.value ?? '',
+        unit: typeof attribute.unit === 'string' ? attribute.unit : attribute.unit?.symbol ?? '',
     }));
 }
 
@@ -451,14 +472,24 @@ function normalizedItemAttributes(item, product) {
         return {
             code: attribute.code,
             name: attribute.name,
-            value: currentValue ?? product?.attributes?.[attribute.code] ?? '',
-            unit: attribute.unit?.symbol ?? '',
+            value: currentValue ?? product?.attributes?.[attribute.code] ?? attribute.value ?? '',
+            unit: typeof attribute.unit === 'string' ? attribute.unit : attribute.unit?.symbol ?? '',
         };
     });
 }
 
 function productAttributes(product) {
-    return product?.product_category?.attributes ?? product?.productCategory?.attributes ?? [];
+    const categoryAttributes = product?.product_category?.attributes ?? product?.productCategory?.attributes ?? [];
+    const customAttributes = (product?.custom_attributes ?? []).map((attribute) => ({
+        ...attribute,
+        type: 'text',
+        options: [],
+        is_required: false,
+    }));
+
+    return [...categoryAttributes, ...customAttributes].filter((attribute, index, attributes) => (
+        attribute?.code && attributes.findIndex((entry) => entry.code === attribute.code) === index
+    ));
 }
 
 function attributeValue(item, attribute) {
@@ -564,6 +595,14 @@ function weightInKg(weight, unit) {
 
 function selectedProduct(products, item) {
     return products.find((product) => String(product.id) === String(item.product_id));
+}
+
+function productsForCategory(products, categoryId) {
+    if (!categoryId) {
+        return products;
+    }
+
+    return products.filter((product) => Number(product.product_category_id) === Number(categoryId));
 }
 
 function availableCoils(coils, branchId, productId) {

@@ -26,6 +26,7 @@ class Product extends AuditableModel
         'inventory_tracking_mode',
         'base_unit',
         'attributes',
+        'custom_attributes',
         'default_width',
         'purchase_price',
         'sale_price',
@@ -35,6 +36,7 @@ class Product extends AuditableModel
 
     protected $casts = [
         'attributes' => 'array',
+        'custom_attributes' => 'array',
         'default_width' => 'decimal:4',
         'purchase_price' => 'decimal:4',
         'sale_price' => 'decimal:4',

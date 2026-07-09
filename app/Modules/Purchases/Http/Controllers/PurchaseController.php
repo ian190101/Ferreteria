@@ -57,6 +57,7 @@ class PurchaseController extends Controller
         return Inertia::render('Purchases/Form', [
             'branches' => UiCatalogCache::activeBranchesForUser($request->user()),
             'units' => UiCatalogCache::productUnits(),
+            'categories' => UiCatalogCache::productCategories(),
             'suppliers' => Inertia::defer(fn () => UiCatalogCache::activeSuppliers(), 'purchase-form-catalogs'),
             'products' => Inertia::defer(fn () => UiCatalogCache::activeProductsWithThickness(), 'purchase-form-catalogs'),
         ]);
@@ -69,7 +70,7 @@ class PurchaseController extends Controller
             $products = Product::query()
                 ->with(['thickness', 'unit:id,symbol', 'productCategory.attributes.unit:id,symbol'])
                 ->whereIn('id', $validatedItems->pluck('product_id')->unique()->values())
-                ->get(['id', 'thickness_id', 'product_category_id', 'product_unit_id', 'name', 'base_unit', 'inventory_tracking_mode', 'attributes'])
+                ->get(['id', 'thickness_id', 'product_category_id', 'product_unit_id', 'name', 'base_unit', 'inventory_tracking_mode', 'attributes', 'custom_attributes'])
                 ->keyBy('id');
 
             $items = $validatedItems->map(function (array $item) use ($products) {
@@ -220,7 +221,7 @@ class PurchaseController extends Controller
     {
         $payloadByCode = collect($payloadAttributes)->keyBy('code');
 
-        return $product->productCategory?->attributes
+        $categoryAttributes = $product->productCategory?->attributes
             ->map(function ($definition) use ($product, $payloadByCode) {
                 $payload = $payloadByCode->get($definition->code, []);
                 $defaultValue = data_get($product->attributes ?? [], $definition->code);
@@ -232,8 +233,25 @@ class PurchaseController extends Controller
                     'value' => blank($value) ? '-' : (string) $value,
                     'unit' => $definition->unit?->symbol,
                 ];
-            })
+            }) ?? collect();
+        $customAttributes = collect($product->custom_attributes ?? [])
+            ->map(function (array $definition) use ($payloadByCode) {
+                $code = $definition['code'] ?? '';
+                $payload = $payloadByCode->get($code, []);
+
+                return [
+                    'code' => $code,
+                    'name' => $definition['name'] ?? $code,
+                    'value' => data_get($payload, 'value', $definition['value'] ?? ''),
+                    'unit' => $definition['unit'] ?? '',
+                ];
+            });
+
+        return $categoryAttributes
+            ->concat($customAttributes)
+            ->filter(fn ($attribute) => filled($attribute['code'] ?? null))
+            ->unique('code')
             ->values()
-            ->all() ?? [];
+            ->all();
     }
 }

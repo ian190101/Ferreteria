@@ -74,6 +74,7 @@ class SaleController extends Controller
             'currencies' => UiCatalogCache::currencies(),
             'advanceOptions' => UiCatalogCache::advanceOptions(),
             'units' => UiCatalogCache::productUnits(),
+            'categories' => UiCatalogCache::productCategories(),
             'products' => Inertia::defer(fn () => UiCatalogCache::activeProductsWithThickness(), 'sales-form-catalogs'),
             'coils' => Inertia::defer(fn () => $this->availableCoils($request), 'sales-form-catalogs'),
             'customers' => Inertia::defer(fn () => UiCatalogCache::recentCustomers(), 'sales-form-catalogs'),
@@ -100,7 +101,7 @@ class SaleController extends Controller
             $products = Product::query()
                 ->with(['unit:id,symbol', 'productCategory.attributes.unit:id,symbol'])
                 ->whereIn('id', $validatedItems->pluck('product_id')->unique()->values())
-                ->get(['id', 'product_category_id', 'product_unit_id', 'name', 'sale_price', 'attributes'])
+                ->get(['id', 'product_category_id', 'product_unit_id', 'name', 'sale_price', 'attributes', 'custom_attributes'])
                 ->keyBy('id');
 
             $items = $validatedItems->map(function (array $item) use ($canOverridePrices, $products) {
@@ -768,7 +769,7 @@ class SaleController extends Controller
                 'currency:id,name,code,symbol,exchange_rate_to_bob',
                 'saleType:id,name',
                 'advanceOption:id,name,type,percentage,amount',
-                'items.product:id,name,sku,inventory_tracking_mode',
+                'items.product:id,name,sku,inventory_tracking_mode,product_category_id',
             ])
             ->when(true, fn ($query) => BranchAccess::apply($query, $request->user()))
             ->where('document_type', 'quotation')
@@ -884,7 +885,7 @@ class SaleController extends Controller
     {
         $payloadByCode = collect($payloadAttributes)->keyBy('code');
 
-        return $product?->productCategory?->attributes
+        $categoryAttributes = $product?->productCategory?->attributes
             ->map(function ($definition) use ($product, $payloadByCode) {
                 $payload = $payloadByCode->get($definition->code, []);
                 $defaultValue = data_get($product->attributes ?? [], $definition->code);
@@ -896,8 +897,25 @@ class SaleController extends Controller
                     'value' => blank($value) ? '-' : (string) $value,
                     'unit' => $definition->unit?->symbol,
                 ];
-            })
+            }) ?? collect();
+        $customAttributes = collect($product?->custom_attributes ?? [])
+            ->map(function (array $definition) use ($payloadByCode) {
+                $code = $definition['code'] ?? '';
+                $payload = $payloadByCode->get($code, []);
+
+                return [
+                    'code' => $code,
+                    'name' => $definition['name'] ?? $code,
+                    'value' => data_get($payload, 'value', $definition['value'] ?? ''),
+                    'unit' => $definition['unit'] ?? '',
+                ];
+            });
+
+        return $categoryAttributes
+            ->concat($customAttributes)
+            ->filter(fn ($attribute) => filled($attribute['code'] ?? null))
+            ->unique('code')
             ->values()
-            ->all() ?? [];
+            ->all();
     }
 }

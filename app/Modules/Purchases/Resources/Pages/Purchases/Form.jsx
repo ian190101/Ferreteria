@@ -8,6 +8,7 @@ import { decimalStep, useDecimalFormatter } from '@/Utils/formatters';
 import { useMemo } from 'react';
 
 const DEFAULT_ITEM = {
+    product_category_id: '',
     product_id: '',
     display_quantity: '1',
     display_unit_label: '',
@@ -24,7 +25,7 @@ const DEFAULT_ITEM = {
     description: '',
 };
 
-export default function Form({ branches = [], suppliers = [], units = [], products = [] }) {
+export default function Form({ branches = [], suppliers = [], units = [], categories = [], products = [] }) {
     const catalogsReady = products.length > 0;
     const decimalFormat = useDecimalFormatter('purchases');
     const { data, setData, post, processing, errors, transform } = useForm({
@@ -45,11 +46,26 @@ export default function Form({ branches = [], suppliers = [], units = [], produc
 
         setData('items', data.items.map((item, itemIndex) => (itemIndex === index ? {
             ...item,
+            product_category_id: product?.product_category_id ?? item.product_category_id,
             product_id: value,
             display_unit_label: productUnitSymbol(product),
             item_attributes: defaultItemAttributes(product),
             calculation_mode: 'direct',
             meters: item.display_quantity || '1',
+        } : item)));
+    };
+    const selectItemCategory = (index, value) => {
+        setData('items', data.items.map((item, itemIndex) => (itemIndex === index ? {
+            ...item,
+            product_category_id: value,
+            product_id: '',
+            display_unit_label: '',
+            item_attributes: [],
+            meters: '',
+            unit_cost: '0',
+            lot_number: '',
+            coil_barcode: '',
+            description: '',
         } : item)));
     };
     const addItem = () => setData('items', [...data.items, { ...DEFAULT_ITEM }]);
@@ -110,9 +126,13 @@ export default function Form({ branches = [], suppliers = [], units = [], produc
 
                                 return (
                                     <div key={index} className="grid gap-3 border-t border-slate-100 pt-5 dark:border-slate-800 sm:grid-cols-7">
+                                        <SelectField label="Categoria" name={`items.${index}.product_category_id`} value={item.product_category_id} onChange={(event) => selectItemCategory(index, event.target.value)}>
+                                            <option value="">Todas</option>
+                                            {categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
+                                        </SelectField>
                                         <SelectField label="Producto" name={`items.${index}.product_id`} value={item.product_id} onChange={(event) => selectProduct(index, event.target.value)} error={errors[`items.${index}.product_id`]}>
                                             <option value="">Seleccionar</option>
-                                            {products.map((product) => <option key={product.id} value={product.id}>{product.name} ({product.sku}) - {trackingLabel(product)}</option>)}
+                                            {productsForCategory(products, item.product_category_id).map((product) => <option key={product.id} value={product.id}>{product.name} ({product.sku}) - {trackingLabel(product)}</option>)}
                                         </SelectField>
                                         <FormField label="Cantidad" name={`items.${index}.display_quantity`} type="number" step={decimalStep(decimalFormat.decimalsFor(quantityKindForItem(item, product, units)))} value={item.display_quantity} onChange={(event) => updateItem(index, 'display_quantity', event.target.value)} error={errors[`items.${index}.display_quantity`]} required />
                                         <SelectField label="Unidad" name={`items.${index}.display_unit_label`} value={item.display_unit_label || productUnitSymbol(product)} onChange={(event) => updateItem(index, 'display_unit_label', event.target.value)} error={errors[`items.${index}.display_unit_label`]} required>
@@ -228,7 +248,8 @@ function purchaseItemSummary(item, product) {
 }
 
 function AttributeField({ attribute, value, onChange }) {
-    const label = `${attribute.name}${attribute.unit ? ` (${attribute.unit.symbol})` : ''}`;
+    const unit = typeof attribute.unit === 'string' ? attribute.unit : attribute.unit?.symbol;
+    const label = `${attribute.name}${unit ? ` (${unit})` : ''}`;
 
     if (attribute.type === 'select') {
         return (
@@ -282,8 +303,8 @@ function defaultItemAttributes(product) {
     return productAttributes(product).map((attribute) => ({
         code: attribute.code,
         name: attribute.name,
-        value: product?.attributes?.[attribute.code] ?? '',
-        unit: attribute.unit?.symbol ?? '',
+        value: product?.attributes?.[attribute.code] ?? attribute.value ?? '',
+        unit: typeof attribute.unit === 'string' ? attribute.unit : attribute.unit?.symbol ?? '',
     }));
 }
 
@@ -296,14 +317,24 @@ function normalizedItemAttributes(item, product) {
         return {
             code: attribute.code,
             name: attribute.name,
-            value: currentValue ?? product?.attributes?.[attribute.code] ?? '',
-            unit: attribute.unit?.symbol ?? '',
+            value: currentValue ?? product?.attributes?.[attribute.code] ?? attribute.value ?? '',
+            unit: typeof attribute.unit === 'string' ? attribute.unit : attribute.unit?.symbol ?? '',
         };
     });
 }
 
 function productAttributes(product) {
-    return product?.product_category?.attributes ?? product?.productCategory?.attributes ?? [];
+    const categoryAttributes = product?.product_category?.attributes ?? product?.productCategory?.attributes ?? [];
+    const customAttributes = (product?.custom_attributes ?? []).map((attribute) => ({
+        ...attribute,
+        type: 'text',
+        options: [],
+        is_required: false,
+    }));
+
+    return [...categoryAttributes, ...customAttributes].filter((attribute, index, attributes) => (
+        attribute?.code && attributes.findIndex((entry) => entry.code === attribute.code) === index
+    ));
 }
 
 function attributeValue(item, attribute) {
@@ -380,6 +411,14 @@ function trackingLabel(product) {
     return product?.inventory_tracking_mode === 'coil'
         ? 'Individual por lote/unidad'
         : 'Global por sucursal';
+}
+
+function productsForCategory(products, categoryId) {
+    if (!categoryId) {
+        return products;
+    }
+
+    return products.filter((product) => Number(product.product_category_id) === Number(categoryId));
 }
 
 function weightInKg(weight, unit) {
