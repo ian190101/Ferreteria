@@ -173,7 +173,6 @@ class BankReconciliationService
             ->lockForUpdate()
             ->first();
 
-        // Permite operar con una cuenta bancaria unica/demo cuando varias sucursales comparten el mismo QR.
         $account ??= BankAccount::query()
             ->where('branch_id', $branchId)
             ->where('is_active', true)
@@ -181,22 +180,9 @@ class BankReconciliationService
             ->lockForUpdate()
             ->first();
 
-        $account ??= BankAccount::query()
-            ->where('is_active', true)
-            ->where('currency_code', 'BOB')
-            ->orderBy('id')
-            ->lockForUpdate()
-            ->first();
-
-        $account ??= BankAccount::query()
-            ->where('is_active', true)
-            ->orderBy('id')
-            ->lockForUpdate()
-            ->first();
-
         if (! $account) {
             throw ValidationException::withMessages([
-                'payment_method_id' => 'No existe una cuenta bancaria activa para conciliar este pago QR/Banco.',
+                'payment_method_id' => 'La sucursal del pago no tiene una cuenta bancaria activa para conciliar QR/Banco. Crea o activa una cuenta bancaria para esa sucursal.',
             ]);
         }
 
