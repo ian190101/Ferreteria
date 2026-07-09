@@ -47,13 +47,21 @@ const FIELD_GROUPS = [
         fields: ['currency', 'seller', 'point_of_sale', 'customer', 'sale_type', 'customer_contact', 'exchange_rate'],
     },
     {
-        title: 'Columnas de items',
-        fields: ['item_number', 'item_description', 'item_lot', 'item_model', 'item_unit', 'item_quantity', 'item_base', 'item_price', 'item_subtotal'],
-    },
-    {
         title: 'Totales',
         fields: ['subtotal', 'discount', 'advance', 'balance_due'],
     },
+];
+
+const DEFAULT_ITEM_COLUMNS = [
+    { key: 'item_number', label: 'N', show: true },
+    { key: 'item_description', label: 'Descripcion', show: true },
+    { key: 'item_lot', label: 'Lote', show: false },
+    { key: 'item_model', label: 'Modelo', show: true },
+    { key: 'item_unit', label: 'Und.', show: true },
+    { key: 'item_quantity', label: 'Cant.', show: true },
+    { key: 'item_base', label: 'Base', show: true },
+    { key: 'item_price', label: 'Precio', show: true },
+    { key: 'item_subtotal', label: 'Subtotal', show: true },
 ];
 
 export default function Form({ template, branches, defaultLayout, attributeFields = [] }) {
@@ -70,6 +78,7 @@ export default function Form({ template, branches, defaultLayout, attributeField
         is_active: template?.is_active ?? true,
         layout: template?.layout ?? defaultLayout,
     });
+    const itemColumns = normalizeItemColumns(data.layout, attributeFields);
 
     const setLayout = (path, value) => {
         const next = structuredClone(data.layout);
@@ -82,6 +91,35 @@ export default function Form({ template, branches, defaultLayout, attributeField
     };
 
     const setField = (field, value) => setLayout(['fields', field], value);
+    const setItemColumns = (columns) => {
+        const normalized = applyColumnOrder(columns);
+        const next = structuredClone(data.layout);
+        next.item_columns = normalized;
+        next.fields = { ...(next.fields ?? {}) };
+
+        normalized.forEach((column) => {
+            next.fields[column.key] = Boolean(column.show);
+        });
+
+        setData('layout', next);
+    };
+    const setItemColumn = (index, field, value) => {
+        const columns = itemColumns.map((column, columnIndex) => (
+            columnIndex === index ? { ...column, [field]: value } : column
+        ));
+
+        setItemColumns(columns);
+    };
+    const moveItemColumn = (fromIndex, toIndex) => {
+        if (toIndex < 0 || toIndex >= itemColumns.length) {
+            return;
+        }
+
+        const columns = [...itemColumns];
+        const [column] = columns.splice(fromIndex, 1);
+        columns.splice(toIndex, 0, column);
+        setItemColumns(columns);
+    };
     const setSection = (index, field, value) => {
         const sections = [...data.layout.sections];
         sections[index] = { ...sections[index], [field]: value };
@@ -201,23 +239,36 @@ export default function Form({ template, branches, defaultLayout, attributeField
                                         </div>
                                     </div>
                                 ))}
+                            </div>
+                        </Panel>
 
-                                {attributeFields.length ? (
-                                    <div>
-                                        <h4 className="mb-2 text-xs font-bold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">Caracteristicas de productos</h4>
-                                        <div className="grid gap-3 sm:grid-cols-3">
-                                            {attributeFields.map((attribute) => (
-                                                <FieldToggle
-                                                    key={attribute.field}
-                                                    field={attribute.field}
-                                                    label={attribute.label}
-                                                    value={fieldValue(data.layout.fields, attribute.field)}
-                                                    onChange={setField}
-                                                />
-                                            ))}
+                        <Panel title="Columnas de items">
+                            <div className="space-y-3">
+                                {itemColumns.map((column, index) => (
+                                    <div
+                                        key={column.key}
+                                        className="grid gap-3 rounded-md border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-950/30 sm:grid-cols-[minmax(0,1fr)_120px_112px]"
+                                    >
+                                        <FormField
+                                            label={FIELD_LABELS[column.key] ?? 'Caracteristica'}
+                                            name={`column_${column.key}`}
+                                            value={column.label}
+                                            onChange={(event) => setItemColumn(index, 'label', event.target.value)}
+                                        />
+                                        <label className="flex items-center gap-2 self-end rounded-md border border-slate-200 px-3 py-3 text-sm dark:border-slate-800">
+                                            <input type="checkbox" checked={column.show} onChange={(event) => setItemColumn(index, 'show', event.target.checked)} />
+                                            <span>Mostrar</span>
+                                        </label>
+                                        <div className="flex items-end justify-end gap-2">
+                                            <button type="button" onClick={() => moveItemColumn(index, index - 1)} className="rounded-md border border-slate-300 px-3 py-3 text-sm disabled:opacity-40 dark:border-slate-700" disabled={index === 0} title="Mover a la izquierda">
+                                                &lt;
+                                            </button>
+                                            <button type="button" onClick={() => moveItemColumn(index, index + 1)} className="rounded-md border border-slate-300 px-3 py-3 text-sm disabled:opacity-40 dark:border-slate-700" disabled={index === itemColumns.length - 1} title="Mover a la derecha">
+                                                &gt;
+                                            </button>
                                         </div>
                                     </div>
-                                ) : null}
+                                ))}
                             </div>
                         </Panel>
 
@@ -264,7 +315,7 @@ export default function Form({ template, branches, defaultLayout, attributeField
                         </div>
                     </div>
 
-                    <Preview data={data} />
+                    <Preview data={data} attributeFields={attributeFields} />
                 </form>
             </section>
         </AuthenticatedLayout>
@@ -295,6 +346,43 @@ function normalizeSectionOrder(sections) {
     }));
 }
 
+function normalizeItemColumns(layout, attributeFields = []) {
+    const fields = layout.fields ?? {};
+    const saved = new Map((layout.item_columns ?? []).map((column) => [column.key, column]));
+    const attributeColumns = attributeFields.map((attribute) => ({
+        key: attribute.field,
+        label: attribute.label,
+        show: true,
+    }));
+
+    return normalizeColumnOrder([...DEFAULT_ITEM_COLUMNS, ...attributeColumns].map((column, index) => {
+        const savedColumn = saved.get(column.key) ?? {};
+
+        return {
+            key: column.key,
+            label: savedColumn.label || column.label,
+            show: Object.hasOwn(savedColumn, 'show') ? Boolean(savedColumn.show) : fieldValue(fields, column.key),
+            order: Number(savedColumn.order ?? index + 1),
+        };
+    }));
+}
+
+function normalizeColumnOrder(columns) {
+    return [...columns]
+        .sort((left, right) => Number(left.order ?? 0) - Number(right.order ?? 0))
+        .map((column, index) => ({ ...column, order: index + 1 }));
+}
+
+function applyColumnOrder(columns) {
+    return columns
+        .map((column, index) => ({
+            key: column.key,
+            label: column.label || FIELD_LABELS[column.key] || column.key,
+            show: Boolean(column.show),
+            order: index + 1,
+        }));
+}
+
 function Panel({ title, children }) {
     return (
         <section className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
@@ -304,12 +392,13 @@ function Panel({ title, children }) {
     );
 }
 
-function Preview({ data }) {
+function Preview({ data, attributeFields }) {
     const width = data.paper_type === 'thermal' ? `${data.thermal_width_mm}mm` : '100%';
     const logo = data.layout.logo ?? {};
     const logoSrc = assetUrl(logo.path);
     const primary = data.layout.colors.primary;
     const secondary = data.layout.colors.secondary;
+    const visibleColumns = normalizeItemColumns(data.layout, attributeFields).filter((column) => column.show);
 
     return (
         <aside className="hidden lg:block">
@@ -335,7 +424,7 @@ function Preview({ data }) {
                     <div className="mt-3 grid grid-cols-2 gap-1 border-t border-black pt-2 text-xs">
                         <span>Cliente</span><span>Moneda</span><span>Vendedor</span><span>Tipo</span>
                     </div>
-                    <div className="mt-3 border-y border-black py-1 text-xs">Cant. Descripcion P.Unit Total</div>
+                    <div className="mt-3 border-y border-black py-1 text-xs">{visibleColumns.map((column) => column.label).join(' ')}</div>
                     <div className="mt-16 border-t border-black pt-2 text-right text-xs">Total / Anticipo / Saldo</div>
                 </div>
             </div>

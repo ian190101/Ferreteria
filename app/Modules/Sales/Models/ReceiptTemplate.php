@@ -93,6 +93,17 @@ class ReceiptTemplate extends AuditableModel
                 'advance' => true,
                 'balance_due' => true,
             ],
+            'item_columns' => [
+                ['key' => 'item_number', 'label' => 'N', 'show' => true, 'order' => 1],
+                ['key' => 'item_description', 'label' => 'Descripcion', 'show' => true, 'order' => 2],
+                ['key' => 'item_lot', 'label' => 'Lote', 'show' => false, 'order' => 3],
+                ['key' => 'item_model', 'label' => 'Modelo', 'show' => true, 'order' => 4],
+                ['key' => 'item_unit', 'label' => 'Und.', 'show' => true, 'order' => 50],
+                ['key' => 'item_quantity', 'label' => 'Cant.', 'show' => true, 'order' => 60],
+                ['key' => 'item_base', 'label' => 'Base', 'show' => true, 'order' => 70],
+                ['key' => 'item_price', 'label' => 'Precio', 'show' => true, 'order' => 80],
+                ['key' => 'item_subtotal', 'label' => 'Subtotal', 'show' => true, 'order' => 90],
+            ],
         ];
     }
 }

@@ -128,7 +128,55 @@ class ReceiptTemplateController extends Controller
             $merged['fields'][$attribute['field']] = $merged['fields'][$attribute['field']] ?? true;
         }
 
+        $merged['item_columns'] = $this->normalizeItemColumns($merged);
+
         return $merged;
+    }
+
+    private function normalizeItemColumns(array $layout): array
+    {
+        $columns = collect(ReceiptTemplate::defaultLayout()['item_columns']);
+        $nextOrder = 10;
+
+        $columns = $columns->map(function (array $column) use ($layout, &$nextOrder) {
+            $column['order'] = $nextOrder;
+            $nextOrder += 10;
+
+            return [
+                ...$column,
+                'show' => (bool) ($layout['fields'][$column['key']] ?? $column['show']),
+            ];
+        });
+
+        foreach ($this->attributeFields() as $attribute) {
+            $columns->push([
+                'key' => $attribute['field'],
+                'label' => $attribute['label'],
+                'show' => (bool) ($layout['fields'][$attribute['field']] ?? true),
+                'order' => $nextOrder,
+            ]);
+            $nextOrder += 10;
+        }
+
+        $savedColumns = collect($layout['item_columns'] ?? [])
+            ->filter(fn ($column) => is_array($column) && filled($column['key'] ?? null))
+            ->keyBy('key');
+
+        return $columns
+            ->map(function (array $column) use ($savedColumns) {
+                $saved = $savedColumns->get($column['key'], []);
+
+                return [
+                    'key' => $column['key'],
+                    'label' => filled($saved['label'] ?? null) ? $saved['label'] : $column['label'],
+                    'show' => array_key_exists('show', $saved) ? (bool) $saved['show'] : $column['show'],
+                    'order' => (int) ($saved['order'] ?? $column['order']),
+                ];
+            })
+            ->sortBy('order')
+            ->values()
+            ->map(fn (array $column, int $index) => [...$column, 'order' => $index + 1])
+            ->all();
     }
 
     private function attributeFields(): array

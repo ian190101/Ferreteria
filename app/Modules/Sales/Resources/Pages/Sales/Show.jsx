@@ -13,6 +13,18 @@ const PAPER_SIZES = {
     thermal: { width: null, page: 'auto' },
 };
 
+const DEFAULT_ITEM_COLUMNS = [
+    { key: 'item_number', label: 'N', show: true, align: 'left' },
+    { key: 'item_description', label: 'Descripcion', show: true, align: 'left' },
+    { key: 'item_lot', label: 'Lote', show: false, align: 'left' },
+    { key: 'item_model', label: 'Modelo', show: true, align: 'left' },
+    { key: 'item_unit', label: 'Und.', show: true, align: 'right' },
+    { key: 'item_quantity', label: 'Cant.', show: true, align: 'right' },
+    { key: 'item_base', label: 'Base', show: true, align: 'right' },
+    { key: 'item_price', label: 'Precio', show: true, align: 'right' },
+    { key: 'item_subtotal', label: 'Subtotal', show: true, align: 'right' },
+];
+
 export default function Show({ sale, template, paymentMethods = [], conversionReadiness = { can_convert: false, issues: [], items: [] } }) {
     const documentTitle = sale.document_type === 'quotation' ? 'COTIZACION' : 'NOTA DE VENTA';
     const page = usePage();
@@ -349,47 +361,57 @@ function CustomerSection({ sale, branch, currency, fields }) {
     );
 }
 
-function ItemsSection({ sale, fields }) {
-    const attributeColumns = itemAttributeColumns(sale.items ?? [], fields);
+function ItemsSection({ sale, fields, layout }) {
+    const columns = itemColumns(sale.items ?? [], fields, layout.item_columns ?? []);
 
     return (
         <table className="mt-3 w-full border-collapse text-[0.92em]">
             <thead>
                 <tr className="border-y border-black">
-                    {fieldEnabled(fields, 'item_number') ? <th className="py-1 text-left">N</th> : null}
-                    {fieldEnabled(fields, 'item_description') ? <th className="py-1 text-left">Descripcion</th> : null}
-                    {fields.item_lot ? <th className="py-1 text-left">Lote</th> : null}
-                    {fieldEnabled(fields, 'item_model') ? <th className="py-1 text-left">Modelo</th> : null}
-                    {attributeColumns.map((attribute) => (
-                        <th key={attribute.code} className="py-1 text-left">{attribute.name}</th>
+                    {columns.map((column) => (
+                        <th key={column.key} className={`py-1 ${column.align === 'right' ? 'text-right' : 'text-left'}`}>{column.label}</th>
                     ))}
-                    {fieldEnabled(fields, 'item_unit') ? <th className="py-1 text-right">Und.</th> : null}
-                    {fieldEnabled(fields, 'item_quantity') ? <th className="py-1 text-right">Cant.</th> : null}
-                    {fieldEnabled(fields, 'item_base') ? <th className="py-1 text-right">Base</th> : null}
-                    {fieldEnabled(fields, 'item_price') ? <th className="py-1 text-right">Precio</th> : null}
-                    {fieldEnabled(fields, 'item_subtotal') ? <th className="py-1 text-right">Subtotal</th> : null}
                 </tr>
             </thead>
             <tbody>
                 {sale.items.map((item, index) => (
                     <tr key={item.id ?? index} className="align-top">
-                        {fieldEnabled(fields, 'item_number') ? <td className="py-1">{index + 1}</td> : null}
-                        {fieldEnabled(fields, 'item_description') ? <td className="py-1"><p className="font-bold">{item.description}</p></td> : null}
-                        {fields.item_lot ? <td className="py-1">{item.coil?.lot_number ?? '-'}</td> : null}
-                        {fieldEnabled(fields, 'item_model') ? <td className="py-1">{item.product?.sku ?? '-'}</td> : null}
-                        {attributeColumns.map((attribute) => (
-                            <td key={attribute.code} className="py-1">{itemAttributeValue(item, attribute.code)}</td>
+                        {columns.map((column) => (
+                            <td key={column.key} className={`py-1 ${column.align === 'right' ? 'text-right' : 'text-left'}`}>
+                                {itemColumnValue(column.key, item, index)}
+                            </td>
                         ))}
-                        {fieldEnabled(fields, 'item_unit') ? <td className="py-1 text-right">{item.display_unit_label ?? item.unit_label}</td> : null}
-                        {fieldEnabled(fields, 'item_quantity') ? <td className="py-1 text-right">{item.display_quantity ?? '1.000'}</td> : null}
-                        {fieldEnabled(fields, 'item_base') ? <td className="py-1 text-right">{(item.calculation_mode ?? 'direct') === 'direct' ? '-' : item.meters}</td> : null}
-                        {fieldEnabled(fields, 'item_price') ? <td className="py-1 text-right">{item.unit_price}</td> : null}
-                        {fieldEnabled(fields, 'item_subtotal') ? <td className="py-1 text-right">{item.total}</td> : null}
                     </tr>
                 ))}
             </tbody>
         </table>
     );
+}
+
+function itemColumns(items, fields, configuredColumns) {
+    const staticColumns = DEFAULT_ITEM_COLUMNS.map((column, index) => ({ ...column, order: index + 1 }));
+    const attributeColumns = itemAttributeColumns(items, fields).map((attribute, index) => ({
+        key: `item_attribute_${attribute.code}`,
+        label: attribute.name,
+        show: true,
+        align: 'left',
+        order: staticColumns.length + index + 1,
+    }));
+    const saved = new Map((configuredColumns ?? []).map((column) => [column.key, column]));
+
+    return [...staticColumns, ...attributeColumns]
+        .map((column) => {
+            const savedColumn = saved.get(column.key) ?? {};
+
+            return {
+                ...column,
+                label: savedColumn.label || column.label,
+                show: Object.hasOwn(savedColumn, 'show') ? Boolean(savedColumn.show) : fieldEnabled(fields, column.key),
+                order: Number(savedColumn.order ?? column.order),
+            };
+        })
+        .filter((column) => column.show)
+        .sort((left, right) => left.order - right.order);
 }
 
 function itemAttributeColumns(items, fields) {
@@ -407,6 +429,26 @@ function itemAttributeColumns(items, fields) {
     });
 
     return [...columns.values()];
+}
+
+function itemColumnValue(key, item, index) {
+    if (key.startsWith('item_attribute_')) {
+        return itemAttributeValue(item, key.replace('item_attribute_', ''));
+    }
+
+    const values = {
+        item_number: index + 1,
+        item_description: <p className="font-bold">{item.description}</p>,
+        item_lot: item.coil?.lot_number ?? '-',
+        item_model: item.product?.sku ?? '-',
+        item_unit: item.display_unit_label ?? item.unit_label,
+        item_quantity: item.display_quantity ?? '1.000',
+        item_base: (item.calculation_mode ?? 'direct') === 'direct' ? '-' : item.meters,
+        item_price: item.unit_price,
+        item_subtotal: item.total,
+    };
+
+    return values[key] ?? '-';
 }
 
 function fieldEnabled(fields, field) {

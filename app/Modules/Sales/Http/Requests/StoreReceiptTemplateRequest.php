@@ -43,6 +43,11 @@ class StoreReceiptTemplateRequest extends FormRequest
             'layout.sections.*.order' => ['required', 'integer', 'min:1', 'max:99'],
             'layout.fields' => ['required', 'array'],
             'layout.fields.*' => ['boolean'],
+            'layout.item_columns' => ['nullable', 'array'],
+            'layout.item_columns.*.key' => ['required_with:layout.item_columns', 'string', 'max:120'],
+            'layout.item_columns.*.label' => ['required_with:layout.item_columns', 'string', 'max:80'],
+            'layout.item_columns.*.show' => ['required_with:layout.item_columns', 'boolean'],
+            'layout.item_columns.*.order' => ['required_with:layout.item_columns', 'integer', 'min:1', 'max:999'],
         ];
     }
 
