@@ -4,9 +4,11 @@ import FormField from '../../../../../Shared/Resources/Components/FormField';
 import ModuleHeader from '../../../../../Shared/Resources/Components/ModuleHeader';
 import SelectField from '../../../../../Shared/Resources/Components/SelectField';
 import { Head, Link, useForm } from '@inertiajs/react';
+import { decimalStep, useDecimalFormatter } from '@/Utils/formatters';
 
 export default function Form({ product, thicknesses, categories, units }) {
     const isEditing = Boolean(product);
+    const decimalFormat = useDecimalFormatter('inventory');
     const firstCategory = categories[0] ?? null;
     const initialCategory = product?.product_category_id
         ? categories.find((category) => Number(category.id) === Number(product.product_category_id))
@@ -151,19 +153,19 @@ export default function Form({ product, thicknesses, categories, units }) {
                             </option>
                         ))}
                     </SelectField>
-                    <FormField label="Ancho por defecto" name="default_width" type="number" step="0.0001" value={data.default_width} onChange={(event) => setData('default_width', event.target.value)} error={errors.default_width} />
-                    <FormField label="Precio compra" name="purchase_price" type="number" step="0.0001" min="0" value={data.purchase_price} onChange={(event) => setData('purchase_price', event.target.value)} error={errors.purchase_price} required />
-                    <FormField label="Precio venta" name="sale_price" type="number" step="0.0001" min="0" value={data.sale_price} onChange={(event) => setData('sale_price', event.target.value)} error={errors.sale_price} required />
+                    <FormField label="Ancho por defecto" name="default_width" type="number" step={decimalStep(decimalFormat.decimalsFor('measure'))} value={data.default_width} onChange={(event) => setData('default_width', event.target.value)} error={errors.default_width} />
+                    <FormField label="Precio compra" name="purchase_price" type="number" step={decimalStep(decimalFormat.decimalsFor('cost'))} min="0" value={data.purchase_price} onChange={(event) => setData('purchase_price', event.target.value)} error={errors.purchase_price} required />
+                    <FormField label="Precio venta" name="sale_price" type="number" step={decimalStep(decimalFormat.decimalsFor('money'))} min="0" value={data.sale_price} onChange={(event) => setData('sale_price', event.target.value)} error={errors.sale_price} required />
                     <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-100">
                         <p className="text-xs font-semibold uppercase tracking-wide">Ganancia estimada</p>
-                        <p className="mt-1 text-xl font-bold">Bs {moneyFormatter.format(profit)}</p>
+                        <p className="mt-1 text-xl font-bold">Bs {decimalFormat.money(profit)}</p>
                         <p className="mt-1 text-xs">Por {selectedUnit?.symbol ?? data.base_unit ?? 'unidad'} antes de descuentos.</p>
                     </div>
                     <FormField
                         label={`Stock minimo (${unitLabel(data.base_unit)})`}
                         name="minimum_stock_meters"
                         type="number"
-                        step="0.001"
+                        step={decimalStep(decimalFormat.decimalsFor(data.base_unit === 'm' ? 'measure' : data.base_unit === 'kg' ? 'weight' : 'quantity'))}
                         value={data.minimum_stock_meters}
                         onChange={(event) => setData('minimum_stock_meters', event.target.value)}
                         error={errors.minimum_stock_meters}
@@ -217,11 +219,6 @@ export default function Form({ product, thicknesses, categories, units }) {
         </AuthenticatedLayout>
     );
 }
-
-const moneyFormatter = new Intl.NumberFormat('es-BO', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-});
 
 function unitLabel(unit) {
     return {

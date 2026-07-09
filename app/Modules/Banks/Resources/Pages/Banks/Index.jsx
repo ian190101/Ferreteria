@@ -8,14 +8,11 @@ import ModuleHeader from '../../../../Shared/Resources/Components/ModuleHeader';
 import Pagination from '../../../../Shared/Resources/Components/Pagination';
 import SelectField from '../../../../Shared/Resources/Components/SelectField';
 import { Head, router, useForm, usePage } from '@inertiajs/react';
-
-const moneyFormatter = new Intl.NumberFormat('es-BO', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-});
+import { decimalStep, useDecimalFormatter } from '@/Utils/formatters';
 
 export default function Index({ accounts, transactions, summary, branches, activeAccounts, cashSessions, users, filters }) {
     const canManage = usePage().props.auth.permissions.includes('banks.manage');
+    const decimalFormat = useDecimalFormatter('finance');
     const filterForm = useForm({
         branch_id: filters.branch_id ?? '',
         bank_account_id: filters.bank_account_id ?? '',
@@ -75,7 +72,7 @@ export default function Index({ accounts, transactions, summary, branches, activ
 
                 <div className="my-6 grid gap-4 sm:grid-cols-3">
                     <Metric label="Cuentas" value={summary.accounts_count} />
-                    <Metric label="Saldo total" value={`Bs ${moneyFormatter.format(Number(summary.total_balance ?? 0))}`} />
+                    <Metric label="Saldo total" value={`Bs ${decimalFormat.money(summary.total_balance ?? 0)}`} />
                     <Metric label="Pendientes de conciliar" value={summary.pending_reconciliation} />
                 </div>
 
@@ -131,7 +128,7 @@ export default function Index({ accounts, transactions, summary, branches, activ
                                 <FormField label="Banco" name="bank_name" value={accountForm.data.bank_name} onChange={(event) => accountForm.setData('bank_name', event.target.value)} error={accountForm.errors.bank_name} />
                                 <FormField label="Nro. cuenta" name="account_number" value={accountForm.data.account_number} onChange={(event) => accountForm.setData('account_number', event.target.value)} error={accountForm.errors.account_number} />
                                 <FormField label="Moneda" name="currency_code" value={accountForm.data.currency_code} onChange={(event) => accountForm.setData('currency_code', event.target.value.toUpperCase())} error={accountForm.errors.currency_code} />
-                                <FormField label="Saldo inicial" name="opening_balance" type="number" step="0.01" value={accountForm.data.opening_balance} onChange={(event) => accountForm.setData('opening_balance', event.target.value)} error={accountForm.errors.opening_balance} />
+                                <FormField label="Saldo inicial" name="opening_balance" type="number" step={decimalStep(decimalFormat.decimalsFor('money'))} value={accountForm.data.opening_balance} onChange={(event) => accountForm.setData('opening_balance', event.target.value)} error={accountForm.errors.opening_balance} />
                             </div>
                             <div className="mt-4">
                                 <PrimaryButton disabled={accountForm.processing}>Crear cuenta</PrimaryButton>
@@ -150,7 +147,7 @@ export default function Index({ accounts, transactions, summary, branches, activ
                                     <option value="adjustment">Ajuste positivo</option>
                                 </SelectField>
                                 <FormField label="Fecha" name="transacted_at" value="Se registrara automaticamente al guardar" disabled className="mt-1 block w-full rounded-md border-gray-300 bg-slate-100 shadow-sm dark:border-gray-700 dark:bg-slate-800 dark:text-gray-300" error={transactionForm.errors.transacted_at} />
-                                <FormField label="Monto" name="amount" type="number" step="0.01" value={transactionForm.data.amount} onChange={(event) => transactionForm.setData('amount', event.target.value)} error={transactionForm.errors.amount} />
+                                <FormField label="Monto" name="amount" type="number" step={decimalStep(decimalFormat.decimalsFor('money'))} value={transactionForm.data.amount} onChange={(event) => transactionForm.setData('amount', event.target.value)} error={transactionForm.errors.amount} />
                                 <FormField label="Referencia" name="reference" value={transactionForm.data.reference} onChange={(event) => transactionForm.setData('reference', event.target.value)} error={transactionForm.errors.reference} />
                                 <FormField label="Descripcion" name="description" value={transactionForm.data.description} onChange={(event) => transactionForm.setData('description', event.target.value)} error={transactionForm.errors.description} />
                             </div>
@@ -181,7 +178,7 @@ export default function Index({ accounts, transactions, summary, branches, activ
                                         <p className="text-xs text-slate-500">{account.bank_name} · {account.account_number}</p>
                                     </td>
                                     <td className="px-4 py-3">{account.branch?.name ?? '-'}</td>
-                                    <td className="px-4 py-3 text-right">{account.currency_code} {moneyFormatter.format(Number(account.current_balance ?? 0))}</td>
+                                    <td className="px-4 py-3 text-right">{account.currency_code} {decimalFormat.money(account.current_balance ?? 0)}</td>
                                     <td className="px-4 py-3 text-right">{account.transactions_count}</td>
                                     <td className="px-4 py-3">{account.is_active ? 'Activa' : 'Inactiva'}</td>
                                     {canManage ? (
@@ -226,7 +223,7 @@ export default function Index({ accounts, transactions, summary, branches, activ
                                         <p className="text-xs text-slate-500">{transaction.cash_session_id ? `Caja #${transaction.cash_session_id}` : 'Sin caja vinculada'}</p>
                                     </td>
                                     <td className="px-4 py-3">{typeLabel(transaction.type)}</td>
-                                    <td className="px-4 py-3 text-right">{transaction.account?.currency_code ?? 'BOB'} {moneyFormatter.format(Number(transaction.amount ?? 0))}</td>
+                                    <td className="px-4 py-3 text-right">{transaction.account?.currency_code ?? 'BOB'} {decimalFormat.money(transaction.amount ?? 0)}</td>
                                     <td className="px-4 py-3">{transaction.status === 'void' ? 'Anulado' : (transaction.reconciled_at ? 'Conciliado' : 'Pendiente')}</td>
                                     <td className="px-4 py-3">{transaction.reference ?? '-'}</td>
                                     {canManage ? (

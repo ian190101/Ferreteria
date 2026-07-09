@@ -8,6 +8,7 @@ use App\Modules\Inventory\Models\Product;
 use App\Modules\Settings\Http\Requests\UpdateSystemSettingRequest;
 use App\Modules\Settings\Models\MaintenanceBackup;
 use App\Modules\Settings\Models\SystemSetting;
+use App\Support\DecimalPrecision;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -39,6 +40,7 @@ class SystemController extends Controller
                     ->update(['value' => $this->normalizeValue($item['value'] ?? null)]);
             }
         });
+        DecimalPrecision::forget();
 
         return redirect()->route('settings.system.index')->with('success', 'Configuracion general actualizada correctamente.');
     }
@@ -172,6 +174,10 @@ class SystemController extends Controller
 
     private function normalizeValue(mixed $value): array
     {
+        if (is_array($value)) {
+            return $value;
+        }
+
         return ['value' => is_bool($value) ? $value : trim((string) $value)];
     }
 }

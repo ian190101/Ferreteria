@@ -3,6 +3,7 @@ import FormField from '../../../../Shared/Resources/Components/FormField';
 import ModuleHeader from '../../../../Shared/Resources/Components/ModuleHeader';
 import SelectField from '../../../../Shared/Resources/Components/SelectField';
 import { Head, Link, router, useForm } from '@inertiajs/react';
+import { useDecimalFormatter } from '@/Utils/formatters';
 
 const moneyFormatter = new Intl.NumberFormat('es-BO', {
     minimumFractionDigits: 2,
@@ -24,6 +25,8 @@ export default function Index({
     branches = [],
     filters = {},
 }) {
+    const decimalFormat = useDecimalFormatter('finance');
+    const money = (value) => value === null || value === undefined ? null : `Bs ${decimalFormat.money(value)}`;
     const filterForm = useForm({
         branch_id: filters.branch_id ?? '',
         from: filters.from ?? scope.from ?? '',
@@ -695,9 +698,6 @@ function EmptyState({ text }) {
     return <p className="px-4 py-5 text-sm text-slate-500 dark:text-slate-400">{text}</p>;
 }
 
-function money(value) {
-    return value === null || value === undefined ? null : `Bs ${moneyFormatter.format(Number(value ?? 0))}`;
-}
 
 function documentType(type) {
     return type === 'quotation' ? 'Cotizacion' : 'Nota de venta';

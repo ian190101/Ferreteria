@@ -4,13 +4,10 @@ import ModuleHeader from '../../../../../Shared/Resources/Components/ModuleHeade
 import Pagination from '../../../../../Shared/Resources/Components/Pagination';
 import SelectField from '../../../../../Shared/Resources/Components/SelectField';
 import { Head, router, useForm } from '@inertiajs/react';
-
-const numberFormatter = new Intl.NumberFormat('es-BO', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 3,
-});
+import { useDecimalFormatter } from '@/Utils/formatters';
 
 export default function Index({ globalStocks, coilSummary, branches, filters }) {
+    const decimalFormat = useDecimalFormatter('inventory');
     const { data, setData, get, processing } = useForm({
         branch_id: filters.branch_id ?? '',
         search: filters.search ?? '',
@@ -44,7 +41,7 @@ export default function Index({ globalStocks, coilSummary, branches, filters }) 
                     </div>
                 </form>
 
-                <StockTable stocks={globalStocks.data} />
+                <StockTable stocks={globalStocks.data} decimalFormat={decimalFormat} />
                 <div className="mt-4"><Pagination links={globalStocks.links} /></div>
 
                 <section className="mt-8 rounded-lg border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
@@ -58,7 +55,7 @@ export default function Index({ globalStocks, coilSummary, branches, filters }) 
                             <div key={coil.id} className="rounded-lg border border-slate-200 p-4 text-sm dark:border-slate-800">
                                 <p className="font-semibold text-slate-950 dark:text-white">{coil.product?.name ?? 'Producto'}</p>
                                 <p className="text-slate-500">{coil.branch?.name ?? '-'} / Lote {coil.lot_number ?? '-'}</p>
-                                <p className="mt-2 text-lg font-bold text-emerald-600">{numberFormatter.format(Number(coil.available_meters ?? 0))} {unitLabel(coil.product)}</p>
+                                <p className="mt-2 text-lg font-bold text-emerald-600">{formatStockQuantity(coil.available_meters ?? 0, unitLabel(coil.product), decimalFormat)} {unitLabel(coil.product)}</p>
                                 <p className="text-xs text-slate-500">Codigo: {coil.barcode}</p>
                             </div>
                         ))}
@@ -69,7 +66,7 @@ export default function Index({ globalStocks, coilSummary, branches, filters }) 
     );
 }
 
-function StockTable({ stocks }) {
+function StockTable({ stocks, decimalFormat }) {
     return (
         <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
             <table className="min-w-full divide-y divide-slate-200 text-sm dark:divide-slate-800">
@@ -97,9 +94,9 @@ function StockTable({ stocks }) {
                                     <p className="text-xs text-slate-500">{stock.product?.sku ?? '-'} / {stock.product?.barcode ?? '-'}</p>
                                 </td>
                                 <td className="px-4 py-3">{stock.branch?.name ?? '-'}</td>
-                                <td className="px-4 py-3 text-right">{numberFormatter.format(available)} {unit}</td>
-                                <td className="px-4 py-3 text-right">{numberFormatter.format(reserved)} {unit}</td>
-                                <td className="px-4 py-3 text-right font-semibold">{numberFormatter.format(Math.max(available - reserved, 0))} {unit}</td>
+                                <td className="px-4 py-3 text-right">{formatStockQuantity(available, unit, decimalFormat)} {unit}</td>
+                                <td className="px-4 py-3 text-right">{formatStockQuantity(reserved, unit, decimalFormat)} {unit}</td>
+                                <td className="px-4 py-3 text-right font-semibold">{formatStockQuantity(Math.max(available - reserved, 0), unit, decimalFormat)} {unit}</td>
                             </tr>
                         );
                     })}
@@ -115,4 +112,16 @@ function unitLabel(product) {
     if (product?.base_unit === 'kg') return 'kg';
     if (product?.base_unit === 'lb') return 'lb';
     return 'm';
+}
+
+function formatStockQuantity(value, unit, decimalFormat) {
+    if (['m', 'metro', 'metros'].includes(String(unit).toLowerCase())) {
+        return decimalFormat.measure(value);
+    }
+
+    if (['kg', 'lb'].includes(String(unit).toLowerCase())) {
+        return decimalFormat.weight(value);
+    }
+
+    return decimalFormat.quantity(value);
 }

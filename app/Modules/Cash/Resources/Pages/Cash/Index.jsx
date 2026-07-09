@@ -5,11 +5,7 @@ import ModuleHeader from '../../../../Shared/Resources/Components/ModuleHeader';
 import Pagination from '../../../../Shared/Resources/Components/Pagination';
 import SelectField from '../../../../Shared/Resources/Components/SelectField';
 import { Head, router, useForm, usePage } from '@inertiajs/react';
-
-const moneyFormatter = new Intl.NumberFormat('es-BO', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-});
+import { useDecimalFormatter } from '@/Utils/formatters';
 
 const CASH_DENOMINATIONS = [
     { key: 'bill_200', type: 'bill', label: 'Billete de 200 Bs', shortLabel: '200', cents: 20000, gradient: 'from-emerald-500 to-teal-700' },
@@ -170,6 +166,7 @@ export default function Index({ sessions, openSessions, branches, filters }) {
 }
 
 function CloseSessionForm({ session, canViewBanks }) {
+    const decimalFormat = useDecimalFormatter('finance');
     const closeForm = useForm({
         closed_at: currentDateTimeLocal(),
         cash_count: emptyCashCount(),
@@ -205,9 +202,9 @@ function CloseSessionForm({ session, canViewBanks }) {
             <div className="grid gap-4 xl:grid-cols-[1fr_220px] xl:items-start">
                 <div>
                     <p className="font-semibold text-slate-900 dark:text-slate-100">{session.branch?.name ?? '-'}</p>
-                    <p className="text-sm text-slate-500">Apertura: {formatDate(session.opened_at)} - Inicial Bs {moneyFormatter.format(Number(session.opening_amount ?? 0))}</p>
-                    <p className="text-sm text-slate-500">Ingresos efectivo Bs {moneyFormatter.format(Number(session.current_cash_income_amount ?? 0))} - Egresos efectivo Bs {moneyFormatter.format(Number(session.current_cash_expense_amount ?? 0))}</p>
-                    <p className="text-sm text-slate-500">QR/Banco ingresos Bs {moneyFormatter.format(bankIncome)} - egresos Bs {moneyFormatter.format(bankExpense)} - neto Bs {moneyFormatter.format(bankNet)}</p>
+                    <p className="text-sm text-slate-500">Apertura: {formatDate(session.opened_at)} - Inicial Bs {decimalFormat.money(session.opening_amount ?? 0)}</p>
+                    <p className="text-sm text-slate-500">Ingresos efectivo Bs {decimalFormat.money(session.current_cash_income_amount ?? 0)} - Egresos efectivo Bs {decimalFormat.money(session.current_cash_expense_amount ?? 0)}</p>
+                    <p className="text-sm text-slate-500">QR/Banco ingresos Bs {decimalFormat.money(bankIncome)} - egresos Bs {decimalFormat.money(bankExpense)} - neto Bs {decimalFormat.money(bankNet)}</p>
                     <p className="text-xs text-slate-500">Responsable: {session.opener?.name ?? '-'}</p>
                 </div>
                 <FormField label="Fecha cierre" name="closed_at" value="Se registrara automaticamente al guardar" disabled className="mt-1 block w-full rounded-md border-gray-300 bg-slate-100 shadow-sm dark:border-gray-700 dark:bg-slate-800 dark:text-gray-300" error={closeForm.errors.closed_at} />
@@ -234,7 +231,7 @@ function CloseSessionForm({ session, canViewBanks }) {
 
             <div className="rounded-2xl border border-brand-primary/20 bg-brand-primary/10 p-4 text-brand-primary">
                 <p className="text-xs font-semibold uppercase tracking-wide">Total contado en tiempo real</p>
-                <p className="mt-1 text-3xl font-black">Bs {moneyFormatter.format(countedTotal)}</p>
+                <p className="mt-1 text-3xl font-black">Bs {decimalFormat.money(countedTotal)}</p>
                 <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">Este monto se recalcula al escribir la cantidad de cada billete o moneda.</p>
             </div>
 
@@ -243,7 +240,7 @@ function CloseSessionForm({ session, canViewBanks }) {
                     <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                         <div>
                             <p className="font-semibold">Conciliar con QR/Banco al cerrar</p>
-                            <p className="mt-1">Periodo: desde la apertura de caja hasta el momento del cierre. Ingresos Bs {moneyFormatter.format(bankIncome)} - Egresos Bs {moneyFormatter.format(bankExpense)} - Neto Bs {moneyFormatter.format(bankNet)}.</p>
+                            <p className="mt-1">Periodo: desde la apertura de caja hasta el momento del cierre. Ingresos Bs {decimalFormat.money(bankIncome)} - Egresos Bs {decimalFormat.money(bankExpense)} - Neto Bs {decimalFormat.money(bankNet)}.</p>
                             <p className="mt-1 text-xs">Al cerrar se guardara el efectivo contado por separado y estos movimientos QR/Banco quedaran vinculados a la caja #{session.id}.</p>
                         </div>
                         {canViewBanks ? (
@@ -275,6 +272,7 @@ function CloseSessionForm({ session, canViewBanks }) {
 }
 
 function DenominationCounter({ denomination, count, error, onChange }) {
+    const decimalFormat = useDecimalFormatter('finance');
     const subtotal = (Number(count ?? 0) * denomination.cents) / 100;
 
     return (
@@ -283,7 +281,7 @@ function DenominationCounter({ denomination, count, error, onChange }) {
                 <MoneyVisual denomination={denomination} />
                 <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-semibold text-slate-900 dark:text-slate-100">{denomination.label}</p>
-                    <p className="text-xs text-slate-500">Subtotal Bs {moneyFormatter.format(subtotal)}</p>
+                    <p className="text-xs text-slate-500">Subtotal Bs {decimalFormat.money(subtotal)}</p>
                 </div>
             </div>
             <label className="mt-3 block text-xs font-semibold uppercase tracking-wide text-slate-500" htmlFor={denomination.key}>
@@ -328,6 +326,7 @@ function MoneyVisual({ denomination }) {
 }
 
 function CashMetric({ label, value, tone = 'neutral', strong = false }) {
+    const decimalFormat = useDecimalFormatter('finance');
     const toneClass = {
         neutral: 'text-slate-900 dark:text-slate-100',
         success: 'text-emerald-600 dark:text-emerald-300',
@@ -338,7 +337,7 @@ function CashMetric({ label, value, tone = 'neutral', strong = false }) {
     return (
         <div>
             <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</p>
-            <p className={`${toneClass} ${strong ? 'text-2xl' : 'text-xl'} mt-1 font-bold`}>Bs {moneyFormatter.format(Number(value ?? 0))}</p>
+            <p className={`${toneClass} ${strong ? 'text-2xl' : 'text-xl'} mt-1 font-bold`}>Bs {decimalFormat.money(value ?? 0)}</p>
         </div>
     );
 }
@@ -355,7 +354,9 @@ function Panel({ title, children }) {
 }
 
 function MoneyCell({ value }) {
-    return <td className="px-4 py-3 text-right">Bs {moneyFormatter.format(Number(value ?? 0))}</td>;
+    const decimalFormat = useDecimalFormatter('finance');
+
+    return <td className="px-4 py-3 text-right">Bs {decimalFormat.money(value ?? 0)}</td>;
 }
 
 function formatDate(value) {

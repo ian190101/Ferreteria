@@ -5,9 +5,11 @@ import ActionLink from '../../../../../Shared/Resources/Components/ActionLink';
 import ModuleHeader from '../../../../../Shared/Resources/Components/ModuleHeader';
 import Pagination from '../../../../../Shared/Resources/Components/Pagination';
 import { Head, router, usePage } from '@inertiajs/react';
+import { useDecimalFormatter } from '@/Utils/formatters';
 
 export default function Index({ products }) {
     const permissions = usePage().props.auth.permissions;
+    const decimalFormat = useDecimalFormatter('inventory');
     const canManage = permissions.includes('inventory.products.manage');
 
     return (
@@ -52,9 +54,9 @@ export default function Index({ products }) {
                                     <td className="px-4 py-3">{product.sku}</td>
                                     <td className="px-4 py-3">{product.barcode}</td>
                                     <td className="px-4 py-3">{product.unit ? `${product.unit.name} (${product.unit.symbol})` : unitLabel(product.base_unit)}</td>
-                                    <td className="px-4 py-3 text-right">Bs {moneyFormatter.format(Number(product.purchase_price ?? 0))}</td>
-                                    <td className="px-4 py-3 text-right">Bs {moneyFormatter.format(Number(product.sale_price ?? 0))}</td>
-                                    <td className="px-4 py-3 text-right font-semibold text-emerald-600">Bs {moneyFormatter.format(Math.max(Number(product.sale_price ?? 0) - Number(product.purchase_price ?? 0), 0))}</td>
+                                    <td className="px-4 py-3 text-right">Bs {decimalFormat.cost(product.purchase_price ?? 0)}</td>
+                                    <td className="px-4 py-3 text-right">Bs {decimalFormat.money(product.sale_price ?? 0)}</td>
+                                    <td className="px-4 py-3 text-right font-semibold text-emerald-600">Bs {decimalFormat.money(Math.max(Number(product.sale_price ?? 0) - Number(product.purchase_price ?? 0), 0))}</td>
                                     <td className="px-4 py-3">{product.inventory_tracking_mode === 'coil' ? 'Por bobina' : 'Global'}</td>
                                     <td className="px-4 py-3">{product.thickness?.name ?? 'Sin espesor'}</td>
                                     {canManage ? (
@@ -87,11 +89,6 @@ export default function Index({ products }) {
         </AuthenticatedLayout>
     );
 }
-
-const moneyFormatter = new Intl.NumberFormat('es-BO', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-});
 
 function unitLabel(unit) {
     return {

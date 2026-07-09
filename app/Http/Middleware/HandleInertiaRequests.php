@@ -4,6 +4,7 @@ namespace App\Http\Middleware;
 
 use App\Modules\Branches\Models\BranchSetting;
 use App\Support\AuthSessionCache;
+use App\Support\DecimalPrecision;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Inertia\Middleware;
@@ -36,6 +37,7 @@ class HandleInertiaRequests extends Middleware
             ...parent::share($request),
             'auth' => $this->auth($request),
             'branding' => $this->branding($request),
+            'decimalPrecision' => DecimalPrecision::config(),
         ];
     }
 

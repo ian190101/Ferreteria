@@ -4,15 +4,7 @@ import Pagination from '../../../../Shared/Resources/Components/Pagination';
 import SelectField from '../../../../Shared/Resources/Components/SelectField';
 import FormField from '../../../../Shared/Resources/Components/FormField';
 import { Head, router, useForm } from '@inertiajs/react';
-
-const moneyFormatter = new Intl.NumberFormat('es-BO', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-});
-
-const numberFormatter = new Intl.NumberFormat('es-BO', {
-    maximumFractionDigits: 3,
-});
+import { useDecimalFormatter } from '@/Utils/formatters';
 
 export default function Index({
     filters,
@@ -24,6 +16,7 @@ export default function Index({
     agingReceivables = { data: [], links: [] },
     latestMovements = [],
 }) {
+    const decimalFormat = useDecimalFormatter('finance');
     const { data, setData, get, processing } = useForm({
         branch_id: filters.branch_id ?? '',
         from: filters.from ?? '',
@@ -64,10 +57,10 @@ export default function Index({
                 </form>
 
                 <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-                    <MetricCard title="Ventas" value={`Bs ${moneyFormatter.format(Number(metrics.sales_total ?? 0))}`} detail={`${metrics.sales_count ?? 0} documentos emitidos`} />
+                    <MetricCard title="Ventas" value={`Bs ${decimalFormat.money(metrics.sales_total ?? 0)}`} detail={`${metrics.sales_count ?? 0} documentos emitidos`} />
                     <MetricCard title="Cotizaciones" value={metrics.quotations_count ?? 0} detail="Documentos tipo cotizacion" />
-                    <MetricCard title="Compras" value={`Bs ${moneyFormatter.format(Number(metrics.purchase_total ?? 0))}`} detail={`${metrics.purchase_count ?? 0} ingresos registrados`} />
-                    <MetricCard title="Gastos" value={`Bs ${moneyFormatter.format(Number(metrics.expense_total ?? 0))}`} detail={`${metrics.expense_count ?? 0} egresos registrados`} />
+                    <MetricCard title="Compras" value={`Bs ${decimalFormat.money(metrics.purchase_total ?? 0)}`} detail={`${metrics.purchase_count ?? 0} ingresos registrados`} />
+                    <MetricCard title="Gastos" value={`Bs ${decimalFormat.money(metrics.expense_total ?? 0)}`} detail={`${metrics.expense_count ?? 0} egresos registrados`} />
                     <MetricCard title="Inventario" value={metrics.active_coils ?? 0} detail={`${metrics.low_stock_count ?? 0} alertas de stock bajo`} tone={Number(metrics.low_stock_count ?? 0) > 0 ? 'warning' : 'default'} />
                 </div>
 
@@ -93,7 +86,7 @@ export default function Index({
                                         </td>
                                         <td className="px-4 py-3">{sale.customer_name ?? '-'}</td>
                                         <td className="px-4 py-3">{sale.branch?.name ?? '-'}</td>
-                                        <td className="px-4 py-3 text-right">{sale.currency?.symbol ?? 'Bs'} {moneyFormatter.format(Number(sale.total ?? 0))}</td>
+                                        <td className="px-4 py-3 text-right">{sale.currency?.symbol ?? 'Bs'} {decimalFormat.money(sale.total ?? 0)}</td>
                                     </tr>
                                 ))}
                             </tbody>
@@ -116,7 +109,7 @@ export default function Index({
                                         </span>
                                     </div>
                                     <p className="text-sm text-slate-600 dark:text-slate-300">
-                                        Disponible: {numberFormatter.format(Number(stock.available_meters ?? 0))} m · Minimo: {numberFormatter.format(Number(stock.product?.minimum_stock_meters ?? 0))} m
+                                        Disponible: {decimalFormat.measure(stock.available_meters ?? 0)} m · Minimo: {decimalFormat.measure(stock.product?.minimum_stock_meters ?? 0)} m
                                     </p>
                                 </div>
                             ))}
@@ -130,7 +123,7 @@ export default function Index({
                             <MetricCard
                                 key={key}
                                 title={bucket.label}
-                                value={`Bs ${moneyFormatter.format(Number(bucket.total ?? 0))}`}
+                                value={`Bs ${decimalFormat.money(bucket.total ?? 0)}`}
                                 detail={`${bucket.count ?? 0} cuentas`}
                                 tone={key === '31_plus' && Number(bucket.count ?? 0) > 0 ? 'warning' : 'default'}
                             />
@@ -159,7 +152,7 @@ export default function Index({
                                         <p className="text-xs text-slate-500">{sale.customer_contact ?? '-'}</p>
                                     </td>
                                     <td className="px-4 py-3">{sale.branch?.name ?? '-'}</td>
-                                    <td className="px-4 py-3 text-right">{sale.currency?.symbol ?? 'Bs'} {moneyFormatter.format(Number(sale.balance_due ?? 0))}</td>
+                                    <td className="px-4 py-3 text-right">{sale.currency?.symbol ?? 'Bs'} {decimalFormat.money(sale.balance_due ?? 0)}</td>
                                     <td className="px-4 py-3 text-right">{sale.aging_days}</td>
                                     <td className="px-4 py-3">{sale.next_promise_date ? formatDateOnly(sale.next_promise_date) : '-'}</td>
                                 </tr>
@@ -201,7 +194,7 @@ export default function Index({
                                     <td className="px-4 py-3">{coil.barcode}</td>
                                     <td className="px-4 py-3">{coil.lot_number}</td>
                                     <td className="px-4 py-3">{coil.branch?.name ?? '-'}</td>
-                                    <td className="px-4 py-3 text-right">{numberFormatter.format(Number(coil.available_meters ?? 0))}</td>
+                                    <td className="px-4 py-3 text-right">{decimalFormat.measure(coil.available_meters ?? 0)}</td>
                                 </tr>
                             ))}
                         </tbody>

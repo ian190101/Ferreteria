@@ -16,6 +16,7 @@ use App\Modules\Sales\Models\DocumentSequence;
 use App\Modules\Sales\Models\ReceiptTemplate;
 use App\Modules\Sales\Models\SaleType;
 use App\Modules\Settings\Models\SystemSetting;
+use App\Support\DecimalPrecision;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Hash;
 use Spatie\Permission\PermissionRegistrar;
@@ -210,6 +211,7 @@ class DatabaseSeeder extends Seeder
             ['group' => 'performance', 'key' => 'cache_ttl_minutes', 'value' => ['value' => '5'], 'description' => 'Minutos de cache para resumenes operativos'],
             ['group' => 'security', 'key' => 'session_timeout_minutes', 'value' => ['value' => '120'], 'description' => 'Minutos sugeridos de vida de sesion'],
             ['group' => 'maintenance', 'key' => 'backup_retention_days', 'value' => ['value' => '30'], 'description' => 'Dias de retencion para backups operativos'],
+            ['group' => 'formatos', 'key' => DecimalPrecision::SETTING_KEY, 'value' => DecimalPrecision::defaults(), 'description' => 'Gestion de decimales globales y por modulo', 'is_public' => true],
         ] as $setting) {
             SystemSetting::firstOrCreate(
                 ['key' => $setting['key']],
@@ -217,7 +219,7 @@ class DatabaseSeeder extends Seeder
                     'group' => $setting['group'],
                     'value' => $setting['value'],
                     'description' => $setting['description'],
-                    'is_public' => false,
+                    'is_public' => $setting['is_public'] ?? false,
                 ],
             );
         }

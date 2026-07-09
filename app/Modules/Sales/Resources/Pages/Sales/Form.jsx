@@ -4,16 +4,7 @@ import FormField from '../../../../Shared/Resources/Components/FormField';
 import ModuleHeader from '../../../../Shared/Resources/Components/ModuleHeader';
 import SelectField from '../../../../Shared/Resources/Components/SelectField';
 import { Head, Link, useForm, usePage } from '@inertiajs/react';
-
-const moneyFormatter = new Intl.NumberFormat('es-BO', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-});
-
-const numberFormatter = new Intl.NumberFormat('es-BO', {
-    minimumFractionDigits: 3,
-    maximumFractionDigits: 3,
-});
+import { decimalStep, useDecimalFormatter } from '@/Utils/formatters';
 
 const DEFAULT_ITEM = {
     product_id: '',
@@ -47,6 +38,7 @@ export default function Form({
 }) {
     const title = documentType === 'quotation' ? 'Nueva cotizacion' : 'Nueva nota de venta';
     const permissions = usePage().props.auth.permissions;
+    const decimalFormat = useDecimalFormatter('sales');
     const canOverridePrices = permissions.includes('sales.prices.override');
     const catalogsReady = products.length > 0;
     const { data, setData, post, processing, errors, transform } = useForm({
@@ -136,7 +128,7 @@ export default function Form({
         event.preventDefault();
         transform((payload) => ({
             ...payload,
-            items: payload.items.map((item) => prepareSaleItem(item, products)),
+            items: payload.items.map((item) => prepareSaleItem(item, products, decimalFormat)),
         }));
         post(route('sales.store'), { preserveScroll: true });
     };
@@ -156,7 +148,7 @@ export default function Form({
                                     <option value="">Nota nueva sin cotizacion</option>
                                     {quotations.map((quotation) => (
                                         <option key={quotation.id} value={quotation.id}>
-                                            {quotation.receipt_number} - {quotation.customer_name} - {quotation.branch?.name} - Bs {moneyFormatter.format(Number(quotation.total ?? 0))}
+                                            {quotation.receipt_number} - {quotation.customer_name} - {quotation.branch?.name} - Bs {decimalFormat.money(quotation.total)}
                                         </option>
                                     ))}
                                 </SelectField>
@@ -219,7 +211,7 @@ export default function Form({
                                             <option value="">Seleccionar</option>
                                             {availableCoils(coils, data.branch_id, item.product_id).map((coil) => (
                                                 <option key={coil.id} value={coil.id}>
-                                                    {coil.barcode} - {coil.available_meters} m
+                                                    {coil.barcode} - {decimalFormat.measure(coil.available_meters)} m
                                                 </option>
                                             ))}
                                         </SelectField>
@@ -227,7 +219,7 @@ export default function Form({
                                     <div className="sm:col-span-2">
                                         <FormField label="Descripcion" name={`items.${index}.description`} value={item.description} onChange={(event) => updateItem(index, 'description', event.target.value)} error={errors[`items.${index}.description`]} required />
                                     </div>
-                                    <FormField label="Cantidad" name={`items.${index}.display_quantity`} type="number" step="0.001" value={item.display_quantity} onChange={(event) => updateItem(index, 'display_quantity', event.target.value)} error={errors[`items.${index}.display_quantity`]} required />
+                                    <FormField label="Cantidad" name={`items.${index}.display_quantity`} type="number" step={decimalStep(decimalFormat.decimalsFor('quantity'))} value={item.display_quantity} onChange={(event) => updateItem(index, 'display_quantity', event.target.value)} error={errors[`items.${index}.display_quantity`]} required />
                                     <FormField label="Unidad" name={`items.${index}.display_unit_label`} value={item.display_unit_label || productUnitSymbol(product)} onChange={(event) => updateItem(index, 'display_unit_label', event.target.value)} error={errors[`items.${index}.display_unit_label`]} required />
                                     <SelectField label="Calculo opcional" name={`items.${index}.quantity_mode`} value={item.quantity_mode ?? 'direct'} onChange={(event) => updateItem(index, 'quantity_mode', event.target.value)}>
                                         <option value="direct">Sin calculo</option>
@@ -236,17 +228,17 @@ export default function Form({
                                     </SelectField>
                                     {item.quantity_mode === 'weight' ? (
                                         <>
-                                            <FormField label="Peso" name={`items.${index}.weight`} type="number" step="0.001" value={item.weight} placeholder="0.000" onChange={(event) => updateItem(index, 'weight', event.target.value)} />
+                                            <FormField label="Peso" name={`items.${index}.weight`} type="number" step={decimalStep(decimalFormat.decimalsFor('weight'))} value={item.weight} placeholder={decimalFormat.fixed(0, 'weight')} onChange={(event) => updateItem(index, 'weight', event.target.value)} />
                                             <SelectField label="Unidad" name={`items.${index}.weight_unit`} value={item.weight_unit ?? 'ton'} onChange={(event) => updateItem(index, 'weight_unit', event.target.value)}>
                                                 <option value="ton">Toneladas</option>
                                                 <option value="kg">Kg</option>
                                             </SelectField>
                                         </>
                                     ) : item.quantity_mode === 'length' ? (
-                                        <FormField label="Metraje total (m)" name={`items.${index}.meters`} type="number" step="0.001" value={baseQuantityFieldValue(item, product, summary)} onChange={(event) => updateItem(index, 'meters', event.target.value)} error={errors[`items.${index}.meters`]} required />
+                                        <FormField label="Metraje total (m)" name={`items.${index}.meters`} type="number" step={decimalStep(decimalFormat.decimalsFor('measure'))} value={baseQuantityFieldValue(item, product, summary, decimalFormat)} onChange={(event) => updateItem(index, 'meters', event.target.value)} error={errors[`items.${index}.meters`]} required />
                                     ) : (
                                         <div className="rounded-md border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300">
-                                            Se guardara {numberFormatter.format(Number(item.display_quantity || 0))} {item.display_unit_label || productUnitSymbol(product)}
+                                            Se guardara {decimalFormat.quantity(item.display_quantity || 0)} {item.display_unit_label || productUnitSymbol(product)}
                                         </div>
                                     )}
                                     {productAttributes(product).length ? (
@@ -266,13 +258,13 @@ export default function Form({
                                         <option value="ton">Precio por tonelada</option>
                                     </SelectField>
                                     {canOverridePrices && item.price_mode === 'ton' ? (
-                                        <FormField label="Precio/TON (Bs.)" name={`items.${index}.price_per_ton`} type="number" step="0.01" value={item.price_per_ton} placeholder="Bs. 0.00" onChange={(event) => updateItem(index, 'price_per_ton', event.target.value)} />
+                                        <FormField label="Precio/TON (Bs.)" name={`items.${index}.price_per_ton`} type="number" step={decimalStep(decimalFormat.decimalsFor('money'))} value={item.price_per_ton} placeholder={`Bs. ${decimalFormat.money(0)}`} onChange={(event) => updateItem(index, 'price_per_ton', event.target.value)} />
                                     ) : (
                                         <FormField
                                             label={item.quantity_mode === 'direct' ? 'Precio/unidad' : 'Precio/metro'}
                                             name={`items.${index}.unit_price`}
                                             type="number"
-                                            step="0.0001"
+                                            step={decimalStep(decimalFormat.decimalsFor('cost'))}
                                             value={canOverridePrices ? item.unit_price : productSalePrice(product)}
                                             onChange={(event) => updateItem(index, 'unit_price', event.target.value)}
                                             error={errors[`items.${index}.unit_price`]}
@@ -283,10 +275,10 @@ export default function Form({
                                     {!canOverridePrices ? (
                                         <p className="text-xs text-slate-500 sm:col-span-6">Precio bloqueado: se usa el precio de venta configurado en Productos.</p>
                                     ) : null}
-                                    <FormField label="Desc." name={`items.${index}.discount_amount`} type="number" step="0.01" value={item.discount_amount} onChange={(event) => updateItem(index, 'discount_amount', event.target.value)} error={errors[`items.${index}.discount_amount`]} required />
+                                    <FormField label="Desc." name={`items.${index}.discount_amount`} type="number" step={decimalStep(decimalFormat.decimalsFor('money'))} value={item.discount_amount} onChange={(event) => updateItem(index, 'discount_amount', event.target.value)} error={errors[`items.${index}.discount_amount`]} required />
                                     <div className="rounded-md border border-slate-200 bg-slate-50 px-4 py-3 text-sm dark:border-slate-800 dark:bg-slate-950 sm:col-span-6">
-                                        <p className="text-slate-500 dark:text-slate-400">{item.quantity_mode === 'direct' ? 'Cantidad' : 'Equivalente'}: <span className="font-semibold text-emerald-600">{item.quantity_mode === 'direct' ? `${numberFormatter.format(summary.meters)} ${item.display_unit_label || productUnitSymbol(product)}` : `${numberFormatter.format(summary.meters)} m`}</span></p>
-                                        <p className="mt-1 text-slate-500 dark:text-slate-400">Subtotal: <span className="font-semibold text-slate-950 dark:text-slate-50">Bs {moneyFormatter.format(summary.total)}</span></p>
+                                        <p className="text-slate-500 dark:text-slate-400">{item.quantity_mode === 'direct' ? 'Cantidad' : 'Equivalente'}: <span className="font-semibold text-emerald-600">{item.quantity_mode === 'direct' ? `${decimalFormat.quantity(summary.meters)} ${item.display_unit_label || productUnitSymbol(product)}` : `${decimalFormat.measure(summary.meters)} m`}</span></p>
+                                        <p className="mt-1 text-slate-500 dark:text-slate-400">Subtotal: <span className="font-semibold text-slate-950 dark:text-slate-50">Bs {decimalFormat.money(summary.total)}</span></p>
                                         {item.quantity_mode === 'weight' && !product?.thickness?.kg_per_meter ? (
                                             <p className="mt-1 text-xs text-red-600">Este producto necesita espesor con kg/m para convertir peso a metros.</p>
                                         ) : null}
@@ -315,7 +307,7 @@ export default function Form({
     );
 }
 
-function prepareSaleItem(item, products) {
+function prepareSaleItem(item, products, decimalFormat) {
     const product = selectedProduct(products, item);
     const summary = saleItemSummary(item, product);
 
@@ -329,10 +321,10 @@ function prepareSaleItem(item, products) {
         item_attributes: normalizedItemAttributes(item, product),
         calculation_mode: item.quantity_mode || 'direct',
         meters: item.quantity_mode === 'weight'
-            ? (summary.meters ? summary.meters.toFixed(3) : '')
-            : (summary.meters ? summary.meters.toFixed(3) : item.display_quantity),
+            ? (summary.meters ? decimalFormat.fixed(summary.meters, 'measure') : '')
+            : (summary.meters ? decimalFormat.fixed(summary.meters, 'measure') : item.display_quantity),
         unit_price: item.price_mode === 'ton'
-            ? (summary.unitPrice ? summary.unitPrice.toFixed(4) : '')
+            ? (summary.unitPrice ? decimalFormat.fixed(summary.unitPrice, 'cost') : '')
             : item.unit_price,
         discount_amount: item.discount_amount || '0',
     };
@@ -406,7 +398,7 @@ function AttributeField({ attribute, value, onChange }) {
             label={label}
             name={`attribute_${attribute.code}`}
             type={attribute.type === 'number' ? 'number' : 'text'}
-            step={attribute.type === 'number' ? '0.001' : undefined}
+            step={attribute.type === 'number' ? '0.01' : undefined}
             value={value ?? ''}
             onChange={(event) => onChange(event.target.value)}
         />
@@ -481,12 +473,12 @@ function productSalePrice(product) {
     return product?.sale_price ?? '0';
 }
 
-function baseQuantityFieldValue(item, product, summary) {
+function baseQuantityFieldValue(item, product, summary, decimalFormat) {
     if (item.quantity_mode === 'length' && Number(attributeValue(item, { code: 'largo' }) || product?.attributes?.largo || 0) > 0) {
-        return summary.meters ? summary.meters.toFixed(3) : '';
+        return summary.meters ? decimalFormat.fixed(summary.meters, 'measure') : '';
     }
 
-    return summary.meters ? summary.meters.toFixed(3) : item.meters;
+    return summary.meters ? decimalFormat.fixed(summary.meters, 'measure') : item.meters;
 }
 
 function metersFromWeight(weight, unit, kgPerMeter) {
