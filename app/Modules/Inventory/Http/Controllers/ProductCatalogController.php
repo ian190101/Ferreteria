@@ -7,6 +7,7 @@ use App\Modules\Inventory\Models\Product;
 use App\Modules\Inventory\Models\ProductCategory;
 use App\Modules\Inventory\Models\ProductCategoryAttribute;
 use App\Modules\Inventory\Models\ProductUnit;
+use App\Modules\Inventory\Models\Thickness;
 use App\Support\UiCatalogCache;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -30,6 +31,10 @@ class ProductCatalogController extends Controller
                 ->withCount('products')
                 ->orderBy('name')
                 ->get(),
+            'thicknesses' => Thickness::query()
+                ->withCount('products')
+                ->orderBy('millimeters')
+                ->get(),
         ]);
     }
 
@@ -51,6 +56,22 @@ class ProductCatalogController extends Controller
         UiCatalogCache::forgetProductCatalogs();
 
         return back()->with('success', 'Unidad actualizada correctamente.');
+    }
+
+    public function storeThickness(Request $request): RedirectResponse
+    {
+        Thickness::query()->create($this->thicknessData($request));
+        UiCatalogCache::forgetProductCatalogs();
+
+        return back()->with('success', 'Espesor creado correctamente.');
+    }
+
+    public function updateThickness(Request $request, Thickness $thickness): RedirectResponse
+    {
+        $thickness->update($this->thicknessData($request, $thickness));
+        UiCatalogCache::forgetProductCatalogs();
+
+        return back()->with('success', 'Espesor actualizado correctamente.');
     }
 
     public function storeCategory(Request $request): RedirectResponse
@@ -95,6 +116,33 @@ class ProductCatalogController extends Controller
             'name' => ['required', 'string', 'max:80'],
             'symbol' => ['required', 'string', 'max:24', Rule::unique('product_units', 'symbol')->ignore($unit?->id)],
             'kind' => ['required', Rule::in(['cantidad', 'longitud', 'peso', 'volumen'])],
+            'is_active' => ['required', 'boolean'],
+        ]);
+    }
+
+    private function thicknessData(Request $request, ?Thickness $thickness = null): array
+    {
+        if ($request->filled('kg_per_meter')) {
+            $kgPerMeter = (float) $request->input('kg_per_meter');
+
+            if ($kgPerMeter > 0) {
+                $request->merge([
+                    'kg_to_meter_factor' => round(1 / $kgPerMeter, 6),
+                ]);
+            }
+        }
+
+        return $request->validate([
+            'name' => ['required', 'string', 'max:255'],
+            'millimeters' => [
+                'required',
+                'numeric',
+                'gt:0',
+                'max:9999.9999',
+                Rule::unique('thicknesses', 'millimeters')->ignore($thickness?->id),
+            ],
+            'kg_per_meter' => ['required', 'numeric', 'gt:0', 'max:999999999999.999999'],
+            'kg_to_meter_factor' => ['required', 'numeric', 'gt:0', 'max:999999999999.999999'],
             'is_active' => ['required', 'boolean'],
         ]);
     }
