@@ -60,7 +60,7 @@ class StorePurchaseOrderReceiptRequest extends FormRequest
                 }
 
                 if ($orderItem->product->inventory_tracking_mode === Product::TRACKING_COIL && blank($item['coil_barcode'] ?? null)) {
-                    $validator->errors()->add("items.{$index}.coil_barcode", 'La recepcion por bobina requiere barcode unico.');
+                    $validator->errors()->add("items.{$index}.coil_barcode", 'La recepcion con rastreo individual requiere barcode unico.');
                 }
             }
 

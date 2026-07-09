@@ -98,7 +98,7 @@ export default function Form({ product, thicknesses, categories, units }) {
             <section className="mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:px-8">
                 <ModuleHeader
                     title={isEditing ? 'Editar producto' : 'Nuevo producto'}
-                    description="Catalogo general para ferreteria: calaminas, bobinas, herramientas, pinturas, tornilleria y otros productos."
+                    description="Catalogo general para ferreteria: calaminas, herramientas, pinturas, tornilleria, cajas, paquetes y otros productos."
                 />
 
                 <form onSubmit={submit} className="grid gap-5 rounded-lg border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:grid-cols-2">
@@ -143,7 +143,7 @@ export default function Form({ product, thicknesses, categories, units }) {
                         error={errors.inventory_tracking_mode}
                     >
                         <option value="global">Global por sucursal</option>
-                        <option value="coil">Individual por bobina</option>
+                        <option value="coil">Individual por lote/unidad fisica</option>
                     </SelectField>
                     <SelectField label="Unidad base" name="product_unit_id" value={data.product_unit_id} onChange={(event) => selectUnit(event.target.value)} error={errors.product_unit_id} required>
                         <option value="">Seleccione unidad</option>

@@ -74,11 +74,11 @@ class StorePurchaseRequest extends FormRequest
 
                 if ($product->inventory_tracking_mode === Product::TRACKING_COIL) {
                     if (blank($item['lot_number'] ?? null)) {
-                        $validator->errors()->add("items.{$index}.lot_number", 'La bobina requiere numero de lote.');
+                        $validator->errors()->add("items.{$index}.lot_number", 'El rastreo individual requiere numero de lote.');
                     }
 
                     if (blank($item['coil_barcode'] ?? null)) {
-                        $validator->errors()->add("items.{$index}.coil_barcode", 'La bobina requiere barcode unico.');
+                        $validator->errors()->add("items.{$index}.coil_barcode", 'El rastreo individual requiere barcode unico.');
                     }
                 }
             }

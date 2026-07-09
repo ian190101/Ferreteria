@@ -112,9 +112,9 @@ export default function Form({ branches = [], suppliers = [], products = [] }) {
                                     <div key={index} className="grid gap-3 border-t border-slate-100 pt-5 dark:border-slate-800 sm:grid-cols-7">
                                         <SelectField label="Producto" name={`items.${index}.product_id`} value={item.product_id} onChange={(event) => selectProduct(index, event.target.value)} error={errors[`items.${index}.product_id`]}>
                                             <option value="">Seleccionar</option>
-                                            {products.map((product) => <option key={product.id} value={product.id}>{product.name} ({product.sku})</option>)}
+                                            {products.map((product) => <option key={product.id} value={product.id}>{product.name} ({product.sku}) - {trackingLabel(product)}</option>)}
                                         </SelectField>
-                                        <FormField label="Cantidad" name={`items.${index}.display_quantity`} type="number" step={decimalStep(decimalFormat.decimalsFor('quantity'))} value={item.display_quantity} onChange={(event) => updateItem(index, 'display_quantity', event.target.value)} error={errors[`items.${index}.display_quantity`]} required />
+                                        <FormField label="Cantidad" name={`items.${index}.display_quantity`} type="number" step={decimalStep(decimalFormat.decimalsFor(quantityKind(product)))} value={item.display_quantity} onChange={(event) => updateItem(index, 'display_quantity', event.target.value)} error={errors[`items.${index}.display_quantity`]} required />
                                         <FormField label="Unidad" name={`items.${index}.display_unit_label`} value={item.display_unit_label || productUnitSymbol(product)} onChange={(event) => updateItem(index, 'display_unit_label', event.target.value)} error={errors[`items.${index}.display_unit_label`]} required />
                                         <SelectField label="Calculo opcional" name={`items.${index}.calculation_mode`} value={item.calculation_mode ?? 'direct'} onChange={(event) => updateItem(index, 'calculation_mode', event.target.value)}>
                                             <option value="direct">Sin calculo</option>
@@ -130,10 +130,10 @@ export default function Form({ branches = [], suppliers = [], products = [] }) {
                                                 </SelectField>
                                             </>
                                         ) : item.calculation_mode === 'length' ? (
-                                            <FormField label="Metraje total (m)" name={`items.${index}.meters`} type="number" step={decimalStep(decimalFormat.decimalsFor('measure'))} value={baseQuantityFieldValue(item, product, summary, decimalFormat)} placeholder={convertedMeters(item)} onChange={(event) => updateItem(index, 'meters', event.target.value)} error={errors[`items.${index}.meters`]} />
+                                            <FormField label={`Cantidad base (${productUnitSymbol(product)})`} name={`items.${index}.meters`} type="number" step={decimalStep(decimalFormat.decimalsFor(quantityKind(product)))} value={baseQuantityFieldValue(item, product, summary, decimalFormat)} placeholder={convertedMeters(item)} onChange={(event) => updateItem(index, 'meters', event.target.value)} error={errors[`items.${index}.meters`]} />
                                         ) : (
                                             <div className="rounded-md border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300">
-                                                Se guardara {decimalFormat.quantity(item.display_quantity || 0)} {item.display_unit_label || productUnitSymbol(product)}
+                                                Se guardara {formatProductQuantity(item.display_quantity || 0, product, decimalFormat)}
                                             </div>
                                         )}
                                         {productAttributes(product).length ? (
@@ -158,10 +158,10 @@ export default function Form({ branches = [], suppliers = [], products = [] }) {
                                             <FormField label={item.calculation_mode === 'direct' ? 'Costo/unidad' : 'Costo/metro'} name={`items.${index}.unit_cost`} type="number" step={decimalStep(decimalFormat.decimalsFor('cost'))} value={item.unit_cost} onChange={(event) => updateItem(index, 'unit_cost', event.target.value)} error={errors[`items.${index}.unit_cost`]} required />
                                         )}
                                         <FormField label="Lote" name={`items.${index}.lot_number`} value={item.lot_number} onChange={(event) => updateItem(index, 'lot_number', event.target.value)} error={errors[`items.${index}.lot_number`]} />
-                                        <FormField label="Barcode bobina" name={`items.${index}.coil_barcode`} value={item.coil_barcode} disabled={!isCoil} onChange={(event) => updateItem(index, 'coil_barcode', event.target.value)} error={errors[`items.${index}.coil_barcode`]} />
+                                        <FormField label="Barcode lote/unidad" name={`items.${index}.coil_barcode`} value={item.coil_barcode} disabled={!isCoil} onChange={(event) => updateItem(index, 'coil_barcode', event.target.value)} error={errors[`items.${index}.coil_barcode`]} />
                                         <div className="sm:col-span-7">
                                             <div className="mb-3 rounded-md border border-slate-200 bg-slate-50 px-4 py-3 text-sm dark:border-slate-800 dark:bg-slate-950">
-                                                <p className="text-slate-500 dark:text-slate-400">{item.calculation_mode === 'direct' ? 'Cantidad' : 'Equivalente'}: <span className="font-semibold text-emerald-600">{item.calculation_mode === 'direct' ? `${decimalFormat.quantity(summary.meters)} ${item.display_unit_label || productUnitSymbol(product)}` : `${decimalFormat.measure(summary.meters)} m`}</span></p>
+                                                <p className="text-slate-500 dark:text-slate-400">{item.calculation_mode === 'direct' ? 'Cantidad' : 'Equivalente'}: <span className="font-semibold text-emerald-600">{item.calculation_mode === 'direct' ? formatProductQuantity(summary.meters, product, decimalFormat) : `${decimalFormat.measure(summary.meters)} m`}</span></p>
                                                 <p className="mt-1 text-slate-500 dark:text-slate-400">Subtotal costo: <span className="font-semibold text-slate-950 dark:text-slate-50">Bs {decimalFormat.money(summary.total)}</span></p>
                                             </div>
                                             <FormField label="Descripcion" name={`items.${index}.description`} value={item.description} onChange={(event) => updateItem(index, 'description', event.target.value)} error={errors[`items.${index}.description`]} />
@@ -197,7 +197,7 @@ function preparePurchaseItem(item, products, decimalFormat) {
         item_attributes: normalizedItemAttributes(item, product),
         weight_unit: item.weight_unit,
         kilograms: item.calculation_mode === 'weight' ? item.kilograms : '',
-        meters: summary.meters ? decimalFormat.fixed(summary.meters, 'measure') : item.meters,
+        meters: summary.meters ? decimalFormat.fixed(summary.meters, item.calculation_mode === 'direct' ? quantityKind(product) : 'measure') : item.meters,
         unit_cost: summary.unitCost ? decimalFormat.fixed(summary.unitCost, 'cost') : item.unit_cost,
         lot_number: item.lot_number,
         coil_barcode: item.coil_barcode,
@@ -327,6 +327,27 @@ function baseQuantityFieldValue(item, product, summary, decimalFormat) {
 
 function productUnitSymbol(product) {
     return product?.unit?.symbol ?? product?.base_unit ?? 'unidad';
+}
+
+function quantityKind(product) {
+    const unit = String(productUnitSymbol(product)).toLowerCase();
+
+    if (['m', 'metro', 'metros'].includes(unit)) return 'measure';
+    if (['kg', 'lb'].includes(unit)) return 'weight';
+
+    return 'quantity';
+}
+
+function formatProductQuantity(value, product, decimalFormat) {
+    const unit = productUnitSymbol(product);
+
+    return `${decimalFormat.format(value, quantityKind(product))} ${unit}`;
+}
+
+function trackingLabel(product) {
+    return product?.inventory_tracking_mode === 'coil'
+        ? 'Individual por lote/unidad'
+        : 'Global por sucursal';
 }
 
 function weightInKg(weight, unit) {

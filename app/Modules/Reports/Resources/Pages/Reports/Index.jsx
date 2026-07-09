@@ -37,7 +37,7 @@ export default function Index({
             <Head title="Reportes" />
 
             <section className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-                <ModuleHeader title="Reportes" description="Resumen operativo de ventas, compras, bobinas activas y alertas de stock por rango y sucursal." />
+                <ModuleHeader title="Reportes" description="Resumen operativo de ventas, compras, lotes/unidades activas y alertas de stock por rango y sucursal." />
 
                 <form onSubmit={submit} className="mb-6 grid gap-4 rounded-lg border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:grid-cols-2 lg:grid-cols-5">
                     <SelectField label="Sucursal" name="branch_id" value={data.branch_id} onChange={(event) => setData('branch_id', event.target.value)}>
@@ -171,7 +171,7 @@ export default function Index({
                     </div>
                 </Panel>
 
-                <Panel title="Ultimas bobinas registradas" className="mt-6">
+                <Panel title="Ultimos lotes/unidades registrados" className="mt-6">
                     <DataTable>
                         <thead className="bg-slate-100 text-left text-slate-600 dark:bg-slate-800 dark:text-slate-300">
                             <tr>

@@ -77,7 +77,7 @@ class StoreInventoryTransferRequest extends FormRequest
     private function validateCoilTransfer($validator, Product $product, float $meters): void
     {
         if (! $this->filled('product_coil_id')) {
-            $validator->errors()->add('product_coil_id', 'La bobina es obligatoria para productos con rastreo individual.');
+            $validator->errors()->add('product_coil_id', 'El lote o unidad fisica es obligatorio para productos con rastreo individual.');
 
             return;
         }
@@ -89,13 +89,13 @@ class StoreInventoryTransferRequest extends FormRequest
             ->find($this->integer('product_coil_id'));
 
         if (! $coil) {
-            $validator->errors()->add('product_coil_id', 'La bobina no esta disponible en la sucursal origen.');
+            $validator->errors()->add('product_coil_id', 'El lote o unidad fisica no esta disponible en la sucursal origen.');
 
             return;
         }
 
         if (abs(((float) $coil->available_meters) - $meters) > 0.001) {
-            $validator->errors()->add('meters', 'Las transferencias por bobina deben mover la bobina completa.');
+            $validator->errors()->add('meters', 'Las transferencias con rastreo individual deben mover el lote o unidad fisica completa.');
         }
     }
 }

@@ -37,7 +37,7 @@ class StoreProductCoilRequest extends FormRequest
             $product = Product::query()->find($this->integer('product_id'));
 
             if ($product && $product->inventory_tracking_mode !== Product::TRACKING_COIL) {
-                $validator->errors()->add('product_id', 'Solo los productos con rastreo por bobina admiten bobinas individuales.');
+                $validator->errors()->add('product_id', 'Solo los productos con rastreo individual admiten lotes o unidades fisicas independientes.');
             }
         });
     }

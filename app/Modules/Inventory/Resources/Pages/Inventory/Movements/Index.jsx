@@ -37,7 +37,7 @@ export default function Index({ movements, branches = [], products = [], coils =
             <Head title="Kardex" />
 
             <section className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-                <ModuleHeader title="Kardex" description="Historial paginado de movimientos de inventario con trazabilidad por producto, bobina, usuario y origen." />
+                <ModuleHeader title="Kardex" description="Historial paginado de movimientos de inventario con trazabilidad por producto, lote/unidad fisica, usuario y origen." />
 
                 <form onSubmit={submit} className="mb-6 grid gap-4 rounded-lg border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:grid-cols-2 lg:grid-cols-8">
                     <SelectField label="Sucursal" name="branch_id" value={data.branch_id} onChange={(event) => setData('branch_id', event.target.value)}>
@@ -48,7 +48,7 @@ export default function Index({ movements, branches = [], products = [], coils =
                         <option value="">Todos</option>
                         {products.map((product) => <option key={product.id} value={product.id}>{product.name} ({product.sku})</option>)}
                     </SelectField>
-                    <SelectField label="Bobina" name="product_coil_id" value={data.product_coil_id} onChange={(event) => setData('product_coil_id', event.target.value)}>
+                    <SelectField label="Lote/unidad fisica" name="product_coil_id" value={data.product_coil_id} onChange={(event) => setData('product_coil_id', event.target.value)}>
                         <option value="">Todas</option>
                         {filteredCoils.map((coil) => <option key={coil.id} value={coil.id}>{coil.barcode} · {coil.lot_number}</option>)}
                     </SelectField>
@@ -75,7 +75,7 @@ export default function Index({ movements, branches = [], products = [], coils =
                             <tr>
                                 <th className="px-4 py-3 font-medium">Fecha</th>
                                 <th className="px-4 py-3 font-medium">Producto</th>
-                                <th className="px-4 py-3 font-medium">Bobina</th>
+                                <th className="px-4 py-3 font-medium">Lote/unidad</th>
                                 <th className="px-4 py-3 font-medium">Sucursal</th>
                                 <th className="px-4 py-3 font-medium">Tipo</th>
                                 <th className="px-4 py-3 text-right font-medium">Delta</th>
@@ -117,13 +117,13 @@ export default function Index({ movements, branches = [], products = [], coils =
 
 function movementType(type) {
     const labels = {
-        coil_entry: 'Ingreso bobina',
+        coil_entry: 'Ingreso lote/unidad',
         inventory_adjustment: 'Ajuste inventario',
-        production_input_coil: 'Produccion entrada bobina',
+        production_input_coil: 'Produccion entrada lote/unidad',
         production_input_global: 'Produccion entrada global',
-        production_output_coil: 'Produccion salida bobina',
+        production_output_coil: 'Produccion salida lote/unidad',
         production_output_global: 'Produccion salida global',
-        purchase_entry_coil: 'Compra bobina',
+        purchase_entry_coil: 'Compra lote/unidad',
         purchase_entry_global: 'Compra global',
     };
 

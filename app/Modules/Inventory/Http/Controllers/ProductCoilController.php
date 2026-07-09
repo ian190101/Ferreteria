@@ -19,7 +19,7 @@ class ProductCoilController extends Controller
     public function index(Request $request): Response
     {
         $coils = ProductCoil::query()
-            ->with(['branch:id,name', 'product:id,name,sku,inventory_tracking_mode'])
+            ->with(['branch:id,name', 'product:id,name,sku,inventory_tracking_mode,base_unit,product_unit_id', 'product.unit:id,name,symbol'])
             ->when(true, fn ($query) => BranchAccess::apply($query, $request->user()))
             ->when($request->string('search')->isNotEmpty(), function ($query) use ($request) {
                 $search = $request->string('search')->toString();
@@ -68,13 +68,13 @@ class ProductCoilController extends Controller
                 'meters_delta' => $coil->initial_meters,
                 'meters_before' => 0,
                 'meters_after' => $coil->available_meters,
-                'reason' => 'Ingreso inicial de bobina',
+                'reason' => 'Ingreso inicial de lote/unidad fisica',
                 'created_at' => now(),
             ]);
         });
 
         return redirect()
             ->route('inventory.coils.index')
-            ->with('success', 'Bobina registrada correctamente.');
+            ->with('success', 'Lote/unidad fisica registrada correctamente.');
     }
 }

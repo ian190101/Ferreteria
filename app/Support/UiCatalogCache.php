@@ -78,10 +78,11 @@ class UiCatalogCache
     public static function activeCoilProducts()
     {
         return self::remember('coil-products', fn () => Product::query()
+            ->with('unit:id,name,symbol,kind')
             ->where('is_active', true)
             ->where('inventory_tracking_mode', Product::TRACKING_COIL)
             ->orderBy('name')
-            ->get(['id', 'name', 'sku']));
+            ->get(['id', 'product_unit_id', 'name', 'sku', 'base_unit']));
     }
 
     public static function activeThicknesses()

@@ -110,7 +110,7 @@ class StoreSaleDocumentRequest extends FormRequest
                     $coilId = $item['product_coil_id'] ?? null;
 
                     if (! $coilId) {
-                        $validator->errors()->add("items.{$index}.product_coil_id", 'La bobina es obligatoria para productos con rastreo individual.');
+                        $validator->errors()->add("items.{$index}.product_coil_id", 'El lote o unidad fisica es obligatorio para productos con rastreo individual.');
 
                         continue;
                     }
@@ -121,7 +121,7 @@ class StoreSaleDocumentRequest extends FormRequest
                 }
 
                 if (filled($item['product_coil_id'] ?? null)) {
-                    $validator->errors()->add("items.{$index}.product_coil_id", 'Los productos con rastreo global no deben seleccionar bobina.');
+                    $validator->errors()->add("items.{$index}.product_coil_id", 'Los productos con rastreo global no deben seleccionar lote o unidad fisica individual.');
                 }
 
                 $globalMetersByProduct[$product->id] = ($globalMetersByProduct[$product->id] ?? 0) + $meters;
@@ -163,7 +163,7 @@ class StoreSaleDocumentRequest extends FormRequest
                     $coil = $coils->get($coilId);
 
                     if (! $coil) {
-                        $validator->errors()->add('items', 'Una bobina seleccionada no esta disponible en la sucursal.');
+                        $validator->errors()->add('items', 'Un lote o unidad fisica seleccionada no esta disponible en la sucursal.');
 
                         continue;
                     }
@@ -171,7 +171,7 @@ class StoreSaleDocumentRequest extends FormRequest
                     $reserved = (float) ($reservedByCoil[$coil->id] ?? 0);
 
                     if (((float) $coil->available_meters - $reserved) < $meters) {
-                        $validator->errors()->add('items', 'Una bobina seleccionada no tiene metraje suficiente.');
+                        $validator->errors()->add('items', 'Un lote o unidad fisica seleccionada no tiene cantidad suficiente.');
                     }
                 }
             }

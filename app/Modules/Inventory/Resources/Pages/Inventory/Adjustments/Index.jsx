@@ -52,7 +52,7 @@ export default function Index({ adjustments, branches, products, coils, filters 
             <Head title="Ajustes de inventario" />
 
             <section className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-                <ModuleHeader title="Ajustes de inventario" description="Correcciones autorizadas de stock global o por bobina con movimiento trazable." />
+                <ModuleHeader title="Ajustes de inventario" description="Correcciones autorizadas de stock global o por lote/unidad fisica con movimiento trazable." />
 
                 {canManage ? (
                     <form onSubmit={submitAdjustment} className="mb-6 grid gap-4 rounded-lg border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:grid-cols-2 lg:grid-cols-4">
@@ -67,13 +67,13 @@ export default function Index({ adjustments, branches, products, coils, filters 
                         <FormField label="Fecha" name="adjusted_at" value="Se registrara automaticamente al guardar" disabled className="mt-1 block w-full rounded-md border-gray-300 bg-slate-100 shadow-sm dark:border-gray-700 dark:bg-slate-800 dark:text-gray-300" error={adjustmentForm.errors.adjusted_at} />
 
                         <SelectField label="Producto" name="product_id" value={adjustmentForm.data.product_id} onChange={(event) => adjustmentForm.setData('product_id', event.target.value)} error={adjustmentForm.errors.product_id} required>
-                            {products.map((product) => <option key={product.id} value={product.id}>{product.name} ({product.inventory_tracking_mode === 'coil' ? 'Bobina' : 'Global'})</option>)}
+                            {products.map((product) => <option key={product.id} value={product.id}>{product.name} ({product.inventory_tracking_mode === 'coil' ? 'Individual por lote/unidad' : 'Global por sucursal'})</option>)}
                         </SelectField>
-                        <SelectField label="Bobina" name="product_coil_id" value={adjustmentForm.data.product_coil_id} onChange={(event) => adjustmentForm.setData('product_coil_id', event.target.value)} error={adjustmentForm.errors.product_coil_id} disabled={selectedProduct?.inventory_tracking_mode !== 'coil'}>
-                            <option value="">Sin bobina</option>
+                        <SelectField label="Lote/unidad fisica" name="product_coil_id" value={adjustmentForm.data.product_coil_id} onChange={(event) => adjustmentForm.setData('product_coil_id', event.target.value)} error={adjustmentForm.errors.product_coil_id} disabled={selectedProduct?.inventory_tracking_mode !== 'coil'}>
+                            <option value="">Sin lote/unidad</option>
                             {availableCoils.map((coil) => <option key={coil.id} value={coil.id}>{coil.barcode} · {coil.available_meters} m</option>)}
                         </SelectField>
-                        <FormField label="Metros" name="meters" type="number" step="0.001" min="0.001" value={adjustmentForm.data.meters} onChange={(event) => adjustmentForm.setData('meters', event.target.value)} error={adjustmentForm.errors.meters} required />
+                        <FormField label="Cantidad" name="meters" type="number" step="0.001" min="0.001" value={adjustmentForm.data.meters} onChange={(event) => adjustmentForm.setData('meters', event.target.value)} error={adjustmentForm.errors.meters} required />
                         <FormField label="Motivo" name="reason" value={adjustmentForm.data.reason} onChange={(event) => adjustmentForm.setData('reason', event.target.value)} error={adjustmentForm.errors.reason} required />
                         <div className="sm:col-span-2 lg:col-span-4">
                             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300" htmlFor="notes">

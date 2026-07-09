@@ -11,7 +11,7 @@ const typeLabels = {
     payment_promise: 'Promesa de pago',
     cash_open: 'Caja abierta',
     customer_follow_up: 'Seguimiento cliente',
-    depleted_coil: 'Bobina agotada',
+    depleted_coil: 'Lote/unidad agotada',
 };
 
 const severityLabels = {
@@ -41,7 +41,7 @@ export default function Index({ alerts, summary, filters, types, severities }) {
             <section className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
                 <ModuleHeader
                     title="Alertas operativas"
-                    description="Bandeja paginada de pendientes generados desde stock, cuentas por cobrar, caja, CRM y bobinas."
+                    description="Bandeja paginada de pendientes generados desde stock, cuentas por cobrar, caja, CRM y lotes/unidades fisicas."
                 />
 
                 <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">

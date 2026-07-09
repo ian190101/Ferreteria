@@ -52,7 +52,7 @@ export default function Index({ reservations, branches, products, coils, quotati
             <Head title="Reservas de inventario" />
 
             <section className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-                <ModuleHeader title="Reservas de inventario" description="Bloquea metraje disponible para cotizaciones o pedidos antes de emitir la nota de venta." />
+                <ModuleHeader title="Reservas de inventario" description="Bloquea cantidad disponible para cotizaciones o pedidos antes de emitir la nota de venta." />
 
                 {canManage ? (
                     <form onSubmit={submitReservation} className="mb-6 grid gap-4 rounded-lg border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:grid-cols-2 lg:grid-cols-4">
@@ -60,17 +60,17 @@ export default function Index({ reservations, branches, products, coils, quotati
                             {branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
                         </SelectField>
                         <SelectField label="Producto" name="product_id" value={reservationForm.data.product_id} onChange={(event) => reservationForm.setData('product_id', event.target.value)} error={reservationForm.errors.product_id} required>
-                            {products.map((product) => <option key={product.id} value={product.id}>{product.name} ({product.inventory_tracking_mode === 'coil' ? 'Bobina' : 'Global'})</option>)}
+                            {products.map((product) => <option key={product.id} value={product.id}>{product.name} ({product.inventory_tracking_mode === 'coil' ? 'Individual por lote/unidad' : 'Global por sucursal'})</option>)}
                         </SelectField>
-                        <SelectField label="Bobina" name="product_coil_id" value={reservationForm.data.product_coil_id} onChange={(event) => reservationForm.setData('product_coil_id', event.target.value)} error={reservationForm.errors.product_coil_id} disabled={selectedProduct?.inventory_tracking_mode !== 'coil'}>
-                            <option value="">Sin bobina</option>
+                        <SelectField label="Lote/unidad fisica" name="product_coil_id" value={reservationForm.data.product_coil_id} onChange={(event) => reservationForm.setData('product_coil_id', event.target.value)} error={reservationForm.errors.product_coil_id} disabled={selectedProduct?.inventory_tracking_mode !== 'coil'}>
+                            <option value="">Sin lote/unidad</option>
                             {availableCoils.map((coil) => <option key={coil.id} value={coil.id}>{coil.barcode} · {coil.available_meters} m</option>)}
                         </SelectField>
                         <SelectField label="Cotizacion" name="sale_id" value={reservationForm.data.sale_id} onChange={(event) => reservationForm.setData('sale_id', event.target.value)} error={reservationForm.errors.sale_id}>
                             <option value="">Sin cotizacion</option>
                             {availableQuotations.map((quotation) => <option key={quotation.id} value={quotation.id}>{quotation.receipt_number} · {quotation.customer_name ?? 'Cliente'}</option>)}
                         </SelectField>
-                        <FormField label="Metros" name="meters" type="number" step="0.001" min="0.001" value={reservationForm.data.meters} onChange={(event) => reservationForm.setData('meters', event.target.value)} error={reservationForm.errors.meters} required />
+                        <FormField label="Cantidad" name="meters" type="number" step="0.001" min="0.001" value={reservationForm.data.meters} onChange={(event) => reservationForm.setData('meters', event.target.value)} error={reservationForm.errors.meters} required />
                         <FormField label="Expira" name="expires_at" type="datetime-local" value={reservationForm.data.expires_at} onChange={(event) => reservationForm.setData('expires_at', event.target.value)} error={reservationForm.errors.expires_at} />
                         <FormField label="Motivo" name="reason" value={reservationForm.data.reason} onChange={(event) => reservationForm.setData('reason', event.target.value)} error={reservationForm.errors.reason} />
                         <div className="flex items-end">
@@ -112,7 +112,7 @@ export default function Index({ reservations, branches, products, coils, quotati
                                 <th className="px-4 py-3 font-medium">Producto</th>
                                 <th className="px-4 py-3 font-medium">Sucursal</th>
                                 <th className="px-4 py-3 font-medium">Cotizacion</th>
-                                <th className="px-4 py-3 text-right font-medium">Metros</th>
+                                <th className="px-4 py-3 text-right font-medium">Cantidad</th>
                                 <th className="px-4 py-3 font-medium">Estado</th>
                                 <th className="px-4 py-3 font-medium">Expira</th>
                                 <th className="px-4 py-3 font-medium">Usuario</th>

@@ -44,7 +44,7 @@ export default function Index({
         metric('Cajas abiertas', metrics.open_cash_count, 'Sesiones activas', metrics.open_cash_count, 'default', 'cash'),
         metric('Promesas vencidas', metrics.payment_promises_overdue_count, `${metrics.payment_promises_today_count ?? 0} vencen hoy`, metrics.payment_promises_overdue_count, 'danger', 'promise'),
         metric('Stock bajo', metrics.low_stock_count, 'Productos bajo minimo', metrics.low_stock_count, 'danger', 'stock'),
-        metric('Bobinas activas', metrics.active_coils, 'Rastreo individual', metrics.active_coils, 'default', 'coil'),
+        metric('Lotes/unidades activas', metrics.active_coils, 'Rastreo individual', metrics.active_coils, 'default', 'coil'),
         metric('Produccion del rango', metrics.production_range_count, 'Ordenes completadas', metrics.production_range_count, 'default', 'production'),
         metric('Compras del rango', money(metrics.purchases_range_total), 'Ingreso de mercaderia', metrics.purchases_range_total, 'default', 'purchase'),
         metric('Compras pagadas', money(metrics.purchase_payments_range_total), 'Egresos por proveedores', metrics.purchase_payments_range_total, 'danger', 'purchase'),

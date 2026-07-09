@@ -23,7 +23,7 @@ class InventoryTransferController extends Controller
     public function index(Request $request): Response
     {
         $transfers = InventoryTransfer::query()
-            ->with(['fromBranch:id,name', 'toBranch:id,name', 'product:id,name,sku,inventory_tracking_mode', 'coil:id,barcode,lot_number', 'user:id,name'])
+            ->with(['fromBranch:id,name', 'toBranch:id,name', 'product:id,name,sku,inventory_tracking_mode,base_unit,product_unit_id', 'product.unit:id,name,symbol', 'coil:id,barcode,lot_number', 'user:id,name'])
             ->when(! $request->user()->isSuperAdministrator(), fn ($query) => $query
                 ->whereIn('from_branch_id', $request->user()->accessibleBranchIds() ?: [-1])
                 ->whereIn('to_branch_id', $request->user()->accessibleBranchIds() ?: [-1]))
@@ -38,7 +38,7 @@ class InventoryTransferController extends Controller
         return Inertia::render('Inventory/Transfers/Index', [
             'transfers' => $transfers,
             'branches' => UiCatalogCache::activeBranchesForUser($request->user()),
-            'products' => UiCatalogCache::activeProducts(),
+            'products' => UiCatalogCache::activeProducts(['id', 'name', 'sku', 'inventory_tracking_mode', 'base_unit', 'product_unit_id']),
             'coils' => ProductCoil::query()
                 ->when(true, fn ($query) => BranchAccess::apply($query, $request->user()))
                 ->where('status', 'available')

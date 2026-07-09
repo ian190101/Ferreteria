@@ -3,16 +3,19 @@ import ActionLink from '../../../../../Shared/Resources/Components/ActionLink';
 import ModuleHeader from '../../../../../Shared/Resources/Components/ModuleHeader';
 import Pagination from '../../../../../Shared/Resources/Components/Pagination';
 import { Head } from '@inertiajs/react';
+import { useDecimalFormatter } from '@/Utils/formatters';
 
 export default function Index({ coils }) {
+    const decimalFormat = useDecimalFormatter('inventory');
+
     return (
         <AuthenticatedLayout header={<h2 className="text-xl font-semibold leading-tight text-gray-800 dark:text-gray-200">Inventario</h2>}>
-            <Head title="Bobinas" />
+            <Head title="Lotes y unidades fisicas" />
 
             <section className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
                 <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                    <ModuleHeader title="Bobinas" description="Rastreo fisico por lote/rollo con metraje decreciente independiente." />
-                    <ActionLink href={route('inventory.coils.create')}>Nueva bobina</ActionLink>
+                    <ModuleHeader title="Lotes y unidades fisicas" description="Rastreo individual por lote, caja, paquete, rollo o pieza fisica segun la unidad configurada del producto." />
+                    <ActionLink href={route('inventory.coils.create')}>Nuevo lote/unidad</ActionLink>
                 </div>
 
                 <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
@@ -23,7 +26,7 @@ export default function Index({ coils }) {
                                 <th className="px-4 py-3 font-medium">Lote</th>
                                 <th className="px-4 py-3 font-medium">Producto</th>
                                 <th className="px-4 py-3 font-medium">Sucursal</th>
-                                <th className="px-4 py-3 font-medium">Disponible</th>
+                                <th className="px-4 py-3 font-medium">Cantidad disponible</th>
                                 <th className="px-4 py-3 font-medium">Estado</th>
                             </tr>
                         </thead>
@@ -34,7 +37,7 @@ export default function Index({ coils }) {
                                     <td className="px-4 py-3">{coil.lot_number}</td>
                                     <td className="px-4 py-3">{coil.product?.name}</td>
                                     <td className="px-4 py-3">{coil.branch?.name}</td>
-                                    <td className="px-4 py-3">{coil.available_meters} m</td>
+                                    <td className="px-4 py-3">{formatTrackedQuantity(coil.available_meters, coil.product, decimalFormat)}</td>
                                     <td className="px-4 py-3">{statusLabel(coil.status)}</td>
                                 </tr>
                             ))}
@@ -48,6 +51,18 @@ export default function Index({ coils }) {
             </section>
         </AuthenticatedLayout>
     );
+}
+
+function formatTrackedQuantity(value, product, decimalFormat) {
+    const unit = product?.unit?.symbol ?? product?.base_unit ?? 'unidad';
+    const normalized = String(unit).toLowerCase();
+    const formatted = ['m', 'metro', 'metros'].includes(normalized)
+        ? decimalFormat.measure(value)
+        : ['kg', 'lb'].includes(normalized)
+            ? decimalFormat.weight(value)
+            : decimalFormat.quantity(value);
+
+    return `${formatted} ${unit}`;
 }
 
 function statusLabel(status) {

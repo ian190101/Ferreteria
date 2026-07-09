@@ -5,6 +5,7 @@ import ModuleHeader from '../../../../../Shared/Resources/Components/ModuleHeade
 import Pagination from '../../../../../Shared/Resources/Components/Pagination';
 import SelectField from '../../../../../Shared/Resources/Components/SelectField';
 import { Head, router, useForm, usePage } from '@inertiajs/react';
+import { decimalStep, useDecimalFormatter } from '@/Utils/formatters';
 
 const numberFormatter = new Intl.NumberFormat('es-BO', {
     maximumFractionDigits: 3,
@@ -12,6 +13,7 @@ const numberFormatter = new Intl.NumberFormat('es-BO', {
 
 export default function Index({ transfers, branches, products, coils, filters }) {
     const permissions = usePage().props.auth.permissions;
+    const decimalFormat = useDecimalFormatter('inventory');
     const canManage = permissions.includes('inventory.transfers.manage');
     const filterForm = useForm({
         from_branch_id: filters.from_branch_id ?? '',
@@ -85,13 +87,13 @@ export default function Index({ transfers, branches, products, coils, filters })
                         <FormField label="Fecha" name="transferred_at" value="Se registrara automaticamente al guardar" disabled className="mt-1 block w-full rounded-md border-gray-300 bg-slate-100 shadow-sm dark:border-gray-700 dark:bg-slate-800 dark:text-gray-300" error={transferForm.errors.transferred_at} />
 
                         <SelectField label="Producto" name="product_id" value={transferForm.data.product_id} onChange={(event) => selectProduct(event.target.value)} error={transferForm.errors.product_id} required>
-                            {products.map((product) => <option key={product.id} value={product.id}>{product.name} ({product.inventory_tracking_mode === 'coil' ? 'Bobina' : 'Global'})</option>)}
+                            {products.map((product) => <option key={product.id} value={product.id}>{product.name} ({trackingLabel(product)})</option>)}
                         </SelectField>
-                        <SelectField label="Bobina" name="product_coil_id" value={transferForm.data.product_coil_id} onChange={(event) => selectCoil(event.target.value)} error={transferForm.errors.product_coil_id} disabled={selectedProduct?.inventory_tracking_mode !== 'coil'}>
-                            <option value="">Sin bobina</option>
-                            {availableCoils.map((coil) => <option key={coil.id} value={coil.id}>{coil.barcode} - {numberFormatter.format(Number(coil.available_meters ?? 0))} m</option>)}
+                        <SelectField label="Lote/unidad fisica" name="product_coil_id" value={transferForm.data.product_coil_id} onChange={(event) => selectCoil(event.target.value)} error={transferForm.errors.product_coil_id} disabled={selectedProduct?.inventory_tracking_mode !== 'coil'}>
+                            <option value="">Sin lote/unidad</option>
+                            {availableCoils.map((coil) => <option key={coil.id} value={coil.id}>{coil.barcode} - {formatProductQuantity(coil.available_meters, selectedProduct, decimalFormat)}</option>)}
                         </SelectField>
-                        <FormField label="Metros" name="meters" type="number" step="0.001" min="0.001" value={transferForm.data.meters} onChange={(event) => transferForm.setData('meters', event.target.value)} error={transferForm.errors.meters} required />
+                        <FormField label={`Cantidad (${productUnitSymbol(selectedProduct)})`} name="meters" type="number" step={decimalStep(decimalFormat.decimalsFor(quantityKind(selectedProduct)))} min="0.001" value={transferForm.data.meters} onChange={(event) => transferForm.setData('meters', event.target.value)} error={transferForm.errors.meters} required />
                         <FormField label="Motivo" name="reason" value={transferForm.data.reason} onChange={(event) => transferForm.setData('reason', event.target.value)} error={transferForm.errors.reason} required />
                         <div className="sm:col-span-2 lg:col-span-4">
                             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300" htmlFor="notes">
@@ -140,7 +142,7 @@ export default function Index({ transfers, branches, products, coils, filters })
                                 <th className="px-4 py-3 font-medium">Producto</th>
                                 <th className="px-4 py-3 font-medium">Origen</th>
                                 <th className="px-4 py-3 font-medium">Destino</th>
-                                <th className="px-4 py-3 text-right font-medium">Metros</th>
+                                <th className="px-4 py-3 text-right font-medium">Cantidad</th>
                                 <th className="px-4 py-3 font-medium">Motivo</th>
                                 <th className="px-4 py-3 font-medium">Fecha</th>
                             </tr>
@@ -151,11 +153,11 @@ export default function Index({ transfers, branches, products, coils, filters })
                                     <td className="px-4 py-3 font-medium">{transfer.transfer_number}</td>
                                     <td className="px-4 py-3">
                                         <p>{transfer.product?.name ?? '-'}</p>
-                                        <p className="text-xs text-slate-500">{transfer.coil?.barcode ?? 'Global'}</p>
+                                        <p className="text-xs text-slate-500">{transfer.coil?.barcode ?? 'Global por sucursal'}</p>
                                     </td>
                                     <td className="px-4 py-3">{transfer.from_branch?.name ?? '-'}</td>
                                     <td className="px-4 py-3">{transfer.to_branch?.name ?? '-'}</td>
-                                    <td className="px-4 py-3 text-right">{numberFormatter.format(Number(transfer.meters ?? 0))} m</td>
+                                    <td className="px-4 py-3 text-right">{formatProductQuantity(transfer.meters ?? 0, transfer.product, decimalFormat)}</td>
                                     <td className="px-4 py-3">{transfer.reason}</td>
                                     <td className="whitespace-nowrap px-4 py-3">{formatDate(transfer.transferred_at)}</td>
                                 </tr>
@@ -170,6 +172,31 @@ export default function Index({ transfers, branches, products, coils, filters })
             </section>
         </AuthenticatedLayout>
     );
+}
+
+function productUnitSymbol(product) {
+    return product?.unit?.symbol ?? product?.base_unit ?? 'unidad';
+}
+
+function quantityKind(product) {
+    const unit = String(productUnitSymbol(product)).toLowerCase();
+
+    if (['m', 'metro', 'metros'].includes(unit)) return 'measure';
+    if (['kg', 'lb'].includes(unit)) return 'weight';
+
+    return 'quantity';
+}
+
+function formatProductQuantity(value, product, decimalFormat) {
+    const unit = productUnitSymbol(product);
+
+    return `${decimalFormat.format(value, quantityKind(product))} ${unit}`;
+}
+
+function trackingLabel(product) {
+    return product?.inventory_tracking_mode === 'coil'
+        ? 'Individual por lote/unidad'
+        : 'Global por sucursal';
 }
 
 function formatDate(value) {

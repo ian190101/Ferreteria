@@ -57,7 +57,7 @@ export default function Index({ products }) {
                                     <td className="px-4 py-3 text-right">Bs {decimalFormat.cost(product.purchase_price ?? 0)}</td>
                                     <td className="px-4 py-3 text-right">Bs {decimalFormat.money(product.sale_price ?? 0)}</td>
                                     <td className="px-4 py-3 text-right font-semibold text-emerald-600">Bs {decimalFormat.money(Math.max(Number(product.sale_price ?? 0) - Number(product.purchase_price ?? 0), 0))}</td>
-                                    <td className="px-4 py-3">{product.inventory_tracking_mode === 'coil' ? 'Por bobina' : 'Global'}</td>
+                                    <td className="px-4 py-3">{product.inventory_tracking_mode === 'coil' ? 'Individual por lote/unidad' : 'Global por sucursal'}</td>
                                     <td className="px-4 py-3">{product.thickness?.name ?? 'Sin espesor'}</td>
                                     {canManage ? (
                                         <td className="px-4 py-3">

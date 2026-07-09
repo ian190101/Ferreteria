@@ -37,7 +37,7 @@ const permissionNames = {
     'expenses.manage': 'Gestionar gastos',
     'inventory.products.view': 'Ver productos y catalogos',
     'inventory.products.manage': 'Gestionar productos y catalogos',
-    'inventory.coils.manage': 'Gestionar bobinas',
+    'inventory.coils.manage': 'Gestionar lotes/unidades fisicas',
     'inventory.adjustments.view': 'Ver ajustes de inventario',
     'inventory.adjustments.manage': 'Gestionar ajustes de inventario',
     'inventory.movements.view': 'Ver movimientos de inventario',

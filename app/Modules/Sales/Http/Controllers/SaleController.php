@@ -185,7 +185,8 @@ class SaleController extends Controller
             'saleType:id,name',
             'currency:id,name,code,symbol,exchange_rate_to_bob',
             'advanceOption:id,name,percentage',
-            'items.product:id,name,sku,inventory_tracking_mode',
+            'items.product:id,name,sku,inventory_tracking_mode,base_unit,product_unit_id',
+            'items.product.unit:id,name,symbol',
             'items.coil:id,barcode,lot_number,available_meters,status',
             'payments:id,sale_id,payment_method_id,amount,paid_at',
             'payments.method:id,name',
@@ -242,7 +243,7 @@ class SaleController extends Controller
 
                 if (! $coil) {
                     throw ValidationException::withMessages([
-                        "items.{$index}.product_coil_id" => 'No hay una bobina disponible con metraje suficiente en la sucursal del documento.',
+                        "items.{$index}.product_coil_id" => 'No hay un lote o unidad fisica disponible con cantidad suficiente en la sucursal del documento.',
                     ]);
                 }
 
@@ -412,16 +413,16 @@ class SaleController extends Controller
                         $free = max($available - $reservedByOthers - ($usedMetersByCoil[$coil->id] ?? 0), 0);
                         $usedMetersByCoil[$coil->id] = ($usedMetersByCoil[$coil->id] ?? 0) + $required;
                     } else {
-                        $message = 'No hay una bobina disponible con metraje suficiente en la sucursal del documento.';
+                        $message = 'No hay un lote o unidad fisica disponible con cantidad suficiente en la sucursal del documento.';
                         $action = [
-                            'label' => 'Ir a bobinas',
+                            'label' => 'Ir a lotes/unidades',
                             'url' => route('inventory.coils.index'),
                         ];
                     }
                 } elseif ($item->coil->status !== 'available') {
-                    $message = 'La bobina seleccionada no esta disponible.';
+                    $message = 'El lote o unidad fisica seleccionada no esta disponible.';
                     $action = [
-                        'label' => 'Revisar bobinas',
+                        'label' => 'Revisar lotes/unidades',
                         'url' => route('inventory.coils.index'),
                     ];
                 } else {
@@ -446,7 +447,7 @@ class SaleController extends Controller
                 $message = 'Faltan '.$this->formatReadinessQuantity($missing, $unit).' libres para convertir este item.';
                 $action = $product->inventory_tracking_mode === Product::TRACKING_COIL
                     ? [
-                        'label' => 'Ir a bobinas',
+                        'label' => 'Ir a lotes/unidades',
                         'url' => route('inventory.coils.index'),
                     ]
                     : [
@@ -635,7 +636,7 @@ class SaleController extends Controller
 
         if ((int) $coil->branch_id !== (int) $sale->branch_id || (int) $coil->product_id !== (int) $item->product_id || $coil->status !== 'available') {
             throw ValidationException::withMessages([
-                'items' => 'Una bobina seleccionada ya no esta disponible para la venta.',
+                'items' => 'Un lote o unidad fisica seleccionada ya no esta disponible para la venta.',
             ]);
         }
 
@@ -649,7 +650,7 @@ class SaleController extends Controller
 
         if ($after < 0 || $after < $reserved) {
             throw ValidationException::withMessages([
-                'items' => 'Una bobina seleccionada no tiene metraje libre suficiente.',
+                'items' => 'Un lote o unidad fisica seleccionada no tiene cantidad libre suficiente.',
             ]);
         }
 

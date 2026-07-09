@@ -46,11 +46,11 @@ export default function Index({ globalStocks, coilSummary, branches, filters }) 
 
                 <section className="mt-8 rounded-lg border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
                     <div className="border-b border-slate-200 px-5 py-4 dark:border-slate-800">
-                        <h3 className="font-semibold text-slate-950 dark:text-white">Bobinas disponibles</h3>
+                        <h3 className="font-semibold text-slate-950 dark:text-white">Lotes y unidades fisicas disponibles</h3>
                     </div>
                     <div className="grid gap-3 p-5 md:grid-cols-2 xl:grid-cols-3">
                         {coilSummary.length === 0 ? (
-                            <p className="text-sm text-slate-500">Sin bobinas disponibles.</p>
+                            <p className="text-sm text-slate-500">Sin lotes o unidades fisicas disponibles.</p>
                         ) : coilSummary.map((coil) => (
                             <div key={coil.id} className="rounded-lg border border-slate-200 p-4 text-sm dark:border-slate-800">
                                 <p className="font-semibold text-slate-950 dark:text-white">{coil.product?.name ?? 'Producto'}</p>
