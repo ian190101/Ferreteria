@@ -69,7 +69,7 @@ class UiCatalogCache
             ])
             ->where('is_active', true)
             ->orderBy('name')
-            ->get(['id', 'thickness_id', 'product_category_id', 'product_unit_id', 'name', 'sku', 'inventory_tracking_mode', 'base_unit', 'attributes', 'custom_attributes', 'purchase_price', 'sale_price']));
+            ->get(['id', 'thickness_id', 'product_category_id', 'product_unit_id', 'name', 'sku', 'inventory_tracking_mode', 'base_unit', 'allowed_units', 'attributes', 'custom_attributes', 'purchase_price', 'sale_price']));
     }
 
     public static function activeCoilProducts()
@@ -79,7 +79,7 @@ class UiCatalogCache
             ->where('is_active', true)
             ->where('inventory_tracking_mode', Product::TRACKING_COIL)
             ->orderBy('name')
-            ->get(['id', 'product_unit_id', 'name', 'sku', 'base_unit']));
+            ->get(['id', 'product_unit_id', 'name', 'sku', 'base_unit', 'allowed_units']));
     }
 
     public static function activeThicknesses()

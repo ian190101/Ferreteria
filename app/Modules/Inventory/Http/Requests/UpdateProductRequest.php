@@ -36,8 +36,12 @@ class UpdateProductRequest extends FormRequest
             'custom_attributes' => ['nullable', 'array'],
             'custom_attributes.*.code' => ['nullable', 'string', 'max:80'],
             'custom_attributes.*.name' => ['required_with:custom_attributes', 'string', 'max:120'],
-            'custom_attributes.*.value' => ['nullable', 'string', 'max:120'],
+            'custom_attributes.*.type' => ['nullable', Rule::in(['text', 'number', 'boolean'])],
+            'custom_attributes.*.value' => ['nullable', 'max:120'],
+            'custom_attributes.*.has_unit' => ['nullable', 'boolean'],
             'custom_attributes.*.unit' => ['nullable', 'string', 'max:24'],
+            'allowed_units' => ['nullable', 'array'],
+            'allowed_units.*' => ['string', 'max:24'],
             'default_width' => ['nullable', 'numeric', 'gt:0', 'max:99999999.9999'],
             'purchase_price' => ['required', 'numeric', 'min:0', 'max:999999999999.9999'],
             'sale_price' => ['required', 'numeric', 'min:0', 'max:999999999999.9999'],
@@ -72,6 +76,7 @@ class UpdateProductRequest extends FormRequest
             'product_unit_id' => $unit?->id ?? $this->input('product_unit_id'),
             'attributes' => $this->normalizedAttributes(),
             'custom_attributes' => $this->normalizedCustomAttributes(),
+            'allowed_units' => $this->normalizedAllowedUnits($unit?->symbol),
         ]);
     }
 
@@ -95,13 +100,41 @@ class UpdateProductRequest extends FormRequest
                 return [
                     'code' => $code,
                     'name' => $name,
-                    'value' => is_string($attribute['value'] ?? null) ? trim($attribute['value']) : ($attribute['value'] ?? ''),
-                    'unit' => is_string($attribute['unit'] ?? null) ? trim($attribute['unit']) : '',
+                    'type' => in_array(($attribute['type'] ?? 'text'), ['text', 'number', 'boolean'], true) ? $attribute['type'] : 'text',
+                    'value' => $this->normalizedCustomAttributeValue($attribute),
+                    'has_unit' => filter_var($attribute['has_unit'] ?? false, FILTER_VALIDATE_BOOLEAN),
+                    'unit' => filter_var($attribute['has_unit'] ?? false, FILTER_VALIDATE_BOOLEAN) && is_string($attribute['unit'] ?? null) ? trim($attribute['unit']) : '',
                 ];
             })
             ->unique('code')
             ->values()
             ->all();
+    }
+
+    private function normalizedCustomAttributeValue(array $attribute): string
+    {
+        if (($attribute['type'] ?? 'text') === 'boolean') {
+            if (($attribute['value'] ?? '') === '') {
+                return '';
+            }
+
+            return filter_var($attribute['value'] ?? false, FILTER_VALIDATE_BOOLEAN) ? '1' : '0';
+        }
+
+        return is_string($attribute['value'] ?? null) ? trim($attribute['value']) : (string) ($attribute['value'] ?? '');
+    }
+
+    private function normalizedAllowedUnits(?string $baseSymbol): array
+    {
+        $symbols = ProductUnit::query()
+            ->whereIn('symbol', collect($this->input('allowed_units', []))->push($baseSymbol)->filter()->unique()->values())
+            ->pluck('symbol')
+            ->push($baseSymbol)
+            ->filter()
+            ->unique()
+            ->values();
+
+        return $symbols->all();
     }
 
     private function validateBranchScope(Validator $validator): void

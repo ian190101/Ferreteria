@@ -27,6 +27,7 @@ class Product extends AuditableModel
         'base_unit',
         'attributes',
         'custom_attributes',
+        'allowed_units',
         'default_width',
         'purchase_price',
         'sale_price',
@@ -37,6 +38,7 @@ class Product extends AuditableModel
     protected $casts = [
         'attributes' => 'array',
         'custom_attributes' => 'array',
+        'allowed_units' => 'array',
         'default_width' => 'decimal:4',
         'purchase_price' => 'decimal:4',
         'sale_price' => 'decimal:4',

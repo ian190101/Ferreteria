@@ -476,7 +476,15 @@ function printableAttributeName(name, unit) {
 function itemAttributeValue(item, code) {
     const attribute = (item.item_attributes ?? []).find((entry) => entry.code === code);
 
-    return attribute?.value ? attribute.value : '-';
+    if (!attribute || attribute.value === '' || attribute.value === null || attribute.value === undefined) {
+        return '-';
+    }
+
+    if (attribute.type === 'boolean') {
+        return ['1', 'true', 'si'].includes(String(attribute.value).toLowerCase()) ? 'Si' : 'No';
+    }
+
+    return attribute.value;
 }
 
 function DeliveryProgress({ sale }) {

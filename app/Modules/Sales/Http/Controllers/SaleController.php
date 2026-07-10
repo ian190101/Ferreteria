@@ -101,7 +101,7 @@ class SaleController extends Controller
             $products = Product::query()
                 ->with(['unit:id,symbol'])
                 ->whereIn('id', $validatedItems->pluck('product_id')->unique()->values())
-                ->get(['id', 'product_category_id', 'product_unit_id', 'name', 'sale_price', 'attributes', 'custom_attributes'])
+                ->get(['id', 'product_category_id', 'product_unit_id', 'name', 'sale_price', 'allowed_units', 'attributes', 'custom_attributes'])
                 ->keyBy('id');
 
             $items = $validatedItems->map(function (array $item) use ($canOverridePrices, $products) {

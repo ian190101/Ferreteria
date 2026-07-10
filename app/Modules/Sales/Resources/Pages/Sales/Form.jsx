@@ -65,13 +65,15 @@ export default function Form({
     const selectedAdvance = advanceOptions.find((option) => String(option.id) === String(data.advance_option_id));
 
     const updateItem = (index, field, value) => {
-        setData('items', data.items.map((item, itemIndex) => (itemIndex === index ? { ...item, [field]: value } : item)));
+        const items = data.items.map((item, itemIndex) => (itemIndex === index ? { ...item, [field]: value } : item));
+
+        setData('items', field === 'display_unit_label' ? mergeDuplicateItems(items, index, products) : items);
     };
 
     const selectProduct = (index, value) => {
         const product = products.find((item) => String(item.id) === String(value));
 
-        setData('items', data.items.map((item, itemIndex) => (itemIndex === index ? {
+        const items = data.items.map((item, itemIndex) => (itemIndex === index ? {
             ...item,
             product_category_id: product?.product_category_id ?? item.product_category_id,
             product_id: value,
@@ -85,7 +87,9 @@ export default function Form({
             price_mode: 'meter',
             price_per_ton: '',
             unit_price: productSalePrice(product),
-        } : item)));
+        } : item));
+
+        setData('items', mergeDuplicateItems(items, index, products));
     };
     const selectItemCategory = (index, value) => {
         setData('items', data.items.map((item, itemIndex) => (itemIndex === index ? {
@@ -447,7 +451,8 @@ function updateItemAttribute(index, attribute, value, data, setData) {
             code: attribute.code,
             name: attribute.name,
             value,
-            unit: attribute.unit?.symbol ?? '',
+            type: attribute.type ?? 'text',
+            unit: attributeUnit(attribute),
         });
 
         return { ...item, item_attributes: next };
@@ -459,7 +464,8 @@ function defaultItemAttributes(product) {
         code: attribute.code,
         name: attribute.name,
         value: product?.attributes?.[attribute.code] ?? attribute.value ?? '',
-        unit: typeof attribute.unit === 'string' ? attribute.unit : attribute.unit?.symbol ?? '',
+        type: attribute.type ?? 'text',
+        unit: attributeUnit(attribute),
     }));
 }
 
@@ -473,7 +479,8 @@ function normalizedItemAttributes(item, product) {
             code: attribute.code,
             name: attribute.name,
             value: currentValue ?? product?.attributes?.[attribute.code] ?? attribute.value ?? '',
-            unit: typeof attribute.unit === 'string' ? attribute.unit : attribute.unit?.symbol ?? '',
+            type: attribute.type ?? 'text',
+            unit: attributeUnit(attribute),
         };
     });
 }
@@ -481,7 +488,7 @@ function normalizedItemAttributes(item, product) {
 function productAttributes(product) {
     return (product?.custom_attributes ?? []).map((attribute) => ({
         ...attribute,
-        type: 'text',
+        type: ['text', 'number', 'boolean'].includes(attribute.type) ? attribute.type : 'text',
         options: [],
         is_required: false,
     })).filter((attribute, index, attributes) => (
@@ -525,10 +532,45 @@ function quantityKindForItem(item, product, units) {
 
 function documentUnits(units, product) {
     const productSymbol = productUnitSymbol(product);
-    const existing = units.some((unit) => unit.symbol === productSymbol);
-    const options = existing ? units : [{ id: `product-${productSymbol}`, name: productSymbol, symbol: productSymbol, kind: quantityKind(product) }, ...units];
+    const allowedSymbols = product?.allowed_units?.length ? product.allowed_units : [productSymbol];
+    const selected = units.filter((unit) => allowedSymbols.includes(unit.symbol));
+    const existing = selected.some((unit) => unit.symbol === productSymbol);
+    const options = existing ? selected : [{ id: `product-${productSymbol}`, name: productSymbol, symbol: productSymbol, kind: quantityKind(product) }, ...selected];
 
     return options;
+}
+
+function attributeUnit(attribute) {
+    return typeof attribute.unit === 'string' ? attribute.unit : attribute.unit?.symbol ?? '';
+}
+
+function mergeDuplicateItems(items, changedIndex, products) {
+    const changed = items[changedIndex];
+
+    if (!changed?.product_id) {
+        return items;
+    }
+
+    const changedProduct = selectedProduct(products, changed);
+    const changedUnit = changed.display_unit_label || productUnitSymbol(changedProduct);
+    const duplicateIndex = items.findIndex((item, index) => {
+        if (index === changedIndex) return false;
+
+        const product = selectedProduct(products, item);
+
+        return String(item.product_id) === String(changed.product_id)
+            && String(item.display_unit_label || productUnitSymbol(product)) === String(changedUnit);
+    });
+
+    if (duplicateIndex < 0) {
+        return items;
+    }
+
+    return items
+        .map((item, index) => index === duplicateIndex
+            ? { ...item, display_quantity: String(Number(item.display_quantity || 0) + Number(changed.display_quantity || 0)) }
+            : item)
+        .filter((_, index) => index !== changedIndex);
 }
 
 function precisionKind(kind) {

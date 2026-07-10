@@ -48,6 +48,7 @@ class StoreSaleDocumentRequest extends FormRequest
             'items.*.calculation_mode' => ['nullable', Rule::in(['direct', 'length', 'weight'])],
             'items.*.item_attributes.*.code' => ['required_with:items.*.item_attributes', 'string', 'max:80'],
             'items.*.item_attributes.*.name' => ['required_with:items.*.item_attributes', 'string', 'max:120'],
+            'items.*.item_attributes.*.type' => ['nullable', Rule::in(['text', 'number', 'boolean'])],
             'items.*.item_attributes.*.value' => ['nullable', 'string', 'max:120'],
             'items.*.item_attributes.*.unit' => ['nullable', 'string', 'max:24'],
             'items.*.meters' => ['required', 'numeric', 'gt:0', 'max:999999999999.999'],
@@ -65,9 +66,12 @@ class StoreSaleDocumentRequest extends FormRequest
                 return;
             }
 
-            if ($this->input('document_type') !== 'sale_note') {
-                return;
-            }
+            $items = collect($this->input('items', []));
+            $productIds = $items->pluck('product_id')->filter()->unique()->values();
+            $products = Product::query()
+                ->whereIn('id', $productIds)
+                ->get(['id', 'base_unit', 'allowed_units', 'inventory_tracking_mode'])
+                ->keyBy('id');
 
             $sourceQuotation = $this->filled('source_quotation_id')
                 ? Sale::query()->find($this->integer('source_quotation_id'))
@@ -83,18 +87,31 @@ class StoreSaleDocumentRequest extends FormRequest
                 }
             }
 
+            foreach ($items as $index => $item) {
+                $product = $products->get($item['product_id'] ?? null);
+
+                if (! $product) {
+                    continue;
+                }
+
+                $unit = $item['display_unit_label'] ?? $item['unit_label'] ?? $product->base_unit;
+                $allowedUnits = $product->allowed_units ?: [$product->base_unit];
+
+                if (! in_array($unit, $allowedUnits, true)) {
+                    $validator->errors()->add("items.{$index}.display_unit_label", 'La unidad seleccionada no esta habilitada para este producto.');
+                }
+            }
+
+            if ($this->input('document_type') !== 'sale_note') {
+                return;
+            }
+
             if (CashSessionGuard::requiresOpenSession($this->user(), $this->integer('branch_id'))) {
                 $validator->errors()->add('branch_id', CashSessionGuard::message());
 
                 return;
             }
 
-            $items = collect($this->input('items', []));
-            $productIds = $items->pluck('product_id')->filter()->unique()->values();
-            $products = Product::query()
-                ->whereIn('id', $productIds)
-                ->get(['id', 'inventory_tracking_mode'])
-                ->keyBy('id');
             $globalMetersByProduct = [];
             $coilMetersById = [];
 

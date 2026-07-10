@@ -5,6 +5,7 @@ namespace App\Modules\Purchases\Http\Requests;
 use App\Modules\Inventory\Models\Product;
 use App\Support\BranchAccess;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 class StorePurchaseRequest extends FormRequest
 {
@@ -32,6 +33,7 @@ class StorePurchaseRequest extends FormRequest
             'items.*.item_attributes' => ['nullable', 'array'],
             'items.*.item_attributes.*.code' => ['required_with:items.*.item_attributes', 'string', 'max:80'],
             'items.*.item_attributes.*.name' => ['required_with:items.*.item_attributes', 'string', 'max:120'],
+            'items.*.item_attributes.*.type' => ['nullable', Rule::in(['text', 'number', 'boolean'])],
             'items.*.item_attributes.*.value' => ['nullable', 'string', 'max:120'],
             'items.*.item_attributes.*.unit' => ['nullable', 'string', 'max:24'],
             'items.*.unit_cost' => ['required', 'numeric', 'gte:0', 'max:999999999999.9999'],
@@ -54,7 +56,7 @@ class StorePurchaseRequest extends FormRequest
             $products = Product::query()
                 ->with('thickness:id')
                 ->whereIn('id', $items->pluck('product_id')->filter()->unique()->values())
-                ->get(['id', 'thickness_id', 'inventory_tracking_mode'])
+                ->get(['id', 'thickness_id', 'base_unit', 'allowed_units', 'inventory_tracking_mode'])
                 ->keyBy('id');
 
             foreach ($items as $index => $item) {
@@ -66,6 +68,13 @@ class StorePurchaseRequest extends FormRequest
 
                 if (blank($item['meters'] ?? null) && blank($item['kilograms'] ?? null)) {
                     $validator->errors()->add("items.{$index}.meters", 'Debes ingresar metros o peso.');
+                }
+
+                $unit = $item['display_unit_label'] ?? $product->base_unit;
+                $allowedUnits = $product->allowed_units ?: [$product->base_unit];
+
+                if (! in_array($unit, $allowedUnits, true)) {
+                    $validator->errors()->add("items.{$index}.display_unit_label", 'La unidad seleccionada no esta habilitada para este producto.');
                 }
 
                 if (blank($item['meters'] ?? null) && filled($item['kilograms'] ?? null) && ! $product->thickness) {

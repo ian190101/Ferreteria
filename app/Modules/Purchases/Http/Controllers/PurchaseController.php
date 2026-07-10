@@ -71,7 +71,7 @@ class PurchaseController extends Controller
             $products = Product::query()
                 ->with(['thickness', 'unit:id,symbol'])
                 ->whereIn('id', $validatedItems->pluck('product_id')->unique()->values())
-                ->get(['id', 'thickness_id', 'product_category_id', 'product_unit_id', 'name', 'base_unit', 'inventory_tracking_mode', 'attributes', 'custom_attributes'])
+                ->get(['id', 'thickness_id', 'product_category_id', 'product_unit_id', 'name', 'base_unit', 'allowed_units', 'inventory_tracking_mode', 'attributes', 'custom_attributes'])
                 ->keyBy('id');
             $this->ensureProductsEnabledForBranch($validatedItems->pluck('product_id')->all(), $request->integer('branch_id'));
 

@@ -31,7 +31,8 @@ export default function Form({ product, thicknesses, categories, units, branches
         inventory_tracking_mode: product?.inventory_tracking_mode ?? initialCategory?.default_tracking_mode ?? 'global',
         base_unit: product?.base_unit ?? initialUnit?.symbol ?? 'unidad',
         attributes: product?.attributes ?? {},
-        custom_attributes: product?.custom_attributes ?? [],
+        custom_attributes: normalizeCustomAttributes(product?.custom_attributes ?? []),
+        allowed_units: normalizeAllowedUnits(product?.allowed_units, initialUnit),
         default_width: product?.default_width ?? '',
         purchase_price: product?.purchase_price ?? '0',
         sale_price: product?.sale_price ?? '0',
@@ -75,6 +76,7 @@ export default function Form({ product, thicknesses, categories, units, branches
             product_unit_id: unit?.id ?? data.product_unit_id,
             category: category?.name ?? data.category,
             base_unit: unit?.symbol ?? data.base_unit,
+            allowed_units: normalizeAllowedUnits(data.allowed_units, unit),
             inventory_tracking_mode: category?.default_tracking_mode ?? data.inventory_tracking_mode,
             thickness_id: category?.requires_thickness ? data.thickness_id : '',
         });
@@ -87,12 +89,13 @@ export default function Form({ product, thicknesses, categories, units, branches
             ...data,
             product_unit_id: unitId,
             base_unit: unit?.symbol ?? data.base_unit,
+            allowed_units: normalizeAllowedUnits(data.allowed_units, unit),
         });
     };
 
     const addCustomAttribute = () => setData('custom_attributes', [
         ...(data.custom_attributes ?? []),
-        { code: '', name: '', value: '', unit: '' },
+        { code: '', name: '', type: 'text', value: '', has_unit: false, unit: '' },
     ]);
     const updateCustomAttribute = (index, field, value) => {
         setData('custom_attributes', (data.custom_attributes ?? []).map((attribute, attributeIndex) => (
@@ -116,6 +119,23 @@ export default function Form({ product, thicknesses, categories, units, branches
         setData('branch_ids', current.includes(id)
             ? current.filter((value) => value !== id)
             : [...current, id]);
+    };
+    const toggleAllowedUnit = (symbol) => {
+        const baseSymbol = selectedUnit?.symbol ?? data.base_unit;
+
+        if (symbol === baseSymbol) {
+            return;
+        }
+
+        const current = new Set(data.allowed_units ?? []);
+
+        if (current.has(symbol)) {
+            current.delete(symbol);
+        } else {
+            current.add(symbol);
+        }
+
+        setData('allowed_units', normalizeAllowedUnits([...current], selectedUnit));
     };
 
     return (
@@ -180,6 +200,32 @@ export default function Form({ product, thicknesses, categories, units, branches
                             </option>
                         ))}
                     </SelectField>
+                    <div className="sm:col-span-2">
+                        <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950/40">
+                            <h3 className="text-sm font-semibold text-slate-950 dark:text-white">Unidades para venta y compra</h3>
+                            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">La unidad base siempre queda habilitada. Agrega otras formas comerciales como caja, unidad, kg, bolsa o paquete.</p>
+                            <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                                {units.map((unit) => {
+                                    const isBase = unit.symbol === (selectedUnit?.symbol ?? data.base_unit);
+                                    const checked = (data.allowed_units ?? []).includes(unit.symbol) || isBase;
+
+                                    return (
+                                        <label key={unit.id} className="flex items-center gap-3 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm dark:border-slate-800 dark:bg-slate-900">
+                                            <input
+                                                type="checkbox"
+                                                checked={checked}
+                                                disabled={isBase}
+                                                onChange={() => toggleAllowedUnit(unit.symbol)}
+                                                className="h-4 w-4 rounded border-slate-300 text-brand-primary focus:ring-brand-primary disabled:opacity-60"
+                                            />
+                                            <span>{unit.name} ({unit.symbol}){isBase ? ' - base' : ''}</span>
+                                        </label>
+                                    );
+                                })}
+                            </div>
+                            {errors.allowed_units ? <p className="mt-2 text-sm text-red-600">{errors.allowed_units}</p> : null}
+                        </div>
+                    </div>
                     <FormField label="Ancho por defecto" name="default_width" type="number" step={decimalStep(decimalFormat.decimalsFor('measure'))} value={data.default_width} onChange={(event) => setData('default_width', event.target.value)} error={errors.default_width} />
                     <FormField label="Precio compra" name="purchase_price" type="number" step={decimalStep(decimalFormat.decimalsFor('cost'))} min="0" value={data.purchase_price} onChange={(event) => setData('purchase_price', event.target.value)} error={errors.purchase_price} required />
                     <FormField label="Precio venta" name="sale_price" type="number" step={decimalStep(decimalFormat.decimalsFor('money'))} min="0" value={data.sale_price} onChange={(event) => setData('sale_price', event.target.value)} error={errors.sale_price} required />
@@ -260,13 +306,33 @@ export default function Form({ product, thicknesses, categories, units, branches
                             {(data.custom_attributes ?? []).length ? (
                                 <div className="mt-4 space-y-3">
                                     {data.custom_attributes.map((attribute, index) => (
-                                        <div key={index} className="grid gap-3 rounded-md border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-900 sm:grid-cols-4">
+                                        <div key={index} className="grid gap-3 rounded-md border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-900 sm:grid-cols-6">
                                             <FormField label="Nombre" name={`custom_attributes.${index}.name`} value={attribute.name ?? ''} onChange={(event) => updateCustomAttribute(index, 'name', event.target.value)} error={errors[`custom_attributes.${index}.name`]} />
                                             <FormField label="Codigo" name={`custom_attributes.${index}.code`} value={attribute.code ?? ''} onChange={(event) => updateCustomAttribute(index, 'code', event.target.value)} error={errors[`custom_attributes.${index}.code`]} placeholder="Automatico si se deja vacio" />
-                                            <FormField label="Valor" name={`custom_attributes.${index}.value`} value={attribute.value ?? ''} onChange={(event) => updateCustomAttribute(index, 'value', event.target.value)} error={errors[`custom_attributes.${index}.value`]} />
+                                            <SelectField label="Tipo" name={`custom_attributes.${index}.type`} value={attribute.type ?? 'text'} onChange={(event) => updateCustomAttribute(index, 'type', event.target.value)} error={errors[`custom_attributes.${index}.type`]}>
+                                                <option value="text">Texto</option>
+                                                <option value="number">Numerico</option>
+                                                <option value="boolean">Si/No</option>
+                                            </SelectField>
+                                            {attribute.type === 'boolean' ? (
+                                                <SelectField label="Valor" name={`custom_attributes.${index}.value`} value={String(attribute.value ?? '')} onChange={(event) => updateCustomAttribute(index, 'value', event.target.value)} error={errors[`custom_attributes.${index}.value`]}>
+                                                    <option value="">Sin definir</option>
+                                                    <option value="1">Si</option>
+                                                    <option value="0">No</option>
+                                                </SelectField>
+                                            ) : (
+                                                <FormField label="Valor" name={`custom_attributes.${index}.value`} type={attribute.type === 'number' ? 'number' : 'text'} step={attribute.type === 'number' ? '0.01' : undefined} value={attribute.value ?? ''} onChange={(event) => updateCustomAttribute(index, 'value', event.target.value)} error={errors[`custom_attributes.${index}.value`]} />
+                                            )}
+                                            <SelectField label="Usa unidad" name={`custom_attributes.${index}.has_unit`} value={attribute.has_unit ? '1' : '0'} onChange={(event) => updateCustomAttribute(index, 'has_unit', event.target.value === '1')} error={errors[`custom_attributes.${index}.has_unit`]}>
+                                                <option value="0">No</option>
+                                                <option value="1">Si</option>
+                                            </SelectField>
                                             <div className="flex gap-2">
                                                 <div className="min-w-0 flex-1">
-                                                    <FormField label="Unidad" name={`custom_attributes.${index}.unit`} value={attribute.unit ?? ''} onChange={(event) => updateCustomAttribute(index, 'unit', event.target.value)} error={errors[`custom_attributes.${index}.unit`]} />
+                                                    <SelectField label="Unidad" name={`custom_attributes.${index}.unit`} value={attribute.unit ?? ''} onChange={(event) => updateCustomAttribute(index, 'unit', event.target.value)} error={errors[`custom_attributes.${index}.unit`]} disabled={!attribute.has_unit}>
+                                                        <option value="">Sin unidad</option>
+                                                        {units.map((unit) => <option key={unit.id} value={unit.symbol}>{unit.name} ({unit.symbol})</option>)}
+                                                    </SelectField>
                                                 </div>
                                                 <button type="button" onClick={() => removeCustomAttribute(index)} className="self-end rounded-md border border-red-200 px-3 py-2 text-sm text-red-600 dark:border-red-900/60">
                                                     Quitar
@@ -307,6 +373,23 @@ function unitLabel(unit) {
         galon: 'galones',
         rollo: 'rollos',
     }[unit] ?? unit;
+}
+
+function normalizeAllowedUnits(savedUnits, baseUnit) {
+    const baseSymbol = typeof baseUnit === 'string' ? baseUnit : baseUnit?.symbol;
+
+    return [...new Set([...(savedUnits ?? []), baseSymbol].filter(Boolean))];
+}
+
+function normalizeCustomAttributes(attributes) {
+    return (attributes ?? []).map((attribute) => ({
+        code: attribute.code ?? '',
+        name: attribute.name ?? '',
+        type: ['text', 'number', 'boolean'].includes(attribute.type) ? attribute.type : 'text',
+        value: attribute.value ?? '',
+        has_unit: Boolean(attribute.has_unit ?? attribute.unit),
+        unit: attribute.unit ?? '',
+    }));
 }
 
 function GeneratedField({ label, name, value, onChange, error, onGenerate }) {

@@ -39,12 +39,14 @@ export default function Form({ branches = [], suppliers = [], units = [], catego
 
     const productMap = useMemo(() => new Map(products.map((product) => [String(product.id), product])), [products]);
     const updateItem = (index, field, value) => {
-        setData('items', data.items.map((item, itemIndex) => (itemIndex === index ? { ...item, [field]: value } : item)));
+        const items = data.items.map((item, itemIndex) => (itemIndex === index ? { ...item, [field]: value } : item));
+
+        setData('items', field === 'display_unit_label' ? mergeDuplicateItems(items, index, productMap) : items);
     };
     const selectProduct = (index, value) => {
         const product = productMap.get(String(value));
 
-        setData('items', data.items.map((item, itemIndex) => (itemIndex === index ? {
+        const items = data.items.map((item, itemIndex) => (itemIndex === index ? {
             ...item,
             product_category_id: product?.product_category_id ?? item.product_category_id,
             product_id: value,
@@ -52,7 +54,9 @@ export default function Form({ branches = [], suppliers = [], units = [], catego
             item_attributes: defaultItemAttributes(product),
             calculation_mode: 'direct',
             meters: item.display_quantity || '1',
-        } : item)));
+        } : item));
+
+        setData('items', mergeDuplicateItems(items, index, productMap));
     };
     const selectItemCategory = (index, value) => {
         setData('items', data.items.map((item, itemIndex) => (itemIndex === index ? {
@@ -292,7 +296,8 @@ function updateItemAttribute(index, attribute, value, data, setData) {
             code: attribute.code,
             name: attribute.name,
             value,
-            unit: attribute.unit?.symbol ?? '',
+            type: attribute.type ?? 'text',
+            unit: attributeUnit(attribute),
         });
 
         return { ...item, item_attributes: next };
@@ -304,7 +309,8 @@ function defaultItemAttributes(product) {
         code: attribute.code,
         name: attribute.name,
         value: product?.attributes?.[attribute.code] ?? attribute.value ?? '',
-        unit: typeof attribute.unit === 'string' ? attribute.unit : attribute.unit?.symbol ?? '',
+        type: attribute.type ?? 'text',
+        unit: attributeUnit(attribute),
     }));
 }
 
@@ -318,7 +324,8 @@ function normalizedItemAttributes(item, product) {
             code: attribute.code,
             name: attribute.name,
             value: currentValue ?? product?.attributes?.[attribute.code] ?? attribute.value ?? '',
-            unit: typeof attribute.unit === 'string' ? attribute.unit : attribute.unit?.symbol ?? '',
+            type: attribute.type ?? 'text',
+            unit: attributeUnit(attribute),
         };
     });
 }
@@ -326,7 +333,7 @@ function normalizedItemAttributes(item, product) {
 function productAttributes(product) {
     return (product?.custom_attributes ?? []).map((attribute) => ({
         ...attribute,
-        type: 'text',
+        type: ['text', 'number', 'boolean'].includes(attribute.type) ? attribute.type : 'text',
         options: [],
         is_required: false,
     })).filter((attribute, index, attributes) => (
@@ -378,9 +385,44 @@ function quantityKindForItem(item, product, units) {
 
 function documentUnits(units, product) {
     const productSymbol = productUnitSymbol(product);
-    const existing = units.some((unit) => unit.symbol === productSymbol);
+    const allowedSymbols = product?.allowed_units?.length ? product.allowed_units : [productSymbol];
+    const selected = units.filter((unit) => allowedSymbols.includes(unit.symbol));
+    const existing = selected.some((unit) => unit.symbol === productSymbol);
 
-    return existing ? units : [{ id: `product-${productSymbol}`, name: productSymbol, symbol: productSymbol, kind: quantityKind(product) }, ...units];
+    return existing ? selected : [{ id: `product-${productSymbol}`, name: productSymbol, symbol: productSymbol, kind: quantityKind(product) }, ...selected];
+}
+
+function attributeUnit(attribute) {
+    return typeof attribute.unit === 'string' ? attribute.unit : attribute.unit?.symbol ?? '';
+}
+
+function mergeDuplicateItems(items, changedIndex, productMap) {
+    const changed = items[changedIndex];
+
+    if (!changed?.product_id) {
+        return items;
+    }
+
+    const changedProduct = productMap.get(String(changed.product_id));
+    const changedUnit = changed.display_unit_label || productUnitSymbol(changedProduct);
+    const duplicateIndex = items.findIndex((item, index) => {
+        if (index === changedIndex) return false;
+
+        const product = productMap.get(String(item.product_id));
+
+        return String(item.product_id) === String(changed.product_id)
+            && String(item.display_unit_label || productUnitSymbol(product)) === String(changedUnit);
+    });
+
+    if (duplicateIndex < 0) {
+        return items;
+    }
+
+    return items
+        .map((item, index) => index === duplicateIndex
+            ? { ...item, display_quantity: String(Number(item.display_quantity || 0) + Number(changed.display_quantity || 0)) }
+            : item)
+        .filter((_, index) => index !== changedIndex);
 }
 
 function precisionKind(kind) {
