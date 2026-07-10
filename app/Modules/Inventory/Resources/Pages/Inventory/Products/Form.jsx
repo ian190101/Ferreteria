@@ -33,7 +33,6 @@ export default function Form({ product, thicknesses, categories, units, branches
         attributes: product?.attributes ?? {},
         custom_attributes: normalizeCustomAttributes(product?.custom_attributes ?? []),
         allowed_units: normalizeAllowedUnits(product?.allowed_units, initialUnit),
-        default_width: product?.default_width ?? '',
         purchase_price: product?.purchase_price ?? '0',
         sale_price: product?.sale_price ?? '0',
         minimum_stock_meters: product?.minimum_stock_meters ?? '0',
@@ -226,7 +225,6 @@ export default function Form({ product, thicknesses, categories, units, branches
                             {errors.allowed_units ? <p className="mt-2 text-sm text-red-600">{errors.allowed_units}</p> : null}
                         </div>
                     </div>
-                    <FormField label="Ancho por defecto" name="default_width" type="number" step={decimalStep(decimalFormat.decimalsFor('measure'))} value={data.default_width} onChange={(event) => setData('default_width', event.target.value)} error={errors.default_width} />
                     <FormField label="Precio compra" name="purchase_price" type="number" step={decimalStep(decimalFormat.decimalsFor('cost'))} min="0" value={data.purchase_price} onChange={(event) => setData('purchase_price', event.target.value)} error={errors.purchase_price} required />
                     <FormField label="Precio venta" name="sale_price" type="number" step={decimalStep(decimalFormat.decimalsFor('money'))} min="0" value={data.sale_price} onChange={(event) => setData('sale_price', event.target.value)} error={errors.sale_price} required />
                     <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-100">
