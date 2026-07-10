@@ -20,6 +20,11 @@ class ProductController extends Controller
 {
     public function index(Request $request): Response
     {
+        $branches = $this->activeBranches($request);
+        $allowedBranchIds = $branches->pluck('id')->map(fn ($id) => (int) $id)->values();
+        $branchId = $request->integer('branch_id');
+        $filterBranchId = $branchId && $allowedBranchIds->contains($branchId) ? $branchId : null;
+
         $products = Product::query()
             ->select([
                 'id',
@@ -38,6 +43,10 @@ class ProductController extends Controller
                 'created_at',
             ])
             ->with(['thickness:id,name', 'productCategory:id,name', 'unit:id,name,symbol'])
+            ->whereHas('branchStocks', function ($query) use ($allowedBranchIds, $filterBranchId) {
+                $query->where('is_enabled', true)
+                    ->whereIn('branch_id', $filterBranchId ? [$filterBranchId] : $allowedBranchIds);
+            })
             ->when($request->string('search')->isNotEmpty(), function ($query) use ($request) {
                 $search = $request->string('search')->toString();
 
@@ -55,7 +64,11 @@ class ProductController extends Controller
 
         return Inertia::render('Inventory/Products/Index', [
             'products' => $products,
-            'filters' => $request->only('search', 'tracking', 'per_page'),
+            'branches' => $branches,
+            'filters' => [
+                ...$request->only('search', 'tracking', 'per_page'),
+                'branch_id' => $filterBranchId,
+            ],
         ]);
     }
 
