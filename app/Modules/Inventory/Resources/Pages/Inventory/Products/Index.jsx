@@ -51,7 +51,7 @@ export default function Index({ products, branches = [], filters = {} }) {
 
             <section className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
                 <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                    <ModuleHeader title="Productos" description="Catalogo general de ferreteria con barcode independiente, categoria, unidad y modo de rastreo." />
+                    <ModuleHeader title="Productos" description="Catalogo general de ferreteria con stock por sucursal, unidades equivalentes y rastreo opcional por lote/unidad fisica." />
                     {canManage ? (
                         <div className="flex flex-wrap gap-2">
                             <ActionLink href={route('inventory.products.catalogs.index')}>Categorias y caracteristicas</ActionLink>
@@ -72,10 +72,10 @@ export default function Index({ products, branches = [], filters = {} }) {
                         <option value="">Todas permitidas</option>
                         {branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
                     </SelectField>
-                    <SelectField label="Rastreo" name="tracking" value={query.tracking} onChange={(event) => updateFilter('tracking', event.target.value)}>
+                    <SelectField label="Rastreo adicional" name="tracking" value={query.tracking} onChange={(event) => updateFilter('tracking', event.target.value)}>
                         <option value="">Todos</option>
-                        <option value="global">Global por sucursal</option>
-                        <option value="coil">Individual por lote/unidad</option>
+                        <option value="global">Sin lote/unidad fisica</option>
+                        <option value="coil">Con lote/unidad fisica</option>
                     </SelectField>
                     <FormField
                         label="Por pagina"
@@ -105,7 +105,7 @@ export default function Index({ products, branches = [], filters = {} }) {
                                 <th className="px-4 py-3 text-right font-medium">Compra</th>
                                 <th className="px-4 py-3 text-right font-medium">Venta</th>
                                 <th className="px-4 py-3 text-right font-medium">Ganancia</th>
-                                <th className="px-4 py-3 font-medium">Rastreo</th>
+                                <th className="px-4 py-3 font-medium">Rastreo adicional</th>
                                 <th className="px-4 py-3 font-medium">Espesor</th>
                                 {canManage ? <th className="px-4 py-3 font-medium">Acciones</th> : null}
                             </tr>
@@ -127,7 +127,7 @@ export default function Index({ products, branches = [], filters = {} }) {
                                     <td className="px-4 py-3 text-right">Bs {decimalFormat.cost(product.purchase_price ?? 0)}</td>
                                     <td className="px-4 py-3 text-right">Bs {decimalFormat.money(product.sale_price ?? 0)}</td>
                                     <td className="px-4 py-3 text-right font-semibold text-emerald-600">Bs {decimalFormat.money(Math.max(Number(product.sale_price ?? 0) - Number(product.purchase_price ?? 0), 0))}</td>
-                                    <td className="px-4 py-3">{product.inventory_tracking_mode === 'coil' ? 'Individual por lote/unidad' : 'Global por sucursal'}</td>
+                                    <td className="px-4 py-3">{product.inventory_tracking_mode === 'coil' ? 'Con lote/unidad fisica' : 'Sin lote/unidad fisica'}</td>
                                     <td className="px-4 py-3">{product.thickness?.name ?? 'Sin espesor'}</td>
                                     {canManage ? (
                                         <td className="px-4 py-3">

@@ -472,8 +472,8 @@ function formatDocumentQuantity(value, item, product, units, decimalFormat) {
 
 function trackingLabel(product) {
     return product?.inventory_tracking_mode === 'coil'
-        ? 'Individual por lote/unidad'
-        : 'Global por sucursal';
+        ? 'Stock por sucursal + lote/unidad'
+        : 'Stock por sucursal';
 }
 
 function productsForCategory(products, categoryId, branchId) {

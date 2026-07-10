@@ -185,9 +185,9 @@ export default function Catalogs({ categories, units, thicknesses = [] }) {
                                     <option key={unit.id} value={unit.id}>{unit.name} ({unit.symbol})</option>
                                 ))}
                             </SelectField>
-                            <SelectField label="Rastreo por defecto" name="default_tracking_mode" value={categoryForm.data.default_tracking_mode} onChange={(event) => categoryForm.setData('default_tracking_mode', event.target.value)} error={categoryForm.errors.default_tracking_mode} required>
-                                <option value="global">Global por sucursal</option>
-                                <option value="coil">Individual por lote/unidad fisica</option>
+                            <SelectField label="Rastreo adicional por defecto" name="default_tracking_mode" value={categoryForm.data.default_tracking_mode} onChange={(event) => categoryForm.setData('default_tracking_mode', event.target.value)} error={categoryForm.errors.default_tracking_mode} required>
+                                <option value="global">No, solo stock por sucursal</option>
+                                <option value="coil">Si, tambien por lote/unidad fisica</option>
                             </SelectField>
                             <SelectField label="Requiere espesor" name="requires_thickness" value={categoryForm.data.requires_thickness ? '1' : '0'} onChange={(event) => categoryForm.setData('requires_thickness', event.target.value === '1')} error={categoryForm.errors.requires_thickness}>
                                 <option value="1">Si</option>

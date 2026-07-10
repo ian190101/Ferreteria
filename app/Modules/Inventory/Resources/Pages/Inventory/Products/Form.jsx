@@ -195,16 +195,54 @@ export default function Form({ product, thicknesses, categories, units, branches
                             </option>
                         ))}
                     </SelectField>
-                    <SelectField
-                        label="Modo de rastreo"
-                        name="inventory_tracking_mode"
-                        value={data.inventory_tracking_mode}
-                        onChange={(event) => setData('inventory_tracking_mode', event.target.value)}
-                        error={errors.inventory_tracking_mode}
-                    >
-                        <option value="global">Stock por sucursal</option>
-                        <option value="coil">Individual por lote/unidad fisica</option>
-                    </SelectField>
+                    <div className="sm:col-span-2">
+                        <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950/40">
+                            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                                <div>
+                                    <h3 className="text-sm font-semibold text-slate-950 dark:text-white">Control de inventario</h3>
+                                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                                        Todos los productos se controlan por sucursal automaticamente. Activa el rastreo por lote/unidad fisica solo cuando necesites identificar una caja, rollo, lote, vencimiento o pieza especifica.
+                                    </p>
+                                </div>
+                                <details className="group relative">
+                                    <summary className="flex h-8 w-8 cursor-pointer list-none items-center justify-center rounded-full border border-brand-primary text-sm font-bold text-brand-primary transition hover:bg-brand-primary hover:text-white" title="Ayuda sobre rastreo de inventario">
+                                        ?
+                                    </summary>
+                                    <div className="absolute right-0 z-20 mt-2 w-80 rounded-lg border border-slate-200 bg-white p-4 text-xs leading-relaxed text-slate-600 shadow-xl dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">
+                                        <p className="font-semibold text-slate-900 dark:text-white">Como funciona</p>
+                                        <p className="mt-2"><strong>Stock por sucursal:</strong> siempre esta activo. Sirve para saber cuanto stock hay en cada tienda o almacen.</p>
+                                        <p className="mt-2"><strong>Rastreo por lote/unidad fisica:</strong> es adicional. Usalo para productos con vencimiento, lotes, rollos, bobinas, cables por metro, mangueras o unidades fisicas que se venden por partes.</p>
+                                        <p className="mt-2">No lo actives para productos simples como focos, cascos o guantes si solo necesitas saber la cantidad disponible por sucursal.</p>
+                                    </div>
+                                </details>
+                            </div>
+                            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                                <div className="rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-100">
+                                    <p className="font-semibold">Stock por sucursal</p>
+                                    <p className="mt-1 text-xs">Siempre activo para este producto.</p>
+                                </div>
+                                <SelectField
+                                    label="Rastreo adicional"
+                                    name="inventory_tracking_mode"
+                                    value={data.inventory_tracking_mode}
+                                    onChange={(event) => setData('inventory_tracking_mode', event.target.value)}
+                                    error={errors.inventory_tracking_mode}
+                                >
+                                    <option value="global">No, solo stock por sucursal</option>
+                                    <option value="coil">Si, tambien por lote/unidad fisica</option>
+                                </SelectField>
+                            </div>
+                            {data.inventory_tracking_mode === 'coil' ? (
+                                <p className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-100">
+                                    Al vender o recibir este producto, el sistema pedira seleccionar o registrar el lote/unidad fisica correspondiente.
+                                </p>
+                            ) : (
+                                <p className="mt-3 rounded-md border border-slate-200 bg-white px-3 py-2 text-xs text-slate-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">
+                                    Recomendado para productos simples: focos, cascos, guantes, herramientas comunes y articulos sin vencimiento ni rollos.
+                                </p>
+                            )}
+                        </div>
+                    </div>
                     <SelectField label="Unidad base" name="product_unit_id" value={data.product_unit_id} onChange={(event) => selectUnit(event.target.value)} error={errors.product_unit_id} required>
                         <option value="">Seleccione unidad</option>
                         {units.map((unit) => (
