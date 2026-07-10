@@ -6,7 +6,10 @@ use App\Http\Controllers\Controller;
 use App\Modules\Inventory\Models\InventoryMovement;
 use App\Modules\Inventory\Models\Product;
 use App\Modules\Inventory\Models\ProductBranchStock;
+use App\Modules\Inventory\Models\ProductCategory;
 use App\Modules\Inventory\Models\ProductCoil;
+use App\Modules\Inventory\Models\ProductUnit;
+use App\Modules\Inventory\Support\ProductCodeGenerator;
 use App\Modules\Purchases\Http\Requests\StorePurchaseRequest;
 use App\Modules\Purchases\Models\Purchase;
 use App\Support\BranchAccess;
@@ -59,6 +62,7 @@ class PurchaseController extends Controller
             'branches' => UiCatalogCache::activeBranchesForUser($request->user()),
             'units' => UiCatalogCache::productUnits(),
             'categories' => UiCatalogCache::productCategories(),
+            'thicknesses' => UiCatalogCache::activeThicknesses(),
             'suppliers' => Inertia::defer(fn () => UiCatalogCache::activeSuppliers(), 'purchase-form-catalogs'),
             'products' => Inertia::defer(fn () => UiCatalogCache::activeProductsWithThickness(), 'purchase-form-catalogs'),
         ]);
@@ -67,13 +71,15 @@ class PurchaseController extends Controller
     public function store(StorePurchaseRequest $request): RedirectResponse
     {
         $purchase = DB::transaction(function () use ($request) {
-            $validatedItems = collect($request->validated('items'));
+            $branchId = $request->integer('branch_id');
+            $validatedItems = collect($request->validated('items'))
+                ->map(fn (array $item) => $this->resolvePurchaseProduct($item, $branchId));
             $products = Product::query()
                 ->with(['thickness', 'unit:id,symbol'])
                 ->whereIn('id', $validatedItems->pluck('product_id')->unique()->values())
                 ->get(['id', 'thickness_id', 'product_category_id', 'product_unit_id', 'name', 'base_unit', 'allowed_units', 'inventory_tracking_mode', 'attributes', 'custom_attributes'])
                 ->keyBy('id');
-            $this->ensureProductsEnabledForBranch($validatedItems->pluck('product_id')->all(), $request->integer('branch_id'));
+            $this->ensureProductsEnabledForBranch($validatedItems->pluck('product_id')->all(), $branchId);
 
             $items = $validatedItems->map(function (array $item) use ($products) {
                 $product = $products->get($item['product_id']);
@@ -117,6 +123,8 @@ class PurchaseController extends Controller
             foreach ($items as $item) {
                 $product = $products->get($item['product_id']);
                 $coil = null;
+
+                $product->update(['purchase_price' => $item['unit_cost']]);
 
                 if ($request->string('status')->toString() === 'received') {
                     if ($product->inventory_tracking_mode === Product::TRACKING_COIL) {
@@ -171,6 +179,8 @@ class PurchaseController extends Controller
 
             return $purchase;
         });
+
+        UiCatalogCache::forgetProductCatalogs();
 
         return redirect()->route('purchases.show', $purchase)->with('success', 'Compra registrada correctamente.');
     }
@@ -239,6 +249,55 @@ class PurchaseController extends Controller
             ->unique('code')
             ->values()
             ->all();
+    }
+
+    private function resolvePurchaseProduct(array $item, int $branchId): array
+    {
+        if (filled($item['product_id'] ?? null)) {
+            return $item;
+        }
+
+        $payload = $item['new_product'] ?? [];
+        $category = ProductCategory::query()
+            ->with('defaultUnit:id,name,symbol')
+            ->findOrFail($payload['product_category_id']);
+        $unit = ProductUnit::query()->find($payload['product_unit_id'] ?? $category->default_unit_id);
+        $baseUnit = $unit?->symbol ?? $category->defaultUnit?->symbol ?? 'unidad';
+        $tracking = $payload['inventory_tracking_mode'] ?? $category->default_tracking_mode ?? Product::TRACKING_GLOBAL;
+
+        $product = Product::query()->create([
+            'thickness_id' => $payload['thickness_id'] ?? null,
+            'product_category_id' => $category->id,
+            'product_unit_id' => $unit?->id,
+            'name' => $payload['name'],
+            'category' => $category->name,
+            'sku' => filled($payload['sku'] ?? null) ? $payload['sku'] : ProductCodeGenerator::sku($payload['name']),
+            'barcode' => filled($payload['barcode'] ?? null) ? $payload['barcode'] : ProductCodeGenerator::barcode(),
+            'inventory_tracking_mode' => in_array($tracking, [Product::TRACKING_GLOBAL, Product::TRACKING_COIL], true) ? $tracking : Product::TRACKING_GLOBAL,
+            'base_unit' => $baseUnit,
+            'attributes' => [],
+            'custom_attributes' => [],
+            'allowed_units' => [$baseUnit],
+            'purchase_price' => $item['unit_cost'] ?? 0,
+            'sale_price' => $payload['sale_price'] ?? 0,
+            'minimum_stock_meters' => $payload['minimum_stock_meters'] ?? 0,
+            'is_active' => true,
+        ]);
+
+        ProductBranchStock::query()->firstOrCreate([
+            'branch_id' => $branchId,
+            'product_id' => $product->id,
+        ], [
+            'available_meters' => 0,
+            'reserved_meters' => 0,
+            'is_enabled' => true,
+        ])->update(['is_enabled' => true]);
+
+        $item['product_id'] = $product->id;
+        $item['display_unit_label'] = $item['display_unit_label'] ?: $baseUnit;
+        $item['description'] = $item['description'] ?: $product->name;
+
+        return $item;
     }
 
     private function ensureProductsEnabledForBranch(array $productIds, int $branchId): void

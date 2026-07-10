@@ -3,6 +3,8 @@
 namespace App\Modules\Purchases\Http\Requests;
 
 use App\Modules\Inventory\Models\Product;
+use App\Modules\Inventory\Models\ProductCategory;
+use App\Modules\Inventory\Models\ProductUnit;
 use App\Support\BranchAccess;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -63,7 +65,17 @@ class StorePurchaseRequest extends FormRequest
             'purchase_date' => ['nullable', 'date'],
             'status' => ['required', 'in:draft,received'],
             'items' => ['required', 'array', 'min:1'],
-            'items.*.product_id' => ['required', 'integer', 'exists:products,id'],
+            'items.*.product_id' => ['nullable', 'integer', 'exists:products,id'],
+            'items.*.new_product' => ['nullable', 'array'],
+            'items.*.new_product.name' => ['nullable', 'string', 'max:255'],
+            'items.*.new_product.product_category_id' => ['nullable', 'integer', 'exists:product_categories,id'],
+            'items.*.new_product.product_unit_id' => ['nullable', 'integer', 'exists:product_units,id'],
+            'items.*.new_product.thickness_id' => ['nullable', 'integer', 'exists:thicknesses,id'],
+            'items.*.new_product.sku' => ['nullable', 'string', 'max:80', Rule::unique('products', 'sku')->whereNull('deleted_at')],
+            'items.*.new_product.barcode' => ['nullable', 'string', 'max:80', Rule::unique('products', 'barcode')->whereNull('deleted_at')],
+            'items.*.new_product.inventory_tracking_mode' => ['nullable', Rule::in([Product::TRACKING_GLOBAL, Product::TRACKING_COIL])],
+            'items.*.new_product.sale_price' => ['nullable', 'numeric', 'min:0', 'max:999999999999.9999'],
+            'items.*.new_product.minimum_stock_meters' => ['nullable', 'numeric', 'min:0', 'max:999999999999.999'],
             'items.*.weight_unit' => ['nullable', 'in:kg,ton'],
             'items.*.kilograms' => ['nullable', 'numeric', 'gt:0', 'max:999999999999.999'],
             'items.*.meters' => ['nullable', 'numeric', 'gt:0', 'max:999999999999.999'],
@@ -103,6 +115,10 @@ class StorePurchaseRequest extends FormRequest
             'status' => 'estado',
             'items' => 'items',
             'items.*.product_id' => 'producto del item',
+            'items.*.new_product.name' => 'nombre del producto nuevo',
+            'items.*.new_product.product_category_id' => 'categoria del producto nuevo',
+            'items.*.new_product.product_unit_id' => 'unidad del producto nuevo',
+            'items.*.new_product.inventory_tracking_mode' => 'rastreo del producto nuevo',
             'items.*.weight_unit' => 'unidad de peso del item',
             'items.*.kilograms' => 'peso del item',
             'items.*.meters' => 'cantidad calculada del item',
@@ -133,6 +149,53 @@ class StorePurchaseRequest extends FormRequest
 
             foreach ($items as $index => $item) {
                 $product = $products->get($item['product_id'] ?? null);
+                $newProduct = $item['new_product'] ?? [];
+                $hasNewProduct = blank($item['product_id'] ?? null) && filled($newProduct['name'] ?? null);
+
+                if (! $product && is_array($newProduct) && $newProduct !== [] && blank($newProduct['name'] ?? null)) {
+                    $validator->errors()->add("items.{$index}.new_product.name", 'Ingresa el nombre del producto nuevo.');
+
+                    continue;
+                }
+
+                if (! $product && ! $hasNewProduct) {
+                    $validator->errors()->add("items.{$index}.product_id", 'Selecciona un producto existente o registra los datos del producto nuevo.');
+
+                    continue;
+                }
+
+                if ($hasNewProduct) {
+                    $category = ProductCategory::query()->find($newProduct['product_category_id'] ?? null);
+                    $unit = ProductUnit::query()->find($newProduct['product_unit_id'] ?? ($category?->default_unit_id ?? null));
+
+                    if (! $category) {
+                        $validator->errors()->add("items.{$index}.new_product.product_category_id", 'Selecciona la categoria del producto nuevo.');
+                    }
+
+                    if (! $unit) {
+                        $validator->errors()->add("items.{$index}.new_product.product_unit_id", 'Selecciona la unidad base del producto nuevo.');
+                    }
+
+                    if (($newProduct['inventory_tracking_mode'] ?? $category?->default_tracking_mode) === Product::TRACKING_COIL) {
+                        if (blank($item['lot_number'] ?? null)) {
+                            $validator->errors()->add("items.{$index}.lot_number", 'El rastreo por lote/unidad requiere numero de lote.');
+                        }
+
+                        if (blank($item['coil_barcode'] ?? null)) {
+                            $validator->errors()->add("items.{$index}.coil_barcode", 'El rastreo por lote/unidad requiere barcode unico.');
+                        }
+                    }
+
+                    if (blank($item['meters'] ?? null) && blank($item['kilograms'] ?? null)) {
+                        $validator->errors()->add("items.{$index}.meters", 'Debes ingresar cantidad o peso para el producto nuevo.');
+                    }
+
+                    if (blank($item['meters'] ?? null) && filled($item['kilograms'] ?? null) && blank($newProduct['thickness_id'] ?? null)) {
+                        $validator->errors()->add("items.{$index}.new_product.thickness_id", 'Selecciona el espesor para convertir peso a metros en este producto nuevo.');
+                    }
+
+                    continue;
+                }
 
                 if (! $product) {
                     continue;
