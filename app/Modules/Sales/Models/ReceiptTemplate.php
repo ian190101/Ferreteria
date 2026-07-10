@@ -11,7 +11,7 @@ class ReceiptTemplate extends AuditableModel
 {
     use SoftDeletes;
 
-    public const PAPER_TYPES = ['letter', 'legal', 'full_page', 'thermal'];
+    public const PAPER_TYPES = ['letter', 'half_letter', 'legal', 'half_legal', 'full_page', 'thermal'];
 
     public const DOCUMENT_TYPES = ['both', 'quotation', 'sale_note'];
 

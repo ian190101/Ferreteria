@@ -7,10 +7,12 @@ import { promptAction } from '@/Utils/alerts';
 import { useEffect, useRef, useState } from 'react';
 
 const PAPER_SIZES = {
-    letter: { width: '216mm', page: 'letter' },
-    legal: { width: '216mm', page: 'legal' },
-    full_page: { width: '210mm', page: 'A4' },
-    thermal: { width: null, page: 'auto' },
+    letter: { width: '216mm', minHeight: '279mm', page: 'letter' },
+    half_letter: { width: '216mm', minHeight: '140mm', page: '216mm 140mm' },
+    legal: { width: '216mm', minHeight: '356mm', page: 'legal' },
+    half_legal: { width: '216mm', minHeight: '178mm', page: '216mm 178mm' },
+    full_page: { width: '210mm', minHeight: '297mm', page: 'A4' },
+    thermal: { width: null, minHeight: null, page: 'auto' },
 };
 
 const DEFAULT_ITEM_COLUMNS = [
@@ -42,6 +44,7 @@ export default function Show({ sale, template, paymentMethods = [], conversionRe
         .sort((left, right) => left.order - right.order);
     const paper = PAPER_SIZES[template.paper_type] ?? PAPER_SIZES.letter;
     const paperWidth = template.paper_type === 'thermal' ? `${template.thermal_width_mm ?? 80}mm` : paper.width;
+    const paperMinHeight = template.paper_type === 'thermal' ? null : paper.minHeight;
     const primary = layout.colors.primary;
     const secondary = layout.colors.secondary;
     const logoPath = template.use_branding ? branch.setting?.logo_path : layout.logo?.path;
@@ -108,7 +111,7 @@ export default function Show({ sale, template, paymentMethods = [], conversionRe
             observer.disconnect();
             window.removeEventListener('orientationchange', updatePreviewSize);
         };
-    }, [paperWidth, layout.margin_mm, layout.font_family, layout.font_size, sale.items.length, sections.length]);
+    }, [paperWidth, paperMinHeight, layout.margin_mm, layout.font_family, layout.font_size, sale.items.length, sections.length]);
 
     const submitPayment = (event) => {
         event.preventDefault();
@@ -253,6 +256,7 @@ export default function Show({ sale, template, paymentMethods = [], conversionRe
                             className="ticket-paper origin-top-left bg-white text-black shadow-lg"
                             style={{
                                 width: paperWidth,
+                                minHeight: paperMinHeight ?? undefined,
                                 padding: `${layout.margin_mm ?? 8}mm`,
                                 fontFamily: layout.font_family,
                                 fontSize: `${layout.font_size}px`,

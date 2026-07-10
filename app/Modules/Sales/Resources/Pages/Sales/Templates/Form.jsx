@@ -64,6 +64,15 @@ const DEFAULT_ITEM_COLUMNS = [
     { key: 'item_subtotal', label: 'Subtotal', show: true },
 ];
 
+const PAPER_PREVIEW_SIZES = {
+    letter: { width: '100%', minHeight: '520px' },
+    half_letter: { width: '100%', minHeight: '260px' },
+    legal: { width: '100%', minHeight: '660px' },
+    half_legal: { width: '100%', minHeight: '330px' },
+    full_page: { width: '100%', minHeight: '560px' },
+    thermal: { width: null, minHeight: '360px' },
+};
+
 export default function Form({ template, branches, defaultLayout, attributeFields = [] }) {
     const isEditing = Boolean(template);
     const [draggedSection, setDraggedSection] = useState(null);
@@ -184,7 +193,9 @@ export default function Form({ template, branches, defaultLayout, attributeField
                                 </SelectField>
                                 <SelectField label="Tipo de hoja" name="paper_type" value={data.paper_type} onChange={(event) => setData('paper_type', event.target.value)} error={errors.paper_type}>
                                     <option value="letter">Bond carta</option>
+                                    <option value="half_letter">Bond carta media hoja</option>
                                     <option value="legal">Oficio</option>
+                                    <option value="half_legal">Oficio media hoja</option>
                                     <option value="full_page">Hoja completa</option>
                                     <option value="thermal">Impresora termica</option>
                                 </SelectField>
@@ -393,7 +404,8 @@ function Panel({ title, children }) {
 }
 
 function Preview({ data, attributeFields }) {
-    const width = data.paper_type === 'thermal' ? `${data.thermal_width_mm}mm` : '100%';
+    const paper = PAPER_PREVIEW_SIZES[data.paper_type] ?? PAPER_PREVIEW_SIZES.letter;
+    const width = data.paper_type === 'thermal' ? `${data.thermal_width_mm}mm` : paper.width;
     const logo = data.layout.logo ?? {};
     const logoSrc = assetUrl(logo.path);
     const primary = data.layout.colors.primary;
@@ -408,7 +420,7 @@ function Preview({ data, attributeFields }) {
                     style={{
                         width,
                         maxWidth: '100%',
-                        minHeight: data.paper_type === 'thermal' ? '360px' : '520px',
+                        minHeight: paper.minHeight,
                         fontFamily: data.layout.font_family,
                         fontSize: `${data.layout.font_size}px`,
                     }}
