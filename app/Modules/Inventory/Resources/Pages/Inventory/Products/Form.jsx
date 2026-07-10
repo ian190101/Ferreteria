@@ -391,36 +391,48 @@ export default function Form({ product, thicknesses, categories, units, branches
                             {(data.custom_attributes ?? []).length ? (
                                 <div className="mt-4 space-y-3">
                                     {data.custom_attributes.map((attribute, index) => (
-                                        <div key={index} className="grid gap-3 rounded-md border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-900 sm:grid-cols-6">
-                                            <FormField label="Nombre" name={`custom_attributes.${index}.name`} value={attribute.name ?? ''} onChange={(event) => updateCustomAttribute(index, 'name', event.target.value)} error={errors[`custom_attributes.${index}.name`]} />
-                                            <FormField label="Codigo" name={`custom_attributes.${index}.code`} value={attribute.code ?? ''} onChange={(event) => updateCustomAttribute(index, 'code', event.target.value)} error={errors[`custom_attributes.${index}.code`]} placeholder="Automatico si se deja vacio" />
-                                            <SelectField label="Tipo" name={`custom_attributes.${index}.type`} value={attribute.type ?? 'text'} onChange={(event) => updateCustomAttribute(index, 'type', event.target.value)} error={errors[`custom_attributes.${index}.type`]}>
+                                        <div key={index} className="grid gap-3 rounded-md border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-900 sm:grid-cols-2 xl:grid-cols-12">
+                                            <div className="xl:col-span-3">
+                                                <FormField label="Nombre" name={`custom_attributes.${index}.name`} value={attribute.name ?? ''} onChange={(event) => updateCustomAttribute(index, 'name', event.target.value)} error={errors[`custom_attributes.${index}.name`]} />
+                                            </div>
+                                            <div className="xl:col-span-2">
+                                                <FormField label="Codigo" name={`custom_attributes.${index}.code`} value={attribute.code ?? ''} onChange={(event) => updateCustomAttribute(index, 'code', event.target.value)} error={errors[`custom_attributes.${index}.code`]} placeholder="Automatico si se deja vacio" />
+                                            </div>
+                                            <div className="xl:col-span-2">
+                                                <SelectField label="Tipo" name={`custom_attributes.${index}.type`} value={attribute.type ?? 'text'} onChange={(event) => updateCustomAttribute(index, 'type', event.target.value)} error={errors[`custom_attributes.${index}.type`]}>
                                                 <option value="text">Texto</option>
                                                 <option value="number">Numerico</option>
                                                 <option value="boolean">Si/No</option>
-                                            </SelectField>
-                                            {attribute.type === 'boolean' ? (
-                                                <SelectField label="Valor" name={`custom_attributes.${index}.value`} value={String(attribute.value ?? '')} onChange={(event) => updateCustomAttribute(index, 'value', event.target.value)} error={errors[`custom_attributes.${index}.value`]}>
-                                                    <option value="">Sin definir</option>
-                                                    <option value="1">Si</option>
-                                                    <option value="0">No</option>
                                                 </SelectField>
-                                            ) : (
-                                                <FormField label="Valor" name={`custom_attributes.${index}.value`} type={attribute.type === 'number' ? 'number' : 'text'} step={attribute.type === 'number' ? '0.01' : undefined} value={attribute.value ?? ''} onChange={(event) => updateCustomAttribute(index, 'value', event.target.value)} error={errors[`custom_attributes.${index}.value`]} />
-                                            )}
-                                            <SelectField label="Usa unidad" name={`custom_attributes.${index}.has_unit`} value={attribute.has_unit ? '1' : '0'} onChange={(event) => updateCustomAttribute(index, 'has_unit', event.target.value === '1')} error={errors[`custom_attributes.${index}.has_unit`]}>
-                                                <option value="0">No</option>
-                                                <option value="1">Si</option>
-                                            </SelectField>
-                                            <div className="flex gap-2">
-                                                <div className="min-w-0 flex-1">
-                                                    <SelectField label="Unidad" name={`custom_attributes.${index}.unit`} value={attribute.unit ?? ''} onChange={(event) => updateCustomAttribute(index, 'unit', event.target.value)} error={errors[`custom_attributes.${index}.unit`]} disabled={!attribute.has_unit}>
-                                                        <option value="">Sin unidad</option>
-                                                        {units.map((unit) => <option key={unit.id} value={unit.symbol}>{unit.name} ({unit.symbol})</option>)}
+                                            </div>
+                                            {attribute.type === 'boolean' ? (
+                                                <div className="xl:col-span-2">
+                                                    <SelectField label="Valor" name={`custom_attributes.${index}.value`} value={String(attribute.value ?? '')} onChange={(event) => updateCustomAttribute(index, 'value', event.target.value)} error={errors[`custom_attributes.${index}.value`]}>
+                                                        <option value="">Sin definir</option>
+                                                        <option value="1">Si</option>
+                                                        <option value="0">No</option>
                                                     </SelectField>
                                                 </div>
-                                                <button type="button" onClick={() => removeCustomAttribute(index)} className="self-end rounded-md border border-red-200 px-3 py-2 text-sm text-red-600 dark:border-red-900/60">
-                                                    Quitar
+                                            ) : (
+                                                <div className="xl:col-span-2">
+                                                    <FormField label="Valor" name={`custom_attributes.${index}.value`} type={attribute.type === 'number' ? 'number' : 'text'} step={attribute.type === 'number' ? '0.01' : undefined} value={attribute.value ?? ''} onChange={(event) => updateCustomAttribute(index, 'value', event.target.value)} error={errors[`custom_attributes.${index}.value`]} />
+                                                </div>
+                                            )}
+                                            <div className="xl:col-span-1">
+                                                <SelectField label="Usa unidad" name={`custom_attributes.${index}.has_unit`} value={attribute.has_unit ? '1' : '0'} onChange={(event) => updateCustomAttribute(index, 'has_unit', event.target.value === '1')} error={errors[`custom_attributes.${index}.has_unit`]}>
+                                                    <option value="0">No</option>
+                                                    <option value="1">Si</option>
+                                                </SelectField>
+                                            </div>
+                                            <div className="xl:col-span-2">
+                                                <SelectField label="Unidad" name={`custom_attributes.${index}.unit`} value={attribute.unit ?? ''} onChange={(event) => updateCustomAttribute(index, 'unit', event.target.value)} error={errors[`custom_attributes.${index}.unit`]} disabled={!attribute.has_unit}>
+                                                    <option value="">Sin unidad</option>
+                                                    {units.map((unit) => <option key={unit.id} value={unit.symbol}>{unit.name} ({unit.symbol})</option>)}
+                                                </SelectField>
+                                            </div>
+                                            <div className="flex items-end sm:col-span-2 xl:col-span-12">
+                                                <button type="button" onClick={() => removeCustomAttribute(index)} className="w-full rounded-md border border-red-200 px-3 py-2 text-sm font-semibold text-red-600 transition hover:bg-red-50 dark:border-red-900/60 dark:hover:bg-red-950/30 sm:w-auto">
+                                                    Quitar caracteristica
                                                 </button>
                                             </div>
                                         </div>
