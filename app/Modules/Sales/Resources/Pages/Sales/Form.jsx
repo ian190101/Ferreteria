@@ -83,7 +83,7 @@ export default function Form({
             display_unit_label: productUnitSymbol(product),
             item_attributes: defaultItemAttributes(product),
             quantity_mode: 'direct',
-            meters: item.display_quantity || '1',
+            meters: '',
             price_mode: 'meter',
             price_per_ton: '',
             unit_price: productSalePrice(product),
@@ -269,7 +269,7 @@ export default function Form({
                                             </SelectField>
                                         </>
                                     ) : item.quantity_mode === 'length' ? (
-                                        <FormField label={`Cantidad base (${productUnitSymbol(product)})`} name={`items.${index}.meters`} type="number" step={decimalStep(decimalFormat.decimalsFor(quantityKind(product)))} value={baseQuantityFieldValue(item, product, summary, decimalFormat)} onChange={(event) => updateItem(index, 'meters', event.target.value)} error={errors[`items.${index}.meters`]} required />
+                                        <FormField label={`Largo por unidad (${productUnitSymbol(product)})`} name={`items.${index}.meters`} type="number" step={decimalStep(decimalFormat.decimalsFor(quantityKind(product)))} value={baseQuantityFieldValue(item)} onChange={(event) => updateItem(index, 'meters', event.target.value)} error={errors[`items.${index}.meters`]} required />
                                     ) : (
                                         <div className="rounded-md border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300">
                                             Se guardara {decimalFormat.format(item.display_quantity || 0, quantityKindForItem(item, product, units))} {item.display_unit_label || productUnitSymbol(product)}
@@ -380,7 +380,7 @@ function saleItemFromQuotation(item, products, canOverridePrices) {
         display_unit_label: item.display_unit_label ?? item.unit_label ?? productUnitSymbol(product),
         item_attributes: item.item_attributes ?? defaultItemAttributes(product),
         quantity_mode: calculationMode,
-        meters: item.meters ?? item.display_quantity ?? '1',
+        meters: calculationMode === 'length' ? storedLengthPerUnit(item) : (item.meters ?? item.display_quantity ?? '1'),
         price_mode: 'meter',
         unit_price: unitPrice,
         discount_amount: item.discount_amount ?? '0',
@@ -502,7 +502,7 @@ function attributeValue(item, attribute) {
 
 function baseQuantityFromItem(item, product) {
     const quantity = Number(item.display_quantity || 0);
-    const length = Number(attributeValue(item, { code: 'largo' }) || product?.attributes?.largo || 0);
+    const length = Number(item.meters || 0);
 
     if (item.quantity_mode === 'length' && length > 0) {
         return quantity * length;
@@ -612,12 +612,15 @@ function advanceOptionLabel(option) {
     return `${option.name} - ${Number(option.percentage ?? 0).toFixed(2)}%`;
 }
 
-function baseQuantityFieldValue(item, product, summary, decimalFormat) {
-    if (item.quantity_mode === 'length' && Number(attributeValue(item, { code: 'largo' }) || product?.attributes?.largo || 0) > 0) {
-        return summary.meters ? decimalFormat.fixed(summary.meters, 'measure') : '';
-    }
+function baseQuantityFieldValue(item) {
+    return item.meters ?? '';
+}
 
-    return summary.meters ? decimalFormat.fixed(summary.meters, 'measure') : item.meters;
+function storedLengthPerUnit(item) {
+    const total = Number(item.meters || 0);
+    const quantity = Number(item.display_quantity || 0);
+
+    return total > 0 && quantity > 0 ? String(total / quantity) : '';
 }
 
 function metersFromWeight(weight, unit, kgPerMeter) {

@@ -53,7 +53,7 @@ export default function Form({ branches = [], suppliers = [], units = [], catego
             display_unit_label: productUnitSymbol(product),
             item_attributes: defaultItemAttributes(product),
             calculation_mode: 'direct',
-            meters: item.display_quantity || '1',
+            meters: '',
         } : item));
 
         setData('items', mergeDuplicateItems(items, index, productMap));
@@ -158,7 +158,7 @@ export default function Form({ branches = [], suppliers = [], units = [], catego
                                                 </SelectField>
                                             </>
                                         ) : item.calculation_mode === 'length' ? (
-                                            <FormField label={`Cantidad base (${productUnitSymbol(product)})`} name={`items.${index}.meters`} type="number" step={decimalStep(decimalFormat.decimalsFor(quantityKind(product)))} value={baseQuantityFieldValue(item, product, summary, decimalFormat)} placeholder={convertedMeters(item)} onChange={(event) => updateItem(index, 'meters', event.target.value)} error={errors[`items.${index}.meters`]} />
+                                            <FormField label={`Largo por unidad (${productUnitSymbol(product)})`} name={`items.${index}.meters`} type="number" step={decimalStep(decimalFormat.decimalsFor(quantityKind(product)))} value={baseQuantityFieldValue(item)} placeholder={convertedMeters(item)} onChange={(event) => updateItem(index, 'meters', event.target.value)} error={errors[`items.${index}.meters`]} />
                                         ) : (
                                             <div className="rounded-md border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300">
                                                 Se guardara {decimalFormat.format(item.display_quantity || 0, quantityKindForItem(item, product, units))} {item.display_unit_label || productUnitSymbol(product)}
@@ -347,7 +347,7 @@ function attributeValue(item, attribute) {
 
 function baseQuantityFromItem(item, product) {
     const quantity = Number(item.display_quantity || 0);
-    const length = Number(attributeValue(item, { code: 'largo' }) || product?.attributes?.largo || 0);
+    const length = Number(item.meters || 0);
 
     if (item.calculation_mode === 'length' && length > 0) {
         return quantity * length;
@@ -356,12 +356,8 @@ function baseQuantityFromItem(item, product) {
     return quantity || Number(item.meters || 0);
 }
 
-function baseQuantityFieldValue(item, product, summary, decimalFormat) {
-    if (item.calculation_mode === 'length' && Number(attributeValue(item, { code: 'largo' }) || product?.attributes?.largo || 0) > 0) {
-        return summary.meters ? decimalFormat.fixed(summary.meters, 'measure') : '';
-    }
-
-    return summary.meters ? decimalFormat.fixed(summary.meters, 'measure') : item.meters;
+function baseQuantityFieldValue(item) {
+    return item.meters ?? '';
 }
 
 function productUnitSymbol(product) {
