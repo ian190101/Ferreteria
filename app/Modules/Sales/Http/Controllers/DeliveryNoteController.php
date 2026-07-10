@@ -61,9 +61,10 @@ class DeliveryNoteController extends Controller
             ->when(true, fn ($query) => BranchAccess::apply($query, $request->user()))
             ->where('document_type', 'sale_note')
             ->where('status', '!=', 'void')
+            ->where('requires_delivery', true)
             ->latest('sold_at')
             ->limit(100)
-            ->get(['id', 'branch_id', 'receipt_number', 'customer_name', 'status']);
+            ->get(['id', 'branch_id', 'receipt_number', 'customer_name', 'status', 'requires_delivery']);
 
         return Inertia::render('Sales/Deliveries/Index', [
             'deliveries' => $deliveries,
@@ -83,6 +84,7 @@ class DeliveryNoteController extends Controller
             $sale = Sale::query()
                 ->where('document_type', 'sale_note')
                 ->where('status', '!=', 'void')
+                ->where('requires_delivery', true)
                 ->lockForUpdate()
                 ->findOrFail($request->integer('sale_id'));
             $driver = $request->filled('delivery_driver_id') ? DeliveryDriver::query()->find($request->integer('delivery_driver_id')) : null;
@@ -211,7 +213,7 @@ class DeliveryNoteController extends Controller
     {
         return SaleItem::query()
             ->with([
-                'sale:id,branch_id,receipt_number,customer_name,status,document_type',
+                'sale:id,branch_id,receipt_number,customer_name,status,document_type,requires_delivery',
                 'product:id,name,sku,inventory_tracking_mode',
                 'coil:id,barcode,lot_number',
             ])
@@ -220,7 +222,8 @@ class DeliveryNoteController extends Controller
             ->whereHas('sale', fn ($query) => $query
                 ->when(true, fn ($saleQuery) => BranchAccess::apply($saleQuery, $request->user()))
                 ->where('document_type', 'sale_note')
-                ->where('status', '!=', 'void'))
+                ->where('status', '!=', 'void')
+                ->where('requires_delivery', true))
             ->latest('id')
             ->limit(300)
             ->get()

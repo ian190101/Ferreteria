@@ -62,6 +62,12 @@ class StoreDeliveryNoteRequest extends FormRequest
                 return;
             }
 
+            if (! $sale->requires_delivery) {
+                $validator->errors()->add('sale_id', 'Esta nota de venta fue registrada como entrega inmediata y no requiere despacho.');
+
+                return;
+            }
+
             if ($message = BranchAccess::validate($this->user(), (int) $sale->branch_id)) {
                 $validator->errors()->add('sale_id', $message);
 

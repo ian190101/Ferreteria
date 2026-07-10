@@ -38,6 +38,7 @@ class Sale extends AuditableModel
         'balance_due',
         'total',
         'status',
+        'requires_delivery',
         'terms',
         'internal_notes',
     ];
@@ -51,6 +52,7 @@ class Sale extends AuditableModel
         'advance_amount' => 'decimal:2',
         'balance_due' => 'decimal:2',
         'total' => 'decimal:2',
+        'requires_delivery' => 'boolean',
     ];
 
     public function branch(): BelongsTo

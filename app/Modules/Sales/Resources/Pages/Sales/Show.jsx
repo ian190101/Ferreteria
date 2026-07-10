@@ -3,7 +3,7 @@ import { assetUrl } from '@/Utils/assets';
 import FormField from '../../../../Shared/Resources/Components/FormField';
 import SelectField from '../../../../Shared/Resources/Components/SelectField';
 import { Head, Link, router, useForm, usePage } from '@inertiajs/react';
-import { promptAction } from '@/Utils/alerts';
+import { confirmAction, promptAction } from '@/Utils/alerts';
 import { useEffect, useRef, useState } from 'react';
 
 const PAPER_SIZES = {
@@ -239,8 +239,12 @@ export default function Show({ sale, template, paymentMethods = [], conversionRe
                     </section>
                 ) : null}
 
-                {sale.document_type === 'sale_note' ? (
+                {sale.document_type === 'sale_note' && sale.requires_delivery ? (
                     <DeliveryProgress sale={sale} />
+                ) : sale.document_type === 'sale_note' ? (
+                    <section className="print-hidden mx-auto mb-4 max-w-4xl rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800 shadow-sm dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-100">
+                        Esta nota fue registrada como entrega inmediata, por eso no entra al modulo de despachos.
+                    </section>
                 ) : null}
 
                 <div ref={previewShellRef} className="ticket-preview-shell mx-auto max-w-full overflow-hidden print:contents">
@@ -641,9 +645,18 @@ async function convertQuotation(sale) {
         return;
     }
 
+    const requiresDelivery = await confirmAction({
+        title: 'Tipo de entrega',
+        text: 'Selecciona si esta nota de venta debe pasar al modulo de despachos.',
+        confirmButtonText: 'Requiere despacho',
+        cancelButtonText: 'Entrega inmediata',
+        icon: 'question',
+    });
+
     router.post(route('sales.convert', sale.id), {
         receipt_number: receiptNumber,
         sold_at: null,
+        requires_delivery: requiresDelivery,
     }, {
         preserveScroll: true,
         preserveState: false,

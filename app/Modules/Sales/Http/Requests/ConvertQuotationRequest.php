@@ -18,6 +18,7 @@ class ConvertQuotationRequest extends FormRequest
         return [
             'receipt_number' => ['nullable', 'string', 'max:80', 'unique:sales,receipt_number'],
             'sold_at' => ['nullable', 'date'],
+            'requires_delivery' => ['nullable', 'boolean'],
         ];
     }
 

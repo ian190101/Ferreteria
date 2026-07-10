@@ -57,6 +57,7 @@ export default function Form({
         customer_document: '',
         customer_contact: '',
         sold_at: '',
+        requires_delivery: false,
         advance_amount_input: '',
         terms: '',
         internal_notes: '',
@@ -137,6 +138,7 @@ export default function Form({
             customer_name: quotation.customer_name ?? '',
             customer_document: quotation.customer_document ?? '',
             customer_contact: quotation.customer_contact ?? '',
+            requires_delivery: false,
             advance_amount_input: quotation.advance_option?.type === 'amount' ? quotation.advance_amount ?? '' : '',
             terms: quotation.terms ?? '',
             internal_notes: `Generada desde cotizacion ${quotation.receipt_number}`,
@@ -188,6 +190,12 @@ export default function Form({
                         <SelectField label="Tipo de venta" name="sale_type_id" value={data.sale_type_id} onChange={(event) => setData('sale_type_id', event.target.value)} error={errors.sale_type_id}>
                             {saleTypes.map((type) => <option key={type.id} value={type.id}>{type.name}</option>)}
                         </SelectField>
+                        {documentType === 'sale_note' ? (
+                            <SelectField label="Entrega" name="requires_delivery" value={data.requires_delivery ? '1' : '0'} onChange={(event) => setData('requires_delivery', event.target.value === '1')} error={errors.requires_delivery}>
+                                <option value="0">Entrega inmediata, sin despacho</option>
+                                <option value="1">Requiere despacho posterior</option>
+                            </SelectField>
+                        ) : null}
                         <SelectField label="Cliente registrado" name="customer_id" value={data.customer_id} onChange={(event) => selectCustomer(event.target.value)} error={errors.customer_id}>
                             <option value="">Cliente manual</option>
                             {customers.map((customer) => (

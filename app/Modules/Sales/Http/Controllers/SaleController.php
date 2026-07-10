@@ -49,6 +49,7 @@ class SaleController extends Controller
                 'total',
                 'balance_due',
                 'status',
+                'requires_delivery',
             ])
             ->with(['branch:id,name', 'user:id,name', 'saleType:id,name', 'currency:id,name,code,symbol'])
             ->when(true, fn ($query) => BranchAccess::apply($query, $request->user()))
@@ -150,6 +151,7 @@ class SaleController extends Controller
                 'total' => $total,
                 'sold_at' => now(),
                 'status' => $request->string('document_type')->toString() === 'quotation' ? 'quoted' : 'issued',
+                'requires_delivery' => $request->string('document_type')->toString() === 'sale_note' && $request->boolean('requires_delivery'),
             ]);
 
             $sale->items()->createMany($items->all());
@@ -277,6 +279,7 @@ class SaleController extends Controller
                 'balance_due' => $quotation->total,
                 'total' => $quotation->total,
                 'status' => 'issued',
+                'requires_delivery' => $request->boolean('requires_delivery'),
                 'terms' => $quotation->terms,
                 'internal_notes' => trim('Generada desde cotizacion '.$quotation->receipt_number),
             ]);
