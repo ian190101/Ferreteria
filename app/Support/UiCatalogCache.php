@@ -65,6 +65,7 @@ class UiCatalogCache
             ->with([
                 'thickness:id,name,kg_to_meter_factor,kg_per_meter',
                 'unit:id,name,symbol,kind',
+                'unitConversions.unit:id,name,symbol,kind',
                 'branchStocks:id,product_id,branch_id,is_enabled',
             ])
             ->where('is_active', true)

@@ -87,9 +87,10 @@ class ProductController extends Controller
     {
         DB::transaction(function () use ($request) {
             $validated = $request->validated();
-            $product = Product::query()->create(Arr::except($validated, ['branch_scope', 'branch_ids']));
+            $product = Product::query()->create(Arr::except($validated, ['branch_scope', 'branch_ids', 'unit_conversions']));
 
             $this->syncProductBranches($product, $request, $validated);
+            $this->syncUnitConversions($product, $validated['unit_conversions'] ?? []);
         });
 
         UiCatalogCache::forgetProductCatalogs();
@@ -102,7 +103,7 @@ class ProductController extends Controller
     public function edit(Product $product): Response
     {
         return Inertia::render('Inventory/Products/Form', [
-            'product' => $product->load(['thickness', 'productCategory', 'unit', 'branchStocks:id,product_id,branch_id,is_enabled']),
+            'product' => $product->load(['thickness', 'productCategory', 'unit', 'unitConversions.unit:id,name,symbol,kind', 'branchStocks:id,product_id,branch_id,is_enabled']),
             'thicknesses' => $this->activeThicknesses(),
             'categories' => $this->activeCategories(),
             'units' => $this->activeUnits(),
@@ -114,8 +115,9 @@ class ProductController extends Controller
     {
         DB::transaction(function () use ($request, $product) {
             $validated = $request->validated();
-            $product->update(Arr::except($validated, ['branch_scope', 'branch_ids']));
+            $product->update(Arr::except($validated, ['branch_scope', 'branch_ids', 'unit_conversions']));
             $this->syncProductBranches($product, $request, $validated);
+            $this->syncUnitConversions($product, $validated['unit_conversions'] ?? []);
         });
 
         UiCatalogCache::forgetProductCatalogs();
@@ -180,5 +182,23 @@ class ProductController extends Controller
                     $stock->update(['is_enabled' => $enabledBranchIds->contains((int) $branch->id)]);
                 }
             });
+    }
+
+    private function syncUnitConversions(Product $product, array $conversions): void
+    {
+        $activeUnitIds = collect($conversions)->pluck('product_unit_id')->map(fn ($id) => (int) $id)->all();
+
+        $product->unitConversions()
+            ->whereNotIn('product_unit_id', $activeUnitIds ?: [-1])
+            ->update(['is_active' => false]);
+
+        foreach ($conversions as $conversion) {
+            $product->unitConversions()->updateOrCreate([
+                'product_unit_id' => $conversion['product_unit_id'],
+            ], [
+                'factor_to_base' => $conversion['factor_to_base'],
+                'is_active' => $conversion['is_active'] ?? true,
+            ]);
+        }
     }
 }

@@ -40,6 +40,10 @@ class StoreProductRequest extends FormRequest
             'custom_attributes.*.unit' => ['nullable', 'string', 'max:24'],
             'allowed_units' => ['nullable', 'array'],
             'allowed_units.*' => ['string', 'max:24'],
+            'unit_conversions' => ['nullable', 'array'],
+            'unit_conversions.*.product_unit_id' => ['required_with:unit_conversions', 'integer', 'exists:product_units,id'],
+            'unit_conversions.*.factor_to_base' => ['required_with:unit_conversions', 'numeric', 'gt:0', 'max:999999999999.999999'],
+            'unit_conversions.*.is_active' => ['nullable', 'boolean'],
             'purchase_price' => ['required', 'numeric', 'min:0', 'max:999999999999.9999'],
             'sale_price' => ['required', 'numeric', 'min:0', 'max:999999999999.9999'],
             'minimum_stock_meters' => ['required', 'numeric', 'min:0', 'max:999999999999.999'],
@@ -72,6 +76,7 @@ class StoreProductRequest extends FormRequest
             'product_unit_id' => $unit?->id ?? $this->input('product_unit_id'),
             'attributes' => $this->normalizedAttributes(),
             'custom_attributes' => $this->normalizedCustomAttributes(),
+            'unit_conversions' => $this->normalizedUnitConversions($unit?->id),
             'allowed_units' => $this->normalizedAllowedUnits($unit?->symbol),
         ]);
     }
@@ -122,8 +127,12 @@ class StoreProductRequest extends FormRequest
 
     private function normalizedAllowedUnits(?string $baseSymbol): array
     {
+        $conversionUnitSymbols = ProductUnit::query()
+            ->whereIn('id', collect($this->input('unit_conversions', []))->pluck('product_unit_id')->filter()->unique()->values())
+            ->pluck('symbol');
+
         $symbols = ProductUnit::query()
-            ->whereIn('symbol', collect($this->input('allowed_units', []))->push($baseSymbol)->filter()->unique()->values())
+            ->whereIn('symbol', collect($this->input('allowed_units', []))->merge($conversionUnitSymbols)->push($baseSymbol)->filter()->unique()->values())
             ->pluck('symbol')
             ->push($baseSymbol)
             ->filter()
@@ -131,6 +140,21 @@ class StoreProductRequest extends FormRequest
             ->values();
 
         return $symbols->all();
+    }
+
+    private function normalizedUnitConversions(?int $baseUnitId): array
+    {
+        return collect($this->input('unit_conversions', []))
+            ->filter(fn ($row) => is_array($row) && filled($row['product_unit_id'] ?? null))
+            ->map(fn (array $row) => [
+                'product_unit_id' => (int) $row['product_unit_id'],
+                'factor_to_base' => (float) ($row['factor_to_base'] ?? 1),
+                'is_active' => filter_var($row['is_active'] ?? true, FILTER_VALIDATE_BOOLEAN),
+            ])
+            ->reject(fn (array $row) => $baseUnitId && $row['product_unit_id'] === $baseUnitId)
+            ->unique('product_unit_id')
+            ->values()
+            ->all();
     }
 
     private function validateBranchScope(Validator $validator): void

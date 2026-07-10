@@ -33,6 +33,7 @@ export default function Form({ product, thicknesses, categories, units, branches
         attributes: product?.attributes ?? {},
         custom_attributes: normalizeCustomAttributes(product?.custom_attributes ?? []),
         allowed_units: normalizeAllowedUnits(product?.allowed_units, initialUnit),
+        unit_conversions: normalizeUnitConversions(product?.unit_conversions ?? product?.unitConversions ?? []),
         purchase_price: product?.purchase_price ?? '0',
         sale_price: product?.sale_price ?? '0',
         minimum_stock_meters: product?.minimum_stock_meters ?? '0',
@@ -89,6 +90,7 @@ export default function Form({ product, thicknesses, categories, units, branches
             product_unit_id: unitId,
             base_unit: unit?.symbol ?? data.base_unit,
             allowed_units: normalizeAllowedUnits(data.allowed_units, unit),
+            unit_conversions: (data.unit_conversions ?? []).filter((row) => Number(row.product_unit_id) !== Number(unitId)),
         });
     };
 
@@ -135,6 +137,18 @@ export default function Form({ product, thicknesses, categories, units, branches
         }
 
         setData('allowed_units', normalizeAllowedUnits([...current], selectedUnit));
+    };
+    const addUnitConversion = () => setData('unit_conversions', [
+        ...(data.unit_conversions ?? []),
+        { product_unit_id: '', factor_to_base: '1', is_active: true },
+    ]);
+    const updateUnitConversion = (index, field, value) => {
+        setData('unit_conversions', (data.unit_conversions ?? []).map((row, rowIndex) => (
+            rowIndex === index ? { ...row, [field]: value } : row
+        )));
+    };
+    const removeUnitConversion = (index) => {
+        setData('unit_conversions', (data.unit_conversions ?? []).filter((_, rowIndex) => rowIndex !== index));
     };
 
     return (
@@ -188,7 +202,7 @@ export default function Form({ product, thicknesses, categories, units, branches
                         onChange={(event) => setData('inventory_tracking_mode', event.target.value)}
                         error={errors.inventory_tracking_mode}
                     >
-                        <option value="global">Global por sucursal</option>
+                        <option value="global">Stock por sucursal</option>
                         <option value="coil">Individual por lote/unidad fisica</option>
                     </SelectField>
                     <SelectField label="Unidad base" name="product_unit_id" value={data.product_unit_id} onChange={(event) => selectUnit(event.target.value)} error={errors.product_unit_id} required>
@@ -223,6 +237,41 @@ export default function Form({ product, thicknesses, categories, units, branches
                                 })}
                             </div>
                             {errors.allowed_units ? <p className="mt-2 text-sm text-red-600">{errors.allowed_units}</p> : null}
+                        </div>
+                    </div>
+                    <div className="sm:col-span-2">
+                        <div className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-950/40">
+                            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                                <div>
+                                    <h3 className="text-sm font-semibold text-slate-950 dark:text-white">Equivalencias de unidades</h3>
+                                    <p className="text-xs text-slate-500 dark:text-slate-400">Define cuanto descuenta del stock base cada unidad comercial. Ejemplo: 1 caja = 12 {selectedUnit?.symbol ?? data.base_unit}.</p>
+                                </div>
+                                <button type="button" onClick={addUnitConversion} className="rounded-md border border-brand-primary px-3 py-2 text-sm font-semibold text-brand-primary">
+                                    Agregar equivalencia
+                                </button>
+                            </div>
+                            {(data.unit_conversions ?? []).length ? (
+                                <div className="mt-4 space-y-3">
+                                    {data.unit_conversions.map((row, index) => (
+                                        <div key={index} className="grid gap-3 rounded-md border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-900 sm:grid-cols-[1fr_1fr_auto]">
+                                            <SelectField label="Unidad comercial" name={`unit_conversions.${index}.product_unit_id`} value={row.product_unit_id ?? ''} onChange={(event) => updateUnitConversion(index, 'product_unit_id', event.target.value)} error={errors[`unit_conversions.${index}.product_unit_id`]}>
+                                                <option value="">Seleccione unidad</option>
+                                                {units
+                                                    .filter((unit) => Number(unit.id) !== Number(data.product_unit_id))
+                                                    .map((unit) => <option key={unit.id} value={unit.id}>{unit.name} ({unit.symbol})</option>)}
+                                            </SelectField>
+                                            <FormField label={`Equivale a (${selectedUnit?.symbol ?? data.base_unit})`} name={`unit_conversions.${index}.factor_to_base`} type="number" step="0.000001" min="0.000001" value={row.factor_to_base ?? '1'} onChange={(event) => updateUnitConversion(index, 'factor_to_base', event.target.value)} error={errors[`unit_conversions.${index}.factor_to_base`]} />
+                                            <button type="button" onClick={() => removeUnitConversion(index)} className="self-end rounded-md border border-red-200 px-3 py-2 text-sm text-red-600 dark:border-red-900/60">
+                                                Quitar
+                                            </button>
+                                        </div>
+                                    ))}
+                                </div>
+                            ) : (
+                                <p className="mt-4 rounded-lg border border-dashed border-slate-300 px-4 py-3 text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
+                                    Sin equivalencias adicionales. La venta o compra en unidad base descuenta 1 a 1.
+                                </p>
+                            )}
                         </div>
                     </div>
                     <FormField label="Precio compra" name="purchase_price" type="number" step={decimalStep(decimalFormat.decimalsFor('cost'))} min="0" value={data.purchase_price} onChange={(event) => setData('purchase_price', event.target.value)} error={errors.purchase_price} required />
@@ -387,6 +436,14 @@ function normalizeCustomAttributes(attributes) {
         value: attribute.value ?? '',
         has_unit: Boolean(attribute.has_unit ?? attribute.unit),
         unit: attribute.unit ?? '',
+    }));
+}
+
+function normalizeUnitConversions(conversions) {
+    return (conversions ?? []).map((conversion) => ({
+        product_unit_id: conversion.product_unit_id ?? conversion.unit?.id ?? '',
+        factor_to_base: conversion.factor_to_base ?? '1',
+        is_active: conversion.is_active ?? true,
     }));
 }
 

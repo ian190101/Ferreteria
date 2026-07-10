@@ -362,7 +362,7 @@ function baseQuantityFromItem(item, product) {
         return quantity * length;
     }
 
-    return quantity || Number(item.meters || 0);
+    return quantity ? quantity * unitFactorToBase(item.display_unit_label, product) : Number(item.meters || 0);
 }
 
 function baseQuantityFieldValue(item) {
@@ -390,11 +390,30 @@ function quantityKindForItem(item, product, units) {
 
 function documentUnits(units, product) {
     const productSymbol = productUnitSymbol(product);
-    const allowedSymbols = product?.allowed_units?.length ? product.allowed_units : [productSymbol];
+    const conversionSymbols = (product?.unit_conversions ?? product?.unitConversions ?? [])
+        .filter((conversion) => conversion.is_active !== false)
+        .map((conversion) => conversion.unit?.symbol)
+        .filter(Boolean);
+    const allowedSymbols = conversionSymbols.length
+        ? [productSymbol, ...conversionSymbols]
+        : (product?.allowed_units?.length ? product.allowed_units : [productSymbol]);
     const selected = units.filter((unit) => allowedSymbols.includes(unit.symbol));
     const existing = selected.some((unit) => unit.symbol === productSymbol);
 
     return existing ? selected : [{ id: `product-${productSymbol}`, name: productSymbol, symbol: productSymbol, kind: quantityKind(product) }, ...selected];
+}
+
+function unitFactorToBase(symbol, product) {
+    const baseSymbol = productUnitSymbol(product);
+
+    if (!symbol || symbol === baseSymbol) {
+        return 1;
+    }
+
+    const conversion = (product?.unit_conversions ?? product?.unitConversions ?? [])
+        .find((row) => row.is_active !== false && row.unit?.symbol === symbol);
+
+    return Number(conversion?.factor_to_base || 1);
 }
 
 function attributeUnit(attribute) {

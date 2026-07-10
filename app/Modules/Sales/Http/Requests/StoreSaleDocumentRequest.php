@@ -21,12 +21,23 @@ class StoreSaleDocumentRequest extends FormRequest
 
     protected function prepareForValidation(): void
     {
+        $products = Product::query()
+            ->with('unitConversions.unit:id,symbol')
+            ->whereIn('id', collect($this->input('items', []))->pluck('product_id')->filter()->unique()->values())
+            ->get(['id', 'base_unit'])
+            ->keyBy('id');
+
         $items = collect($this->input('items', []))
-            ->map(function (array $item): array {
+            ->map(function (array $item) use ($products): array {
                 if (($item['calculation_mode'] ?? null) === 'weight' && (blank($item['display_quantity'] ?? null) || (float) $item['display_quantity'] <= 0)) {
                     $item['display_quantity'] = filled($item['meters'] ?? null) && (float) $item['meters'] > 0
                         ? $item['meters']
                         : 1;
+                }
+
+                if (($item['calculation_mode'] ?? 'direct') === 'direct' && filled($item['display_quantity'] ?? null)) {
+                    $product = $products->get($item['product_id'] ?? null);
+                    $item['meters'] = round((float) $item['display_quantity'] * $this->unitFactorToBase($product, $item['display_unit_label'] ?? $item['unit_label'] ?? null), 3);
                 }
 
                 return $item;
@@ -34,6 +45,18 @@ class StoreSaleDocumentRequest extends FormRequest
             ->all();
 
         $this->merge(['items' => $items]);
+    }
+
+    private function unitFactorToBase(?Product $product, ?string $unitSymbol): float
+    {
+        if (! $product || blank($unitSymbol) || $unitSymbol === $product->base_unit) {
+            return 1;
+        }
+
+        $conversion = $product->unitConversions
+            ->first(fn ($row) => $row->is_active && $row->unit?->symbol === $unitSymbol);
+
+        return $conversion ? (float) $conversion->factor_to_base : 1;
     }
 
     public function rules(): array
