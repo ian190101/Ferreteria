@@ -9,7 +9,9 @@ use App\Modules\Sales\Models\AdvanceOption;
 use App\Modules\Sales\Models\Currency;
 use App\Modules\Sales\Models\DocumentSequence;
 use App\Modules\Sales\Models\SaleType;
+use App\Modules\Settings\Models\SystemSetting;
 use App\Support\BranchAccess;
+use App\Support\DecimalPrecision;
 use App\Support\UiCatalogCache;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -33,6 +35,7 @@ class SalesSettingController extends Controller
                 ->orderBy('document_type')
                 ->paginate(15, ['*'], 'document_sequences_page'),
             'branches' => UiCatalogCache::activeBranchesForUser($request->user()),
+            'decimalPrecision' => DecimalPrecision::config(),
         ]);
     }
 
@@ -79,6 +82,20 @@ class SalesSettingController extends Controller
         UiCatalogCache::forgetSalesCatalogs();
 
         return redirect()->route('sales.settings.index')->with('success', 'Configuracion eliminada correctamente.');
+    }
+
+    public function updateDecimals(Request $request): RedirectResponse
+    {
+        $validated = $request->validate([
+            'decimal_precision' => ['required', 'array'],
+        ]);
+
+        SystemSetting::query()
+            ->where('key', DecimalPrecision::SETTING_KEY)
+            ->update(['value' => DecimalPrecision::normalize($validated['decimal_precision'])]);
+        DecimalPrecision::forget();
+
+        return redirect()->route('sales.settings.index')->with('success', 'Decimales actualizados correctamente.');
     }
 
     private function storeSaleType(array $data): void

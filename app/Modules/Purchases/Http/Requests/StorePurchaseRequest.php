@@ -74,8 +74,28 @@ class StorePurchaseRequest extends FormRequest
             'items.*.new_product.sku' => ['nullable', 'string', 'max:80', Rule::unique('products', 'sku')->whereNull('deleted_at')],
             'items.*.new_product.barcode' => ['nullable', 'string', 'max:80', Rule::unique('products', 'barcode')->whereNull('deleted_at')],
             'items.*.new_product.inventory_tracking_mode' => ['nullable', Rule::in([Product::TRACKING_GLOBAL, Product::TRACKING_COIL])],
+            'items.*.new_product.base_unit' => ['nullable', 'string', 'max:24'],
+            'items.*.new_product.attributes' => ['nullable', 'array'],
+            'items.*.new_product.custom_attributes' => ['nullable', 'array'],
+            'items.*.new_product.custom_attributes.*.code' => ['nullable', 'string', 'max:80'],
+            'items.*.new_product.custom_attributes.*.name' => ['required_with:items.*.new_product.custom_attributes', 'string', 'max:120'],
+            'items.*.new_product.custom_attributes.*.type' => ['nullable', Rule::in(['text', 'number', 'boolean'])],
+            'items.*.new_product.custom_attributes.*.value' => ['nullable', 'max:120'],
+            'items.*.new_product.custom_attributes.*.has_unit' => ['nullable', 'boolean'],
+            'items.*.new_product.custom_attributes.*.unit' => ['nullable', 'string', 'max:24'],
+            'items.*.new_product.allowed_units' => ['nullable', 'array'],
+            'items.*.new_product.allowed_units.*' => ['string', 'max:24'],
+            'items.*.new_product.unit_conversions' => ['nullable', 'array'],
+            'items.*.new_product.unit_conversions.*.product_unit_id' => ['required_with:items.*.new_product.unit_conversions', 'integer', 'exists:product_units,id'],
+            'items.*.new_product.unit_conversions.*.factor_to_base' => ['required_with:items.*.new_product.unit_conversions', 'numeric', 'gt:0', 'max:999999999999.999999'],
+            'items.*.new_product.unit_conversions.*.is_active' => ['nullable', 'boolean'],
+            'items.*.new_product.purchase_price' => ['nullable', 'numeric', 'min:0', 'max:999999999999.9999'],
             'items.*.new_product.sale_price' => ['nullable', 'numeric', 'min:0', 'max:999999999999.9999'],
             'items.*.new_product.minimum_stock_meters' => ['nullable', 'numeric', 'min:0', 'max:999999999999.999'],
+            'items.*.new_product.is_active' => ['nullable', 'boolean'],
+            'items.*.new_product.branch_scope' => ['nullable', Rule::in(['global', 'specific'])],
+            'items.*.new_product.branch_ids' => ['nullable', 'array'],
+            'items.*.new_product.branch_ids.*' => ['integer', 'exists:branches,id'],
             'items.*.weight_unit' => ['nullable', 'in:kg,ton'],
             'items.*.kilograms' => ['nullable', 'numeric', 'gt:0', 'max:999999999999.999'],
             'items.*.meters' => ['nullable', 'numeric', 'gt:0', 'max:999999999999.999'],
@@ -174,6 +194,25 @@ class StorePurchaseRequest extends FormRequest
 
                     if (! $unit) {
                         $validator->errors()->add("items.{$index}.new_product.product_unit_id", 'Selecciona la unidad base del producto nuevo.');
+                    }
+
+                    $branchScope = $newProduct['branch_scope'] ?? 'specific';
+                    $branchIds = collect($newProduct['branch_ids'] ?? [$this->integer('branch_id')])
+                        ->map(fn ($id) => (int) $id)
+                        ->filter()
+                        ->unique()
+                        ->values();
+
+                    if ($branchScope === 'specific' && $branchIds->isEmpty()) {
+                        $validator->errors()->add("items.{$index}.new_product.branch_ids", 'Selecciona al menos una sucursal para habilitar el producto nuevo.');
+                    }
+
+                    if (! $this->user()?->isSuperAdministrator()) {
+                        $unauthorized = $branchIds->diff(collect($this->user()?->accessibleBranchIds() ?? []));
+
+                        if ($unauthorized->isNotEmpty()) {
+                            $validator->errors()->add("items.{$index}.new_product.branch_ids", 'Solo puedes habilitar el producto nuevo en tus sucursales permitidas.');
+                        }
                     }
 
                     if (($newProduct['inventory_tracking_mode'] ?? $category?->default_tracking_mode) === Product::TRACKING_COIL) {

@@ -3,6 +3,7 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import FormField from '../../../../Shared/Resources/Components/FormField';
 import ModuleHeader from '../../../../Shared/Resources/Components/ModuleHeader';
 import SelectField from '../../../../Shared/Resources/Components/SelectField';
+import ProductFormFields, { buildProductFormData } from '../../../../Inventory/Resources/Pages/Inventory/Products/ProductFormFields';
 import { Head, Link, useForm } from '@inertiajs/react';
 import { decimalStep, useDecimalFormatter } from '@/Utils/formatters';
 import { useMemo } from 'react';
@@ -11,17 +12,7 @@ const DEFAULT_ITEM = {
     product_mode: 'existing',
     product_category_id: '',
     product_id: '',
-    new_product: {
-        name: '',
-        product_category_id: '',
-        product_unit_id: '',
-        thickness_id: '',
-        sku: '',
-        barcode: '',
-        inventory_tracking_mode: 'global',
-        sale_price: '0',
-        minimum_stock_meters: '0',
-    },
+    new_product: {},
     display_quantity: '1',
     display_unit_label: '',
     calculation_mode: 'direct',
@@ -46,12 +37,10 @@ export default function Form({ branches = [], suppliers = [], units = [], catego
         document_number: '',
         purchase_date: new Date().toISOString().slice(0, 10),
         status: 'received',
-        items: [newDefaultItem()],
+        items: [newDefaultItem(categories, units, branches)],
     });
 
     const productMap = useMemo(() => new Map(products.map((product) => [String(product.id), product])), [products]);
-    const categoryMap = useMemo(() => new Map(categories.map((category) => [String(category.id), category])), [categories]);
-    const unitMap = useMemo(() => new Map(units.map((unit) => [String(unit.id), unit])), [units]);
     const updateItem = (index, field, value) => {
         const items = data.items.map((item, itemIndex) => (itemIndex === index ? { ...item, [field]: value } : item));
 
@@ -92,63 +81,39 @@ export default function Form({ branches = [], suppliers = [], units = [], catego
                 return item;
             }
 
-            const category = categoryMap.get(String(item.product_category_id));
-            const defaultUnitId = category?.default_unit_id ?? category?.defaultUnit?.id ?? '';
-            const defaultUnit = unitMap.get(String(defaultUnitId));
-
             return {
                 ...item,
                 product_mode: mode,
                 product_id: mode === 'new' ? '' : item.product_id,
-                display_unit_label: mode === 'new' ? (defaultUnit?.symbol ?? item.display_unit_label) : item.display_unit_label,
-                new_product: {
-                    ...item.new_product,
-                    product_category_id: item.product_category_id || item.new_product?.product_category_id || '',
-                    product_unit_id: defaultUnitId || item.new_product?.product_unit_id || '',
-                    inventory_tracking_mode: category?.default_tracking_mode ?? item.new_product?.inventory_tracking_mode ?? 'global',
-                },
+                display_unit_label: mode === 'new' ? (item.new_product?.base_unit ?? item.display_unit_label) : item.display_unit_label,
+                new_product: item.new_product?.name ? item.new_product : buildProductFormData({ categories, units, branches }),
             };
         }));
     };
-    const updateNewProduct = (index, field, value) => {
+    const setNewProductData = (index, fieldOrData, value) => {
         setData('items', data.items.map((item, itemIndex) => {
             if (itemIndex !== index) {
                 return item;
             }
 
-            const nextProduct = { ...(item.new_product ?? DEFAULT_ITEM.new_product), [field]: value };
-            let nextItem = { ...item, new_product: nextProduct };
+            const currentProduct = item.new_product ?? {};
+            const nextProduct = typeof fieldOrData === 'string'
+                ? {
+                    ...currentProduct,
+                    [fieldOrData]: typeof value === 'function' ? value(currentProduct[fieldOrData]) : value,
+                }
+                : fieldOrData;
 
-            if (field === 'product_category_id') {
-                const category = categoryMap.get(String(value));
-                const defaultUnitId = category?.default_unit_id ?? category?.defaultUnit?.id ?? '';
-                const defaultUnit = unitMap.get(String(defaultUnitId));
-
-                nextItem = {
-                    ...nextItem,
-                    product_category_id: value,
-                    display_unit_label: defaultUnit?.symbol ?? nextItem.display_unit_label,
-                    new_product: {
-                        ...nextProduct,
-                        product_unit_id: defaultUnitId,
-                        inventory_tracking_mode: category?.default_tracking_mode ?? 'global',
-                    },
-                };
-            }
-
-            if (field === 'product_unit_id') {
-                const unit = unitMap.get(String(value));
-                nextItem.display_unit_label = unit?.symbol ?? nextItem.display_unit_label;
-            }
-
-            if (field === 'name' && !nextItem.description) {
-                nextItem.description = value;
-            }
-
-            return nextItem;
+            return {
+                ...item,
+                product_category_id: nextProduct.product_category_id ?? item.product_category_id,
+                display_unit_label: nextProduct.base_unit ?? item.display_unit_label,
+                description: item.description || nextProduct.name || '',
+                new_product: nextProduct,
+            };
         }));
     };
-    const addItem = () => setData('items', [...data.items, newDefaultItem()]);
+    const addItem = () => setData('items', [...data.items, newDefaultItem(categories, units, branches)]);
     const removeItem = (index) => setData('items', data.items.filter((_, itemIndex) => itemIndex !== index));
     const convertedMeters = (item) => {
         const product = productMap.get(String(item.product_id));
@@ -213,28 +178,25 @@ export default function Form({ branches = [], suppliers = [], units = [], catego
                                             <option value="new">Producto nuevo</option>
                                         </SelectField>
                                         {item.product_mode === 'new' ? (
-                                            <>
-                                                <FormField label="Nombre producto nuevo" name={`items.${index}.new_product.name`} value={item.new_product?.name ?? ''} onChange={(event) => updateNewProduct(index, 'name', event.target.value)} error={errors[`items.${index}.new_product.name`]} required />
-                                                <SelectField label="Categoria" name={`items.${index}.new_product.product_category_id`} value={item.new_product?.product_category_id || item.product_category_id} onChange={(event) => updateNewProduct(index, 'product_category_id', event.target.value)} error={errors[`items.${index}.new_product.product_category_id`]} required>
-                                                    <option value="">Seleccionar</option>
-                                                    {categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
-                                                </SelectField>
-                                                <SelectField label="Unidad base" name={`items.${index}.new_product.product_unit_id`} value={item.new_product?.product_unit_id ?? ''} onChange={(event) => updateNewProduct(index, 'product_unit_id', event.target.value)} error={errors[`items.${index}.new_product.product_unit_id`]} required>
-                                                    <option value="">Seleccionar</option>
-                                                    {units.map((unit) => <option key={unit.id} value={unit.id}>{unit.name} ({unit.symbol})</option>)}
-                                                </SelectField>
-                                                <SelectField label="Rastreo" name={`items.${index}.new_product.inventory_tracking_mode`} value={item.new_product?.inventory_tracking_mode ?? 'global'} onChange={(event) => updateNewProduct(index, 'inventory_tracking_mode', event.target.value)} error={errors[`items.${index}.new_product.inventory_tracking_mode`]}>
-                                                    <option value="global">Stock por sucursal</option>
-                                                    <option value="coil">Stock por sucursal + lote/unidad</option>
-                                                </SelectField>
-                                                <SelectField label="Espesor" name={`items.${index}.new_product.thickness_id`} value={item.new_product?.thickness_id ?? ''} onChange={(event) => updateNewProduct(index, 'thickness_id', event.target.value)} error={errors[`items.${index}.new_product.thickness_id`]}>
-                                                    <option value="">Sin espesor</option>
-                                                    {thicknesses.map((thickness) => <option key={thickness.id} value={thickness.id}>{thickness.name}</option>)}
-                                                </SelectField>
-                                                <FormField label="Precio venta" name={`items.${index}.new_product.sale_price`} type="number" step={decimalStep(decimalFormat.decimalsFor('money'))} min="0" value={item.new_product?.sale_price ?? '0'} onChange={(event) => updateNewProduct(index, 'sale_price', event.target.value)} error={errors[`items.${index}.new_product.sale_price`]} />
-                                                <FormField label="SKU opcional" name={`items.${index}.new_product.sku`} value={item.new_product?.sku ?? ''} onChange={(event) => updateNewProduct(index, 'sku', event.target.value)} error={errors[`items.${index}.new_product.sku`]} placeholder="Automatico si se deja vacio" />
-                                                <FormField label="Barcode opcional" name={`items.${index}.new_product.barcode`} value={item.new_product?.barcode ?? ''} onChange={(event) => updateNewProduct(index, 'barcode', event.target.value)} error={errors[`items.${index}.new_product.barcode`]} placeholder="Automatico si se deja vacio" />
-                                            </>
+                                            <section className="rounded-2xl border border-brand-primary/20 bg-brand-primary/5 p-4 dark:border-brand-primary/30 dark:bg-brand-primary/10 sm:col-span-7">
+                                                <div className="mb-4">
+                                                    <h4 className="text-sm font-semibold text-slate-950 dark:text-white">Datos del producto nuevo</h4>
+                                                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                                                        Es el mismo formulario de Nuevo producto, integrado aqui para registrar compra e inventario en una sola accion.
+                                                    </p>
+                                                </div>
+                                                <ProductFormFields
+                                                    data={item.new_product}
+                                                    setData={(fieldOrData, value) => setNewProductData(index, fieldOrData, value)}
+                                                    errors={nestedErrors(errors, `items.${index}.new_product.`)}
+                                                    thicknesses={thicknesses}
+                                                    categories={categories}
+                                                    units={units}
+                                                    branches={branches}
+                                                    decimalFormat={decimalFormat}
+                                                    compact
+                                                />
+                                            </section>
                                         ) : (
                                             <>
                                                 <SelectField label="Categoria" name={`items.${index}.product_category_id`} value={item.product_category_id} onChange={(event) => selectItemCategory(index, event.target.value)}>
@@ -336,7 +298,10 @@ function preparePurchaseItem(item, products, decimalFormat, units, categories, t
 
     return {
         product_id: item.product_mode === 'new' ? '' : item.product_id,
-        new_product: item.product_mode === 'new' ? item.new_product : undefined,
+        new_product: item.product_mode === 'new' ? {
+            ...item.new_product,
+            purchase_price: summary.unitCost ? decimalFormat.fixed(summary.unitCost, 'cost') : item.new_product?.purchase_price,
+        } : undefined,
         display_quantity: item.calculation_mode === 'weight'
             ? (summary.meters ? decimalFormat.fixed(summary.meters, 'measure') : '1')
             : (item.display_quantity || '1'),
@@ -353,12 +318,20 @@ function preparePurchaseItem(item, products, decimalFormat, units, categories, t
     };
 }
 
-function newDefaultItem() {
+function newDefaultItem(categories = [], units = [], branches = []) {
     return {
         ...DEFAULT_ITEM,
-        new_product: { ...DEFAULT_ITEM.new_product },
+        new_product: buildProductFormData({ categories, units, branches }),
         item_attributes: [],
     };
+}
+
+function nestedErrors(errors, prefix) {
+    return Object.fromEntries(
+        Object.entries(errors ?? {})
+            .filter(([key]) => key.startsWith(prefix))
+            .map(([key, value]) => [key.slice(prefix.length), value])
+    );
 }
 
 function purchaseItemSummary(item, product) {

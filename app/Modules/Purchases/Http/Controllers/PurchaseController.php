@@ -3,6 +3,7 @@
 namespace App\Modules\Purchases\Http\Controllers;
 
 use App\Http\Controllers\Controller;
+use App\Modules\Branches\Models\Branch;
 use App\Modules\Inventory\Models\InventoryMovement;
 use App\Modules\Inventory\Models\Product;
 use App\Modules\Inventory\Models\ProductBranchStock;
@@ -16,6 +17,7 @@ use App\Support\BranchAccess;
 use App\Support\UiCatalogCache;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Str;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
@@ -264,6 +266,12 @@ class PurchaseController extends Controller
         $unit = ProductUnit::query()->find($payload['product_unit_id'] ?? $category->default_unit_id);
         $baseUnit = $unit?->symbol ?? $category->defaultUnit?->symbol ?? 'unidad';
         $tracking = $payload['inventory_tracking_mode'] ?? $category->default_tracking_mode ?? Product::TRACKING_GLOBAL;
+        $allowedUnits = collect($payload['allowed_units'] ?? [])
+            ->push($baseUnit)
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
 
         $product = Product::query()->create([
             'thickness_id' => $payload['thickness_id'] ?? null,
@@ -275,29 +283,90 @@ class PurchaseController extends Controller
             'barcode' => filled($payload['barcode'] ?? null) ? $payload['barcode'] : ProductCodeGenerator::barcode(),
             'inventory_tracking_mode' => in_array($tracking, [Product::TRACKING_GLOBAL, Product::TRACKING_COIL], true) ? $tracking : Product::TRACKING_GLOBAL,
             'base_unit' => $baseUnit,
-            'attributes' => [],
-            'custom_attributes' => [],
-            'allowed_units' => [$baseUnit],
-            'purchase_price' => $item['unit_cost'] ?? 0,
+            'attributes' => $payload['attributes'] ?? [],
+            'custom_attributes' => $this->normalizeProductCustomAttributes($payload['custom_attributes'] ?? []),
+            'allowed_units' => $allowedUnits,
+            'purchase_price' => $payload['purchase_price'] ?? $item['unit_cost'] ?? 0,
             'sale_price' => $payload['sale_price'] ?? 0,
             'minimum_stock_meters' => $payload['minimum_stock_meters'] ?? 0,
-            'is_active' => true,
+            'is_active' => $payload['is_active'] ?? true,
         ]);
 
-        ProductBranchStock::query()->firstOrCreate([
-            'branch_id' => $branchId,
-            'product_id' => $product->id,
-        ], [
-            'available_meters' => 0,
-            'reserved_meters' => 0,
-            'is_enabled' => true,
-        ])->update(['is_enabled' => true]);
+        $this->syncNewProductBranches($product, $payload, $branchId);
+        $this->syncNewProductUnitConversions($product, $payload['unit_conversions'] ?? [], $unit?->id);
 
         $item['product_id'] = $product->id;
         $item['display_unit_label'] = $item['display_unit_label'] ?: $baseUnit;
         $item['description'] = $item['description'] ?: $product->name;
 
         return $item;
+    }
+
+    private function syncNewProductBranches(Product $product, array $payload, int $purchaseBranchId): void
+    {
+        $user = request()->user();
+        $availableBranchIds = $user?->isSuperAdministrator()
+            ? Branch::query()->where('is_active', true)->pluck('id')->map(fn ($id) => (int) $id)
+            : collect($user?->accessibleBranchIds() ?: [-1])->map(fn ($id) => (int) $id);
+        $enabledBranchIds = ($payload['branch_scope'] ?? 'specific') === 'global'
+            ? $availableBranchIds
+            : collect($payload['branch_ids'] ?? [$purchaseBranchId]);
+
+        $enabledBranchIds = $enabledBranchIds
+            ->map(fn ($id) => (int) $id)
+            ->push($purchaseBranchId)
+            ->intersect($availableBranchIds)
+            ->unique()
+            ->values();
+
+        foreach ($availableBranchIds as $branchId) {
+            ProductBranchStock::query()->firstOrCreate([
+                'branch_id' => $branchId,
+                'product_id' => $product->id,
+            ], [
+                'available_meters' => 0,
+                'reserved_meters' => 0,
+            ])->update(['is_enabled' => $enabledBranchIds->contains((int) $branchId)]);
+        }
+    }
+
+    private function syncNewProductUnitConversions(Product $product, array $conversions, ?int $baseUnitId): void
+    {
+        collect($conversions)
+            ->filter(fn ($row) => is_array($row) && filled($row['product_unit_id'] ?? null))
+            ->reject(fn ($row) => $baseUnitId && (int) $row['product_unit_id'] === (int) $baseUnitId)
+            ->unique('product_unit_id')
+            ->each(function (array $row) use ($product) {
+                $product->unitConversions()->create([
+                    'product_unit_id' => $row['product_unit_id'],
+                    'factor_to_base' => $row['factor_to_base'] ?? 1,
+                    'is_active' => $row['is_active'] ?? true,
+                ]);
+            });
+    }
+
+    private function normalizeProductCustomAttributes(array $attributes): array
+    {
+        return collect($attributes)
+            ->filter(fn ($attribute) => is_array($attribute) && filled($attribute['name'] ?? null))
+            ->map(function (array $attribute) {
+                $name = trim((string) $attribute['name']);
+                $code = filled($attribute['code'] ?? null)
+                    ? Str::slug((string) $attribute['code'], '_')
+                    : Str::slug($name, '_');
+
+                return [
+                    'code' => $code,
+                    'name' => $name,
+                    'type' => in_array(($attribute['type'] ?? 'text'), ['text', 'number', 'boolean'], true) ? $attribute['type'] : 'text',
+                    'value' => (string) ($attribute['value'] ?? ''),
+                    'has_unit' => filter_var($attribute['has_unit'] ?? false, FILTER_VALIDATE_BOOLEAN),
+                    'unit' => filter_var($attribute['has_unit'] ?? false, FILTER_VALIDATE_BOOLEAN) && is_string($attribute['unit'] ?? null) ? trim($attribute['unit']) : '',
+                ];
+            })
+            ->unique('code')
+            ->values()
+            ->all();
     }
 
     private function ensureProductsEnabledForBranch(array $productIds, int $branchId): void

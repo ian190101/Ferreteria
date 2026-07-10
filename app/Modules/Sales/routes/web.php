@@ -64,6 +64,9 @@ Route::middleware(['auth', 'verified'])
             ->whereIn('kind', ['sale_type', 'currency', 'advance_option', 'document_sequence'])
             ->middleware('permission:settings.manage')
             ->name('settings.update');
+        Route::put('/settings/catalogs/decimals', [SalesSettingController::class, 'updateDecimals'])
+            ->middleware('permission:settings.manage')
+            ->name('settings.decimals.update');
         Route::delete('/settings/catalogs/{kind}/{setting}', [SalesSettingController::class, 'destroy'])
             ->whereIn('kind', ['sale_type', 'currency', 'advance_option', 'document_sequence'])
             ->middleware('permission:settings.manage')

@@ -13,7 +13,6 @@ Route::middleware(['auth', 'verified', 'permission:settings.manage'])
     ->name('settings.system.')
     ->group(function () {
         Route::get('/', [SystemController::class, 'index'])->name('index');
-        Route::put('/', [SystemController::class, 'update'])->name('update');
         Route::post('/backups', [SystemController::class, 'backup'])->name('backups.store');
         Route::get('/backups/{backup}/download', [SystemController::class, 'downloadBackup'])->name('backups.download');
     });

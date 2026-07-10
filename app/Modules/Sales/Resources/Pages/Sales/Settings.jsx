@@ -2,6 +2,7 @@ import IconButton from '@/Components/IconButton';
 import PrimaryButton from '@/Components/PrimaryButton';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { confirmAction } from '@/Utils/alerts';
+import DecimalPrecisionEditor, { decimalDefaults, setDecimalPath } from '../../../../Shared/Resources/Components/DecimalPrecisionEditor';
 import FormField from '../../../../Shared/Resources/Components/FormField';
 import ModuleHeader from '../../../../Shared/Resources/Components/ModuleHeader';
 import Pagination from '../../../../Shared/Resources/Components/Pagination';
@@ -30,11 +31,19 @@ const catalogs = {
         description: 'Numeracion automatica por sucursal y tipo de documento.',
         columns: ['branch', 'document_type', 'name', 'prefix', 'next_number', 'padding', 'is_active'],
     },
+    decimals: {
+        title: 'Decimales',
+        description: 'Formato numerico global y por modulo.',
+        columns: [],
+    },
 };
 
-export default function Settings({ saleTypes, currencies, advanceOptions, documentSequences, branches }) {
+export default function Settings({ saleTypes, currencies, advanceOptions, documentSequences, branches, decimalPrecision }) {
     const [editing, setEditing] = useState(null);
     const { data, setData, post, put, processing, errors, reset, clearErrors } = useForm(emptyForm());
+    const decimalForm = useForm({
+        decimal_precision: decimalDefaults(decimalPrecision),
+    });
     const currentCatalog = catalogs[data.kind];
     const rowsByKind = useMemo(() => ({
         sale_type: saleTypes,
@@ -45,6 +54,12 @@ export default function Settings({ saleTypes, currencies, advanceOptions, docume
 
     const submit = (event) => {
         event.preventDefault();
+
+        if (data.kind === 'decimals') {
+            decimalForm.put(route('sales.settings.decimals.update'), { preserveScroll: true });
+
+            return;
+        }
 
         if (editing) {
             put(route('sales.settings.update', { kind: editing.kind, setting: editing.id }), {
@@ -59,6 +74,12 @@ export default function Settings({ saleTypes, currencies, advanceOptions, docume
             preserveScroll: true,
             onSuccess: () => reset('name', 'code', 'symbol', 'percentage', 'amount'),
         });
+    };
+
+    const updateDecimal = (path, value) => {
+        const current = structuredClone(decimalForm.data.decimal_precision ?? decimalDefaults());
+        setDecimalPath(current, path, value);
+        decimalForm.setData('decimal_precision', current);
     };
 
     const changeKind = (kind) => {
@@ -117,7 +138,20 @@ export default function Settings({ saleTypes, currencies, advanceOptions, docume
                         <option value="currency">Moneda</option>
                         <option value="advance_option">Anticipo</option>
                         <option value="document_sequence">Secuencia</option>
+                        <option value="decimals">Decimales</option>
                     </SelectField>
+                    {data.kind === 'decimals' ? (
+                        <div className="sm:col-span-3">
+                            <DecimalPrecisionEditor
+                                value={decimalForm.data.decimal_precision}
+                                onChange={updateDecimal}
+                            />
+                            <div className="mt-4">
+                                <PrimaryButton disabled={decimalForm.processing}>Guardar decimales</PrimaryButton>
+                            </div>
+                        </div>
+                    ) : (
+                        <>
                     <FormField label="Nombre" name="name" value={data.name} onChange={(event) => setData('name', event.target.value)} error={errors.name} required />
                     {data.kind === 'currency' ? (
                         <>
@@ -169,6 +203,8 @@ export default function Settings({ saleTypes, currencies, advanceOptions, docume
                             </button>
                         ) : null}
                     </div>
+                        </>
+                    )}
                     <p className="text-sm text-slate-500 dark:text-slate-400 sm:col-span-3">{currentCatalog.description}</p>
                 </form>
 

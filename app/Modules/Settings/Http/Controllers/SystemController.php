@@ -5,10 +5,8 @@ namespace App\Modules\Settings\Http\Controllers;
 use App\Http\Controllers\Controller;
 use App\Modules\Customers\Models\Customer;
 use App\Modules\Inventory\Models\Product;
-use App\Modules\Settings\Http\Requests\UpdateSystemSettingRequest;
 use App\Modules\Settings\Models\MaintenanceBackup;
 use App\Modules\Settings\Models\SystemSetting;
-use App\Support\DecimalPrecision;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -22,27 +20,12 @@ class SystemController extends Controller
     public function index(): Response
     {
         return Inertia::render('Settings/System/Index', [
-            'settings' => SystemSetting::query()->orderBy('group')->orderBy('key')->get(),
             'backups' => MaintenanceBackup::query()
                 ->with('user:id,name')
                 ->latest()
                 ->paginate(10)
                 ->withQueryString(),
         ]);
-    }
-
-    public function update(UpdateSystemSettingRequest $request): RedirectResponse
-    {
-        DB::transaction(function () use ($request) {
-            foreach ($request->validated('settings') as $item) {
-                SystemSetting::query()
-                    ->where('key', $item['key'])
-                    ->update(['value' => $this->normalizeValue($item['value'] ?? null)]);
-            }
-        });
-        DecimalPrecision::forget();
-
-        return redirect()->route('settings.system.index')->with('success', 'Configuracion general actualizada correctamente.');
     }
 
     public function backup(Request $request): RedirectResponse
@@ -172,12 +155,4 @@ class SystemController extends Controller
         return DB::connection()->getPdo()->quote((string) $value);
     }
 
-    private function normalizeValue(mixed $value): array
-    {
-        if (is_array($value)) {
-            return $value;
-        }
-
-        return ['value' => is_bool($value) ? $value : trim((string) $value)];
-    }
 }
