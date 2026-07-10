@@ -66,9 +66,9 @@ const DEFAULT_ITEM_COLUMNS = [
 
 const PAPER_PREVIEW_SIZES = {
     letter: { width: '100%', minHeight: '520px' },
-    half_letter: { width: '100%', minHeight: '260px' },
+    half_letter: { width: '100%', minHeight: '260px', compact: true },
     legal: { width: '100%', minHeight: '660px' },
-    half_legal: { width: '100%', minHeight: '330px' },
+    half_legal: { width: '100%', minHeight: '330px', compact: true },
     full_page: { width: '100%', minHeight: '560px' },
     thermal: { width: null, minHeight: '360px' },
 };
@@ -416,13 +416,16 @@ function Preview({ data, attributeFields }) {
         <aside className="hidden lg:block">
             <div className="sticky top-6 rounded-lg border border-slate-200 bg-slate-100 p-4 dark:border-slate-800 dark:bg-slate-950">
                 <div
-                    className="mx-auto bg-white p-4 text-black shadow"
+                    className="mx-auto bg-white text-black shadow"
                     style={{
                         width,
                         maxWidth: '100%',
                         minHeight: paper.minHeight,
+                        padding: `${data.layout.margin_mm ?? 8}px`,
+                        boxSizing: 'border-box',
                         fontFamily: data.layout.font_family,
                         fontSize: `${data.layout.font_size}px`,
+                        lineHeight: paper.compact ? 1.08 : 1.18,
                     }}
                 >
                     {logo.show && logoSrc ? (
@@ -432,12 +435,12 @@ function Preview({ data, attributeFields }) {
                     ) : null}
                     <p className="text-center font-bold" style={{ color: primary }}>FABRICA DE CALAMINAS</p>
                     <p className="text-center text-xs" style={{ color: primary }}>Direccion / telefonos</p>
-                    <div className="mt-3 border-t border-black pt-2 text-right text-xs" style={{ color: secondary }}>NOTA DE VENTA<br />Nro.: 000001</div>
-                    <div className="mt-3 grid grid-cols-2 gap-1 border-t border-black pt-2 text-xs">
+                    <div className={`${paper.compact ? 'mt-1 pt-1' : 'mt-3 pt-2'} border-t border-black text-right text-xs`} style={{ color: secondary }}>NOTA DE VENTA<br />Nro.: 000001</div>
+                    <div className={`${paper.compact ? 'mt-1 pt-1' : 'mt-3 pt-2'} grid grid-cols-2 gap-1 border-t border-black text-xs`}>
                         <span>Cliente</span><span>Moneda</span><span>Vendedor</span><span>Tipo</span>
                     </div>
-                    <div className="mt-3 border-y border-black py-1 text-xs">{visibleColumns.map((column) => column.label).join(' ')}</div>
-                    <div className="mt-16 border-t border-black pt-2 text-right text-xs">Total / Anticipo / Saldo</div>
+                    <div className={`${paper.compact ? 'mt-1 py-0.5' : 'mt-3 py-1'} border-y border-black text-xs`}>{visibleColumns.map((column) => column.label).join(' ')}</div>
+                    <div className={`${paper.compact ? 'mt-8 pt-1' : 'mt-16 pt-2'} border-t border-black text-right text-xs`}>Total / Anticipo / Saldo</div>
                 </div>
             </div>
         </aside>

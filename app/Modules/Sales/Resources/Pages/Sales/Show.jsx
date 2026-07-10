@@ -7,12 +7,12 @@ import { confirmAction, promptAction } from '@/Utils/alerts';
 import { useEffect, useRef, useState } from 'react';
 
 const PAPER_SIZES = {
-    letter: { width: '216mm', minHeight: '279mm', page: 'letter' },
-    half_letter: { width: '216mm', minHeight: '140mm', page: '216mm 140mm' },
-    legal: { width: '216mm', minHeight: '356mm', page: 'legal' },
-    half_legal: { width: '216mm', minHeight: '178mm', page: '216mm 178mm' },
-    full_page: { width: '210mm', minHeight: '297mm', page: 'A4' },
-    thermal: { width: null, minHeight: null, page: 'auto' },
+    letter: { width: '216mm', height: '279mm', page: 'letter' },
+    half_letter: { width: '216mm', height: '139.5mm', page: '216mm 139.5mm', compact: true },
+    legal: { width: '216mm', height: '356mm', page: 'legal' },
+    half_legal: { width: '216mm', height: '178mm', page: '216mm 178mm', compact: true },
+    full_page: { width: '210mm', height: '297mm', page: 'A4' },
+    thermal: { width: null, height: null, page: 'auto' },
 };
 
 const DEFAULT_ITEM_COLUMNS = [
@@ -44,7 +44,8 @@ export default function Show({ sale, template, paymentMethods = [], conversionRe
         .sort((left, right) => left.order - right.order);
     const paper = PAPER_SIZES[template.paper_type] ?? PAPER_SIZES.letter;
     const paperWidth = template.paper_type === 'thermal' ? `${template.thermal_width_mm ?? 80}mm` : paper.width;
-    const paperMinHeight = template.paper_type === 'thermal' ? null : paper.minHeight;
+    const paperHeight = template.paper_type === 'thermal' ? null : paper.height;
+    const isCompactPaper = Boolean(paper.compact);
     const primary = layout.colors.primary;
     const secondary = layout.colors.secondary;
     const logoPath = template.use_branding ? branch.setting?.logo_path : layout.logo?.path;
@@ -111,7 +112,7 @@ export default function Show({ sale, template, paymentMethods = [], conversionRe
             observer.disconnect();
             window.removeEventListener('orientationchange', updatePreviewSize);
         };
-    }, [paperWidth, paperMinHeight, layout.margin_mm, layout.font_family, layout.font_size, sale.items.length, sections.length]);
+    }, [paperWidth, paperHeight, layout.margin_mm, layout.font_family, layout.font_size, sale.items.length, sections.length]);
 
     const submitPayment = (event) => {
         event.preventDefault();
@@ -119,7 +120,7 @@ export default function Show({ sale, template, paymentMethods = [], conversionRe
     };
 
     const renderSection = (section) => {
-        const props = { sale, branch, currency, documentTitle, fields, primary, secondary, layout, logoPath };
+        const props = { sale, branch, currency, documentTitle, fields, primary, secondary, layout, logoPath, compact: isCompactPaper };
 
         return {
             header: <HeaderSection key="header" {...props} />,
@@ -142,7 +143,7 @@ export default function Show({ sale, template, paymentMethods = [], conversionRe
                     main { padding: 0 !important; }
                     .ticket-preview-shell, .ticket-preview-stage { display: contents !important; width: auto !important; height: auto !important; overflow: visible !important; }
                     .ticket-paper { box-shadow: none !important; margin: 0 auto !important; transform: none !important; }
-                    @page { margin: ${layout.margin_mm ?? 8}mm; size: ${paper.page}; }
+                    @page { margin: 0; size: ${paper.page}; }
                 }
             `}</style>
 
@@ -260,11 +261,13 @@ export default function Show({ sale, template, paymentMethods = [], conversionRe
                             className="ticket-paper origin-top-left bg-white text-black shadow-lg"
                             style={{
                                 width: paperWidth,
-                                minHeight: paperMinHeight ?? undefined,
+                                height: isCompactPaper ? paperHeight ?? undefined : undefined,
+                                minHeight: !isCompactPaper ? paperHeight ?? undefined : undefined,
                                 padding: `${layout.margin_mm ?? 8}mm`,
+                                boxSizing: 'border-box',
                                 fontFamily: layout.font_family,
                                 fontSize: `${layout.font_size}px`,
-                                lineHeight: 1.18,
+                                lineHeight: isCompactPaper ? 1.08 : 1.18,
                                 transform: `scale(${previewFrame.scale})`,
                             }}
                         >
@@ -321,15 +324,15 @@ export default function Show({ sale, template, paymentMethods = [], conversionRe
     );
 }
 
-function HeaderSection({ branch, fields, layout, primary, logoPath }) {
+function HeaderSection({ branch, fields, layout, primary, logoPath, compact = false }) {
     const logo = layout.logo ?? {};
     const logoSrc = assetUrl(logoPath);
 
     return (
-        <section className="grid grid-cols-2 gap-6" style={{ color: primary }}>
+        <section className={`grid grid-cols-2 ${compact ? 'gap-3' : 'gap-6'}`} style={{ color: primary }}>
             <div className="text-left">
                 {logo.show && logoSrc ? (
-                    <img src={logoSrc} alt="Logo" className="mb-2 object-contain" style={{ width: `${logo.width_mm ?? 28}mm` }} />
+                    <img src={logoSrc} alt="Logo" className={`${compact ? 'mb-1' : 'mb-2'} object-contain`} style={{ width: `${logo.width_mm ?? 28}mm` }} />
                 ) : null}
                 {fields.branch_name ? <h1 className="text-base font-bold uppercase">{branch.name ?? 'FABRICA DE CALAMINAS'}</h1> : null}
                 {fields.branch_address ? <p>{branch.address}</p> : null}
@@ -355,9 +358,9 @@ function DocumentSection({ sale, documentTitle, fields, secondary }) {
     );
 }
 
-function CustomerSection({ sale, branch, currency, fields }) {
+function CustomerSection({ sale, branch, currency, fields, compact = false }) {
     return (
-        <section className="mt-3 grid grid-cols-2 gap-x-8 gap-y-1 border-t border-black pt-2">
+        <section className={`${compact ? 'mt-1 pt-1' : 'mt-3 pt-2'} grid grid-cols-2 gap-x-8 gap-y-0.5 border-t border-black`}>
             {fields.date ? <p><span className="font-bold">Fecha:</span> {new Date(sale.sold_at).toLocaleDateString('es-BO')}</p> : null}
             {fields.currency ? <p><span className="font-bold">Moneda:</span> {currency.name}</p> : null}
             {fields.seller ? <p><span className="font-bold">Vendedor:</span> {sale.user?.name}</p> : null}
@@ -373,15 +376,15 @@ function CustomerSection({ sale, branch, currency, fields }) {
     );
 }
 
-function ItemsSection({ sale, fields, layout }) {
+function ItemsSection({ sale, fields, layout, compact = false }) {
     const columns = itemColumns(sale.items ?? [], fields, layout.item_columns ?? []);
 
     return (
-        <table className="mt-3 w-full border-collapse text-[0.92em]">
+        <table className={`${compact ? 'mt-1' : 'mt-3'} w-full border-collapse text-[0.92em]`}>
             <thead>
                 <tr className="border-y border-black">
                     {columns.map((column) => (
-                        <th key={column.key} className={`py-1 ${column.align === 'right' ? 'text-right' : 'text-left'}`}>{column.label}</th>
+                        <th key={column.key} className={`${compact ? 'py-0.5' : 'py-1'} ${column.align === 'right' ? 'text-right' : 'text-left'}`}>{column.label}</th>
                     ))}
                 </tr>
             </thead>
@@ -389,7 +392,7 @@ function ItemsSection({ sale, fields, layout }) {
                 {sale.items.map((item, index) => (
                     <tr key={item.id ?? index} className="align-top">
                         {columns.map((column) => (
-                            <td key={column.key} className={`py-1 ${column.align === 'right' ? 'text-right' : 'text-left'}`}>
+                            <td key={column.key} className={`${compact ? 'py-0.5' : 'py-1'} ${column.align === 'right' ? 'text-right' : 'text-left'}`}>
                                 {itemColumnValue(column.key, item, index)}
                             </td>
                         ))}
@@ -544,15 +547,15 @@ function formatDeliveryQuantity(value, unit) {
     return `${Number(value ?? 0).toLocaleString('es-BO', { maximumFractionDigits: 3 })} ${unit ?? ''}`.trim();
 }
 
-function TotalsSection({ sale, currency, fields }) {
+function TotalsSection({ sale, currency, fields, compact = false }) {
     return (
-        <section className="mt-2 border-t border-black pt-2">
+        <section className={`${compact ? 'mt-1 pt-1' : 'mt-2 pt-2'} border-t border-black`}>
             {fields.subtotal ? <TotalLine label="Subtotal" value={sale.subtotal} /> : null}
             {fields.discount ? <TotalLine label="Descuento" value={sale.discount_total} /> : null}
             <TotalLine label="Total" value={`${currency.symbol} ${sale.total}`} strong />
             {fields.advance ? <TotalLine label={advanceLabel(sale)} value={sale.advance_amount} /> : null}
             {fields.balance_due ? <TotalLine label="Saldo por pagar" value={sale.balance_due} /> : null}
-            <p className="mt-2 font-bold">Son: {amountToLiteral(Number(sale.total ?? 0), currency.name ?? currency.code)}</p>
+            <p className={`${compact ? 'mt-1' : 'mt-2'} font-bold`}>Son: {amountToLiteral(Number(sale.total ?? 0), currency.name ?? currency.code)}</p>
         </section>
     );
 }
@@ -574,9 +577,9 @@ function advanceLabel(sale) {
     return `Anticipo ${sale.advance_percentage}%`;
 }
 
-function TermsSection({ sale }) {
+function TermsSection({ sale, compact = false }) {
     return (
-        <section className="mt-4 whitespace-pre-line border-t border-black pt-2">
+        <section className={`${compact ? 'mt-2 pt-1' : 'mt-4 pt-2'} whitespace-pre-line border-t border-black`}>
             {sale.terms ? `${sale.terms}\n` : ''}
             NOTA: NO SE ACEPTAN CAMBIOS NI DEVOLUCIONES.
         </section>
