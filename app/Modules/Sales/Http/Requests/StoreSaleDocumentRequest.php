@@ -19,6 +19,23 @@ class StoreSaleDocumentRequest extends FormRequest
         return $this->user()?->can('sales.manage') ?? false;
     }
 
+    protected function prepareForValidation(): void
+    {
+        $items = collect($this->input('items', []))
+            ->map(function (array $item): array {
+                if (($item['calculation_mode'] ?? null) === 'weight' && (blank($item['display_quantity'] ?? null) || (float) $item['display_quantity'] <= 0)) {
+                    $item['display_quantity'] = filled($item['meters'] ?? null) && (float) $item['meters'] > 0
+                        ? $item['meters']
+                        : 1;
+                }
+
+                return $item;
+            })
+            ->all();
+
+        $this->merge(['items' => $items]);
+    }
+
     public function rules(): array
     {
         return [
@@ -54,6 +71,37 @@ class StoreSaleDocumentRequest extends FormRequest
             'items.*.meters' => ['required', 'numeric', 'gt:0', 'max:999999999999.999'],
             'items.*.unit_price' => ['required', 'numeric', 'gte:0', 'max:999999999999.9999'],
             'items.*.discount_amount' => ['required', 'numeric', 'min:0', 'max:999999999999.99'],
+        ];
+    }
+
+    public function messages(): array
+    {
+        return [
+            'items.*.display_quantity.gt' => 'La cantidad del item debe ser mayor que 0. Si el calculo es Peso a metros, ingresa el peso y el sistema calculara la cantidad.',
+            'items.*.meters.required' => 'Cada item debe tener una cantidad calculada valida.',
+            'items.*.meters.gt' => 'La cantidad calculada del item debe ser mayor que 0.',
+            'items.*.unit_price.required' => 'Cada item debe tener precio.',
+            'items.*.unit_price.gte' => 'El precio del item no puede ser negativo.',
+        ];
+    }
+
+    public function attributes(): array
+    {
+        return [
+            'document_type' => 'tipo de documento',
+            'branch_id' => 'sucursal',
+            'sale_type_id' => 'tipo de venta',
+            'currency_id' => 'moneda',
+            'customer_id' => 'cliente',
+            'items' => 'items',
+            'items.*.product_id' => 'producto del item',
+            'items.*.description' => 'descripcion del item',
+            'items.*.display_quantity' => 'cantidad del item',
+            'items.*.display_unit_label' => 'unidad del item',
+            'items.*.calculation_mode' => 'tipo de calculo del item',
+            'items.*.meters' => 'cantidad calculada del item',
+            'items.*.unit_price' => 'precio del item',
+            'items.*.discount_amount' => 'descuento del item',
         ];
     }
 

@@ -14,6 +14,23 @@ class StorePurchaseRequest extends FormRequest
         return $this->user()?->can('purchases.manage') ?? false;
     }
 
+    protected function prepareForValidation(): void
+    {
+        $items = collect($this->input('items', []))
+            ->map(function (array $item): array {
+                if (($item['calculation_mode'] ?? null) === 'weight' && (blank($item['display_quantity'] ?? null) || (float) $item['display_quantity'] <= 0)) {
+                    $item['display_quantity'] = filled($item['meters'] ?? null) && (float) $item['meters'] > 0
+                        ? $item['meters']
+                        : 1;
+                }
+
+                return $item;
+            })
+            ->all();
+
+        $this->merge(['items' => $items]);
+    }
+
     public function rules(): array
     {
         return [
@@ -40,6 +57,38 @@ class StorePurchaseRequest extends FormRequest
             'items.*.lot_number' => ['nullable', 'string', 'max:80'],
             'items.*.coil_barcode' => ['nullable', 'string', 'max:80', 'distinct', 'unique:product_coils,barcode'],
             'items.*.description' => ['nullable', 'string', 'max:255'],
+        ];
+    }
+
+    public function messages(): array
+    {
+        return [
+            'items.*.display_quantity.gt' => 'La cantidad del item debe ser mayor que 0. Si el calculo es Peso a metros, ingresa el peso y el sistema calculara la cantidad.',
+            'items.*.kilograms.gt' => 'El peso del item debe ser mayor que 0.',
+            'items.*.meters.gt' => 'La cantidad calculada del item debe ser mayor que 0.',
+            'items.*.unit_cost.required' => 'Cada item debe tener costo.',
+            'items.*.unit_cost.gte' => 'El costo del item no puede ser negativo.',
+        ];
+    }
+
+    public function attributes(): array
+    {
+        return [
+            'branch_id' => 'sucursal',
+            'supplier_id' => 'proveedor',
+            'document_number' => 'numero de documento',
+            'status' => 'estado',
+            'items' => 'items',
+            'items.*.product_id' => 'producto del item',
+            'items.*.weight_unit' => 'unidad de peso del item',
+            'items.*.kilograms' => 'peso del item',
+            'items.*.meters' => 'cantidad calculada del item',
+            'items.*.display_quantity' => 'cantidad del item',
+            'items.*.display_unit_label' => 'unidad del item',
+            'items.*.calculation_mode' => 'tipo de calculo del item',
+            'items.*.unit_cost' => 'costo del item',
+            'items.*.lot_number' => 'lote del item',
+            'items.*.coil_barcode' => 'barcode del lote o unidad',
         ];
     }
 

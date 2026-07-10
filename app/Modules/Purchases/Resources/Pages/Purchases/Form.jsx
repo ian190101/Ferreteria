@@ -138,7 +138,14 @@ export default function Form({ branches = [], suppliers = [], units = [], catego
                                             <option value="">Seleccionar</option>
                                             {productsForCategory(products, item.product_category_id, data.branch_id).map((product) => <option key={product.id} value={product.id}>{product.name} ({product.sku}) - {trackingLabel(product)}</option>)}
                                         </SelectField>
-                                        <FormField label="Cantidad" name={`items.${index}.display_quantity`} type="number" step={decimalStep(decimalFormat.decimalsFor(quantityKindForItem(item, product, units)))} value={item.display_quantity} onChange={(event) => updateItem(index, 'display_quantity', event.target.value)} error={errors[`items.${index}.display_quantity`]} required />
+                                        {item.calculation_mode === 'weight' ? (
+                                            <div className="rounded-md border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300">
+                                                <span className="block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Cantidad</span>
+                                                Se calculara automaticamente desde el peso ingresado.
+                                            </div>
+                                        ) : (
+                                            <FormField label="Cantidad" name={`items.${index}.display_quantity`} type="number" step={decimalStep(decimalFormat.decimalsFor(quantityKindForItem(item, product, units)))} value={item.display_quantity} onChange={(event) => updateItem(index, 'display_quantity', event.target.value)} error={errors[`items.${index}.display_quantity`]} required />
+                                        )}
                                         <SelectField label="Unidad" name={`items.${index}.display_unit_label`} value={item.display_unit_label || productUnitSymbol(product)} onChange={(event) => updateItem(index, 'display_unit_label', event.target.value)} error={errors[`items.${index}.display_unit_label`]} required>
                                             {documentUnits(units, product).map((unit) => (
                                                 <option key={unit.symbol} value={unit.symbol}>{unit.name} ({unit.symbol})</option>
@@ -219,7 +226,9 @@ function preparePurchaseItem(item, products, decimalFormat, units) {
 
     return {
         product_id: item.product_id,
-        display_quantity: item.display_quantity || '1',
+        display_quantity: item.calculation_mode === 'weight'
+            ? (summary.meters ? decimalFormat.fixed(summary.meters, 'measure') : '1')
+            : (item.display_quantity || '1'),
         display_unit_label: item.display_unit_label || productUnitSymbol(product),
         calculation_mode: item.calculation_mode || 'direct',
         item_attributes: normalizedItemAttributes(item, product),
