@@ -7,6 +7,7 @@ use App\Modules\Inventory\Models\InventoryReservation;
 use App\Modules\Inventory\Models\Product;
 use App\Modules\Inventory\Models\ProductBranchStock;
 use App\Modules\Inventory\Models\ProductCoil;
+use App\Modules\Sales\Models\AdvanceOption;
 use App\Modules\Sales\Models\Sale;
 use App\Support\BranchAccess;
 use Illuminate\Foundation\Http\FormRequest;
@@ -67,8 +68,15 @@ class StoreSaleDocumentRequest extends FormRequest
             'sale_type_id' => ['required', 'integer', 'exists:sale_types,id'],
             'currency_id' => ['required', 'integer', 'exists:currencies,id'],
             'customer_id' => ['nullable', 'integer', 'exists:customers,id'],
+            'advance_mode' => ['nullable', Rule::in(['none', 'percentage', 'amount'])],
             'advance_option_id' => ['nullable', 'integer', 'exists:advance_options,id'],
-            'advance_amount_input' => ['nullable', 'numeric', 'min:0', 'max:999999999999.99'],
+            'advance_amount_input' => [
+                Rule::requiredIf(fn () => $this->input('advance_mode') === 'amount'),
+                'nullable',
+                'numeric',
+                'min:0.01',
+                'max:999999999999.99',
+            ],
             'source_quotation_id' => ['nullable', 'integer', 'exists:sales,id'],
             'receipt_number' => ['nullable', 'string', 'max:80', 'unique:sales,receipt_number'],
             'customer_name' => ['required_without:customer_id', 'nullable', 'string', 'max:255'],
@@ -117,6 +125,9 @@ class StoreSaleDocumentRequest extends FormRequest
             'sale_type_id' => 'tipo de venta',
             'currency_id' => 'moneda',
             'customer_id' => 'cliente',
+            'advance_mode' => 'tipo de anticipo',
+            'advance_option_id' => 'porcentaje de anticipo',
+            'advance_amount_input' => 'monto de anticipo',
             'requires_delivery' => 'tipo de entrega',
             'items' => 'items',
             'items.*.product_id' => 'producto del item',
@@ -158,6 +169,28 @@ class StoreSaleDocumentRequest extends FormRequest
                 if ((int) $sourceQuotation->branch_id !== $this->integer('branch_id')) {
                     $validator->errors()->add('source_quotation_id', 'La cotizacion seleccionada pertenece a otra sucursal.');
                 }
+            }
+
+            $advanceMode = $this->input('advance_mode', 'none');
+
+            if ($advanceMode === 'percentage') {
+                if (! $this->filled('advance_option_id')) {
+                    $validator->errors()->add('advance_option_id', 'Selecciona un porcentaje de anticipo preconfigurado.');
+                } else {
+                    $advanceOption = AdvanceOption::query()->find($this->integer('advance_option_id'));
+
+                    if (! $advanceOption || $advanceOption->type !== AdvanceOption::TYPE_PERCENTAGE || ! $advanceOption->is_active) {
+                        $validator->errors()->add('advance_option_id', 'El anticipo seleccionado debe ser un porcentaje activo.');
+                    }
+                }
+            }
+
+            if ($advanceMode === 'amount' && $this->filled('advance_option_id')) {
+                $validator->errors()->add('advance_option_id', 'Para anticipo por monto no se debe seleccionar una opcion preconfigurada.');
+            }
+
+            if ($advanceMode === 'none' && ($this->filled('advance_option_id') || (float) $this->input('advance_amount_input', 0) > 0)) {
+                $validator->errors()->add('advance_mode', 'Si no hay anticipo, no debe existir porcentaje ni monto de anticipo.');
             }
 
             foreach ($items as $index => $item) {

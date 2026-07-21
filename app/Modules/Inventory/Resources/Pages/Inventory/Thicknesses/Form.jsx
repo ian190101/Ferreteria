@@ -3,17 +3,19 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import FormField from '../../../../../Shared/Resources/Components/FormField';
 import ModuleHeader from '../../../../../Shared/Resources/Components/ModuleHeader';
 import SelectField from '../../../../../Shared/Resources/Components/SelectField';
+import { decimalStep, useDecimalFormatter } from '@/Utils/formatters';
 import { Head, Link, useForm } from '@inertiajs/react';
 
 export default function Form({ thickness }) {
     const isEditing = Boolean(thickness);
+    const decimalFormat = useDecimalFormatter('inventory');
     const { data, setData, post, put, processing, errors } = useForm({
         name: thickness?.name ?? '',
         millimeters: thickness?.millimeters ?? '',
         kg_per_meter: thickness?.kg_per_meter ?? '',
         is_active: thickness?.is_active ?? true,
     });
-    const metersPerKg = Number(data.kg_per_meter) > 0 ? (1 / Number(data.kg_per_meter)).toFixed(6) : '';
+    const metersPerKg = Number(data.kg_per_meter) > 0 ? decimalFormat.exchangeRate(1 / Number(data.kg_per_meter)) : '';
 
     const submit = (event) => {
         event.preventDefault();
@@ -38,12 +40,12 @@ export default function Form({ thickness }) {
 
                 <form onSubmit={submit} className="grid gap-5 rounded-lg border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:grid-cols-2">
                     <FormField label="Nombre" name="name" value={data.name} onChange={(event) => setData('name', event.target.value)} error={errors.name} required />
-                    <FormField label="Milimetros" name="millimeters" type="number" step="0.0001" value={data.millimeters} onChange={(event) => setData('millimeters', event.target.value)} error={errors.millimeters} required />
+                    <FormField label="Milimetros" name="millimeters" type="number" step={decimalStep(decimalFormat.decimalsFor('measure'))} value={data.millimeters} onChange={(event) => setData('millimeters', event.target.value)} error={errors.millimeters} required />
                     <FormField
                         label="Peso por metro (kg/m)"
                         name="kg_per_meter"
                         type="number"
-                        step="0.000001"
+                        step={decimalStep(decimalFormat.decimalsFor('exchange_rate'))}
                         value={data.kg_per_meter}
                         placeholder="Ej. 3.13"
                         onChange={(event) => setData('kg_per_meter', event.target.value)}

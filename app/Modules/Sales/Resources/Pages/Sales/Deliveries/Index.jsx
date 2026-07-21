@@ -4,16 +4,14 @@ import FormField from '../../../../../Shared/Resources/Components/FormField';
 import ModuleHeader from '../../../../../Shared/Resources/Components/ModuleHeader';
 import Pagination from '../../../../../Shared/Resources/Components/Pagination';
 import SelectField from '../../../../../Shared/Resources/Components/SelectField';
+import { decimalStep, useDecimalFormatter } from '@/Utils/formatters';
 import { Head, router, useForm, usePage } from '@inertiajs/react';
 import { useState } from 'react';
-
-const meterFormatter = new Intl.NumberFormat('es-BO', {
-    maximumFractionDigits: 3,
-});
 
 export default function Index({ deliveries, branches, sales, saleItems, drivers = [], trucks = [], statuses, filters }) {
     const permissions = usePage().props.auth.permissions;
     const canManage = permissions.includes('sales.deliveries.manage');
+    const decimalFormat = useDecimalFormatter('sales');
     const [editingDriver, setEditingDriver] = useState(null);
     const [editingTruck, setEditingTruck] = useState(null);
     const filterForm = useForm({
@@ -241,7 +239,7 @@ export default function Index({ deliveries, branches, sales, saleItems, drivers 
                                                 <option value="">Seleccionar</option>
                                                 {availableItems.map((saleItem) => (
                                                     <option key={saleItem.id} value={saleItem.id}>
-                                                        {itemOptionLabel(saleItem)}
+                                                        {itemOptionLabel(saleItem, decimalFormat)}
                                                     </option>
                                                 ))}
                                             </SelectField>
@@ -249,8 +247,8 @@ export default function Index({ deliveries, branches, sales, saleItems, drivers 
                                                 label={`Cantidad${selectedItem?.display_unit_label ? ` (${selectedItem.display_unit_label})` : ''}`}
                                                 name={`items.${index}.quantity`}
                                                 type="number"
-                                                step="0.001"
-                                                min="0.001"
+                                                step={decimalStep(decimalFormat.decimalsFor(precisionKindForUnit(selectedItem?.display_unit_label)))}
+                                                min={decimalStep(decimalFormat.decimalsFor(precisionKindForUnit(selectedItem?.display_unit_label)))}
                                                 max={selectedItem?.pending_quantity ?? undefined}
                                                 value={item.quantity ?? ''}
                                                 onChange={(event) => updateItem(index, 'quantity', event.target.value)}
@@ -269,7 +267,7 @@ export default function Index({ deliveries, branches, sales, saleItems, drivers 
                                             </div>
                                             {selectedItem ? (
                                                 <p className="text-xs text-slate-500 dark:text-slate-400 sm:col-span-4">
-                                                    Pendiente: {quantityLabel(selectedItem.pending_quantity, selectedItem.display_unit_label)} ({meterFormatter.format(Number(selectedItem.pending_meters))} base). Entregado: {quantityLabel(selectedItem.delivered_quantity, selectedItem.display_unit_label)}. Devuelto: {quantityLabel(selectedItem.returned_quantity, selectedItem.display_unit_label)}. Origen: {selectedItem.coil?.barcode ?? 'Stock global'}.
+                                                    Pendiente: {quantityLabel(selectedItem.pending_quantity, selectedItem.display_unit_label, decimalFormat)} ({decimalFormat.measure(selectedItem.pending_meters)} base). Entregado: {quantityLabel(selectedItem.delivered_quantity, selectedItem.display_unit_label, decimalFormat)}. Devuelto: {quantityLabel(selectedItem.returned_quantity, selectedItem.display_unit_label, decimalFormat)}. Origen: {selectedItem.coil?.barcode ?? 'Stock global'}.
                                                 </p>
                                             ) : null}
                                         </div>
@@ -322,7 +320,7 @@ export default function Index({ deliveries, branches, sales, saleItems, drivers 
                             <FormField label="Descripcion" name="truck_description" value={truckForm.data.description} onChange={(event) => truckForm.setData('description', event.target.value)} error={truckForm.errors.description} />
                             <FormField label="Marca" name="truck_brand" value={truckForm.data.brand} onChange={(event) => truckForm.setData('brand', event.target.value)} error={truckForm.errors.brand} />
                             <FormField label="Modelo" name="truck_model" value={truckForm.data.model} onChange={(event) => truckForm.setData('model', event.target.value)} error={truckForm.errors.model} />
-                            <FormField label="Capacidad" name="truck_capacity" type="number" step="0.001" min="0" value={truckForm.data.capacity} onChange={(event) => truckForm.setData('capacity', event.target.value)} error={truckForm.errors.capacity} />
+                            <FormField label="Capacidad" name="truck_capacity" type="number" step={decimalStep(decimalFormat.decimalsFor('measure'))} min="0" value={truckForm.data.capacity} onChange={(event) => truckForm.setData('capacity', event.target.value)} error={truckForm.errors.capacity} />
                             <SelectField label="Estado" name="truck_active" value={truckForm.data.is_active ? '1' : '0'} onChange={(event) => truckForm.setData('is_active', event.target.value === '1')} error={truckForm.errors.is_active}>
                                 <option value="1">Activo</option>
                                 <option value="0">Inactivo</option>
@@ -395,11 +393,11 @@ export default function Index({ deliveries, branches, sales, saleItems, drivers 
                                     <td className="px-4 py-3">
                                         {delivery.items.map((item) => (
                                             <p key={item.id} className="text-xs">
-                                                {item.product?.name ?? '-'} - {quantityLabel(item.display_quantity || item.meters, item.display_unit_label || 'base')} {item.coil ? `(${item.coil.barcode})` : '(global)'}
+                                                {item.product?.name ?? '-'} - {quantityLabel(item.display_quantity || item.meters, item.display_unit_label || 'base', decimalFormat)} {item.coil ? `(${item.coil.barcode})` : '(global)'}
                                             </p>
                                         ))}
                                     </td>
-                                    <td className="px-4 py-3 text-right">{meterFormatter.format(Number(delivery.total_meters ?? 0))} m</td>
+                                    <td className="px-4 py-3 text-right">{decimalFormat.measure(delivery.total_meters ?? 0)} m</td>
                                     <td className="px-4 py-3">{statusLabel(delivery.status)}</td>
                                     <td className="px-4 py-3">{delivery.user?.name ?? '-'}</td>
                                 </tr>
@@ -434,12 +432,26 @@ function itemForRow(availableItems, row) {
     return availableItems.find((item) => String(item.id) === String(row?.sale_item_id));
 }
 
-function itemOptionLabel(item) {
-    return `${item.product?.name ?? item.description} - ${quantityLabel(item.pending_quantity, item.display_unit_label)} pend.`;
+function itemOptionLabel(item, decimalFormat) {
+    return `${item.product?.name ?? item.description} - ${quantityLabel(item.pending_quantity, item.display_unit_label, decimalFormat)} pend.`;
 }
 
-function quantityLabel(quantity, unit) {
-    return `${meterFormatter.format(Number(quantity ?? 0))} ${unit ?? ''}`.trim();
+function quantityLabel(quantity, unit, decimalFormat) {
+    return `${decimalFormat.format(quantity ?? 0, precisionKindForUnit(unit))} ${unit ?? ''}`.trim();
+}
+
+function precisionKindForUnit(unit) {
+    const normalized = String(unit ?? '').toLowerCase();
+
+    if (['m', 'mt', 'mts', 'metro', 'metros', 'base'].includes(normalized)) {
+        return 'measure';
+    }
+
+    if (['kg', 'kilo', 'kilos', 'ton', 'tn', 'tonelada', 'toneladas', 'lb', 'lbs'].includes(normalized)) {
+        return 'weight';
+    }
+
+    return 'quantity';
 }
 
 function CatalogPanel({ title, children, onSubmit, processing, buttonLabel, onCancel }) {

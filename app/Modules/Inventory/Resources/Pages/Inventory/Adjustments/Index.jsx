@@ -4,15 +4,13 @@ import FormField from '../../../../../Shared/Resources/Components/FormField';
 import ModuleHeader from '../../../../../Shared/Resources/Components/ModuleHeader';
 import Pagination from '../../../../../Shared/Resources/Components/Pagination';
 import SelectField from '../../../../../Shared/Resources/Components/SelectField';
+import { decimalStep, useDecimalFormatter } from '@/Utils/formatters';
 import { Head, router, useForm, usePage } from '@inertiajs/react';
-
-const numberFormatter = new Intl.NumberFormat('es-BO', {
-    maximumFractionDigits: 3,
-});
 
 export default function Index({ adjustments, branches, products, coils, filters }) {
     const permissions = usePage().props.auth.permissions;
     const canManage = permissions.includes('inventory.adjustments.manage');
+    const decimalFormat = useDecimalFormatter('inventory');
     const filterForm = useForm({
         branch_id: filters.branch_id ?? '',
         type: filters.type ?? '',
@@ -71,9 +69,9 @@ export default function Index({ adjustments, branches, products, coils, filters 
                         </SelectField>
                         <SelectField label="Lote/unidad fisica" name="product_coil_id" value={adjustmentForm.data.product_coil_id} onChange={(event) => adjustmentForm.setData('product_coil_id', event.target.value)} error={adjustmentForm.errors.product_coil_id} disabled={selectedProduct?.inventory_tracking_mode !== 'coil'}>
                             <option value="">Sin lote/unidad</option>
-                            {availableCoils.map((coil) => <option key={coil.id} value={coil.id}>{coil.barcode} · {coil.available_meters} m</option>)}
+                            {availableCoils.map((coil) => <option key={coil.id} value={coil.id}>{coil.barcode} - {decimalFormat.measure(coil.available_meters)} m</option>)}
                         </SelectField>
-                        <FormField label="Cantidad" name="meters" type="number" step="0.001" min="0.001" value={adjustmentForm.data.meters} onChange={(event) => adjustmentForm.setData('meters', event.target.value)} error={adjustmentForm.errors.meters} required />
+                        <FormField label="Cantidad" name="meters" type="number" step={decimalStep(decimalFormat.decimalsFor('measure'))} min={decimalStep(decimalFormat.decimalsFor('measure'))} value={adjustmentForm.data.meters} onChange={(event) => adjustmentForm.setData('meters', event.target.value)} error={adjustmentForm.errors.meters} required />
                         <FormField label="Motivo" name="reason" value={adjustmentForm.data.reason} onChange={(event) => adjustmentForm.setData('reason', event.target.value)} error={adjustmentForm.errors.reason} required />
                         <div className="sm:col-span-2 lg:col-span-4">
                             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300" htmlFor="notes">
@@ -135,8 +133,8 @@ export default function Index({ adjustments, branches, products, coils, filters 
                                     </td>
                                     <td className="px-4 py-3">{adjustment.branch?.name ?? '-'}</td>
                                     <td className="px-4 py-3">{adjustment.type === 'increase' ? 'Aumento' : 'Disminucion'}</td>
-                                    <td className="px-4 py-3 text-right">{numberFormatter.format(Number(adjustment.meters_delta ?? 0))} m</td>
-                                    <td className="px-4 py-3 text-right">{numberFormatter.format(Number(adjustment.meters_after ?? 0))} m</td>
+                                    <td className="px-4 py-3 text-right">{decimalFormat.measure(adjustment.meters_delta ?? 0)} m</td>
+                                    <td className="px-4 py-3 text-right">{decimalFormat.measure(adjustment.meters_after ?? 0)} m</td>
                                     <td className="px-4 py-3">{adjustment.reason}</td>
                                     <td className="whitespace-nowrap px-4 py-3">{formatDate(adjustment.adjusted_at)}</td>
                                 </tr>

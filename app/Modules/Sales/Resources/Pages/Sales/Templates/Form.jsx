@@ -65,17 +65,18 @@ const DEFAULT_ITEM_COLUMNS = [
 ];
 
 const PAPER_PREVIEW_SIZES = {
-    letter: { width: '100%', minHeight: '520px' },
-    half_letter: { width: '100%', minHeight: '260px', compact: true },
-    legal: { width: '100%', minHeight: '660px' },
-    half_legal: { width: '100%', minHeight: '330px', compact: true },
-    full_page: { width: '100%', minHeight: '560px' },
+    letter: { width: '100%', minHeight: '520px', aspectRatio: '216 / 279' },
+    half_letter: { width: '68%', minHeight: '420px', aspectRatio: '139.5 / 216', compact: true },
+    legal: { width: '100%', minHeight: '660px', aspectRatio: '216 / 356' },
+    half_legal: { width: '82%', minHeight: '420px', aspectRatio: '178 / 216', compact: true },
+    full_page: { width: '100%', minHeight: '560px', aspectRatio: '210 / 297' },
     thermal: { width: null, minHeight: '360px' },
 };
 
 export default function Form({ template, branches, defaultLayout, attributeFields = [] }) {
     const isEditing = Boolean(template);
     const [draggedSection, setDraggedSection] = useState(null);
+    const [draggedColumn, setDraggedColumn] = useState(null);
     const { data, setData, post, put, processing, errors } = useForm({
         branch_id: template?.branch_id ?? '',
         name: template?.name ?? 'Formato principal',
@@ -128,6 +129,15 @@ export default function Form({ template, branches, defaultLayout, attributeField
         const [column] = columns.splice(fromIndex, 1);
         columns.splice(toIndex, 0, column);
         setItemColumns(columns);
+    };
+    const dropItemColumn = (targetIndex) => {
+        if (draggedColumn === null || draggedColumn === targetIndex) {
+            setDraggedColumn(null);
+            return;
+        }
+
+        moveItemColumn(draggedColumn, targetIndex);
+        setDraggedColumn(null);
     };
     const setSection = (index, field, value) => {
         const sections = [...data.layout.sections];
@@ -193,9 +203,9 @@ export default function Form({ template, branches, defaultLayout, attributeField
                                 </SelectField>
                                 <SelectField label="Tipo de hoja" name="paper_type" value={data.paper_type} onChange={(event) => setData('paper_type', event.target.value)} error={errors.paper_type}>
                                     <option value="letter">Bond carta</option>
-                                    <option value="half_letter">Bond carta media hoja</option>
+                                    <option value="half_letter">Bond carta media hoja vertical</option>
                                     <option value="legal">Oficio</option>
-                                    <option value="half_legal">Oficio media hoja</option>
+                                    <option value="half_legal">Oficio media hoja vertical</option>
                                     <option value="full_page">Hoja completa</option>
                                     <option value="thermal">Impresora termica</option>
                                 </SelectField>
@@ -254,18 +264,38 @@ export default function Form({ template, branches, defaultLayout, attributeField
                         </Panel>
 
                         <Panel title="Columnas de items">
+                            <p className="mb-3 text-sm text-slate-500 dark:text-slate-400">
+                                Arrastra cada columna o usa las flechas para decidir su posicion de izquierda a derecha. Las caracteristicas del producto se comportan igual que cualquier otra columna.
+                            </p>
                             <div className="space-y-3">
                                 {itemColumns.map((column, index) => (
                                     <div
                                         key={column.key}
-                                        className="grid gap-3 rounded-md border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-950/30 sm:grid-cols-[minmax(0,1fr)_120px_112px]"
+                                        draggable
+                                        onDragStart={() => setDraggedColumn(index)}
+                                        onDragOver={(event) => event.preventDefault()}
+                                        onDrop={() => dropItemColumn(index)}
+                                        onDragEnd={() => setDraggedColumn(null)}
+                                        className={[
+                                            'grid gap-3 rounded-md border p-3 transition dark:border-slate-800 sm:grid-cols-[44px_minmax(0,1fr)_120px_112px]',
+                                            draggedColumn === index ? 'border-brand-primary bg-brand-primary/5' : 'border-slate-200 bg-white dark:bg-slate-950/30',
+                                        ].join(' ')}
                                     >
-                                        <FormField
-                                            label={FIELD_LABELS[column.key] ?? 'Caracteristica'}
-                                            name={`column_${column.key}`}
-                                            value={column.label}
-                                            onChange={(event) => setItemColumn(index, 'label', event.target.value)}
-                                        />
+                                        <div className="flex items-center justify-center rounded-md border border-slate-200 text-slate-500 dark:border-slate-700" title="Arrastrar columna">
+                                            ::
+                                        </div>
+                                        <div>
+                                            <FormField
+                                                label={column.key.startsWith('item_attribute_') ? 'Caracteristica de producto' : FIELD_LABELS[column.key] ?? 'Columna'}
+                                                name={`column_${column.key}`}
+                                                value={column.label}
+                                                onChange={(event) => setItemColumn(index, 'label', event.target.value)}
+                                            />
+                                            <p className="mt-1 text-xs text-slate-500">
+                                                Posicion {index + 1} de {itemColumns.length}
+                                                {column.key.startsWith('item_attribute_') ? ' - caracteristica dinamica' : ''}
+                                            </p>
+                                        </div>
                                         <label className="flex items-center gap-2 self-end rounded-md border border-slate-200 px-3 py-3 text-sm dark:border-slate-800">
                                             <input type="checkbox" checked={column.show} onChange={(event) => setItemColumn(index, 'show', event.target.checked)} />
                                             <span>Mostrar</span>
@@ -421,6 +451,7 @@ function Preview({ data, attributeFields }) {
                         width,
                         maxWidth: '100%',
                         minHeight: paper.minHeight,
+                        aspectRatio: paper.aspectRatio,
                         padding: `${data.layout.margin_mm ?? 8}px`,
                         boxSizing: 'border-box',
                         fontFamily: data.layout.font_family,

@@ -3,14 +3,11 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import FormField from '../../../../../Shared/Resources/Components/FormField';
 import ModuleHeader from '../../../../../Shared/Resources/Components/ModuleHeader';
 import SelectField from '../../../../../Shared/Resources/Components/SelectField';
+import { decimalStep, useDecimalFormatter } from '@/Utils/formatters';
 import { Head, Link, useForm } from '@inertiajs/react';
 
-const numberFormatter = new Intl.NumberFormat('es-BO', {
-    minimumFractionDigits: 3,
-    maximumFractionDigits: 3,
-});
-
 export default function Receive({ order }) {
+    const decimalFormat = useDecimalFormatter('purchases');
     const { data, setData, post, processing, errors } = useForm({
         received_at: new Date().toISOString().slice(0, 10),
         notes: '',
@@ -80,9 +77,9 @@ export default function Receive({ order }) {
                                                 <p className="font-semibold text-slate-900 dark:text-slate-100">{item.product?.name ?? '-'}</p>
                                                 <p className="text-xs text-slate-500">{item.product?.sku ?? ''}</p>
                                             </td>
-                                            <td className="px-4 py-3 text-right">{numberFormatter.format(Number(item.meters ?? 0))}</td>
-                                            <td className="px-4 py-3 text-right">{numberFormatter.format(Number(item.received_meters ?? 0))}</td>
-                                            <td className="px-4 py-3 text-right font-semibold">{numberFormatter.format(pending)}</td>
+                                            <td className="px-4 py-3 text-right">{decimalFormat.measure(item.meters ?? 0)}</td>
+                                            <td className="px-4 py-3 text-right">{decimalFormat.measure(item.received_meters ?? 0)}</td>
+                                            <td className="px-4 py-3 text-right font-semibold">{decimalFormat.measure(pending)}</td>
                                             <td className="px-4 py-3">
                                                 <FormField
                                                     label="Metros"
@@ -90,7 +87,7 @@ export default function Receive({ order }) {
                                                     type="number"
                                                     min="0"
                                                     max={pending}
-                                                    step="0.001"
+                                                    step={decimalStep(decimalFormat.decimalsFor('measure'))}
                                                     value={data.items[index]?.meters ?? ''}
                                                     disabled={pending <= 0}
                                                     onChange={(event) => updateItem(index, 'meters', event.target.value)}
@@ -103,7 +100,7 @@ export default function Receive({ order }) {
                                                     name={`items.${index}.kilograms`}
                                                     type="number"
                                                     min="0"
-                                                    step="0.001"
+                                                    step={decimalStep(decimalFormat.decimalsFor('weight'))}
                                                     value={data.items[index]?.kilograms ?? ''}
                                                     disabled={pending <= 0}
                                                     onChange={(event) => updateItem(index, 'kilograms', event.target.value)}

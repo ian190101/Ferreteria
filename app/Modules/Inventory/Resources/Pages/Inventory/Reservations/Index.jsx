@@ -4,15 +4,13 @@ import FormField from '../../../../../Shared/Resources/Components/FormField';
 import ModuleHeader from '../../../../../Shared/Resources/Components/ModuleHeader';
 import Pagination from '../../../../../Shared/Resources/Components/Pagination';
 import SelectField from '../../../../../Shared/Resources/Components/SelectField';
+import { decimalStep, useDecimalFormatter } from '@/Utils/formatters';
 import { Head, router, useForm, usePage } from '@inertiajs/react';
-
-const numberFormatter = new Intl.NumberFormat('es-BO', {
-    maximumFractionDigits: 3,
-});
 
 export default function Index({ reservations, branches, products, coils, quotations, filters, statuses }) {
     const permissions = usePage().props.auth.permissions;
     const canManage = permissions.includes('inventory.reservations.manage');
+    const decimalFormat = useDecimalFormatter('inventory');
     const filterForm = useForm({
         branch_id: filters.branch_id ?? '',
         product_id: filters.product_id ?? '',
@@ -64,13 +62,13 @@ export default function Index({ reservations, branches, products, coils, quotati
                         </SelectField>
                         <SelectField label="Lote/unidad fisica" name="product_coil_id" value={reservationForm.data.product_coil_id} onChange={(event) => reservationForm.setData('product_coil_id', event.target.value)} error={reservationForm.errors.product_coil_id} disabled={selectedProduct?.inventory_tracking_mode !== 'coil'}>
                             <option value="">Sin lote/unidad</option>
-                            {availableCoils.map((coil) => <option key={coil.id} value={coil.id}>{coil.barcode} · {coil.available_meters} m</option>)}
+                            {availableCoils.map((coil) => <option key={coil.id} value={coil.id}>{coil.barcode} - {decimalFormat.measure(coil.available_meters)} m</option>)}
                         </SelectField>
                         <SelectField label="Cotizacion" name="sale_id" value={reservationForm.data.sale_id} onChange={(event) => reservationForm.setData('sale_id', event.target.value)} error={reservationForm.errors.sale_id}>
                             <option value="">Sin cotizacion</option>
                             {availableQuotations.map((quotation) => <option key={quotation.id} value={quotation.id}>{quotation.receipt_number} · {quotation.customer_name ?? 'Cliente'}</option>)}
                         </SelectField>
-                        <FormField label="Cantidad" name="meters" type="number" step="0.001" min="0.001" value={reservationForm.data.meters} onChange={(event) => reservationForm.setData('meters', event.target.value)} error={reservationForm.errors.meters} required />
+                        <FormField label="Cantidad" name="meters" type="number" step={decimalStep(decimalFormat.decimalsFor('measure'))} min={decimalStep(decimalFormat.decimalsFor('measure'))} value={reservationForm.data.meters} onChange={(event) => reservationForm.setData('meters', event.target.value)} error={reservationForm.errors.meters} required />
                         <FormField label="Expira" name="expires_at" type="datetime-local" value={reservationForm.data.expires_at} onChange={(event) => reservationForm.setData('expires_at', event.target.value)} error={reservationForm.errors.expires_at} />
                         <FormField label="Motivo" name="reason" value={reservationForm.data.reason} onChange={(event) => reservationForm.setData('reason', event.target.value)} error={reservationForm.errors.reason} />
                         <div className="flex items-end">
@@ -128,7 +126,7 @@ export default function Index({ reservations, branches, products, coils, quotati
                                     </td>
                                     <td className="px-4 py-3">{reservation.branch?.name ?? '-'}</td>
                                     <td className="px-4 py-3">{reservation.sale?.receipt_number ?? '-'}</td>
-                                    <td className="px-4 py-3 text-right">{numberFormatter.format(Number(reservation.meters ?? 0))} m</td>
+                                    <td className="px-4 py-3 text-right">{decimalFormat.measure(reservation.meters ?? 0)} m</td>
                                     <td className="px-4 py-3">{statusLabel(reservation.status)}</td>
                                     <td className="whitespace-nowrap px-4 py-3">{formatDate(reservation.expires_at)}</td>
                                     <td className="px-4 py-3">{reservation.user?.name ?? '-'}</td>

@@ -6,17 +6,14 @@ import FormField from '../../../../Shared/Resources/Components/FormField';
 import ModuleHeader from '../../../../Shared/Resources/Components/ModuleHeader';
 import Pagination from '../../../../Shared/Resources/Components/Pagination';
 import SelectField from '../../../../Shared/Resources/Components/SelectField';
+import { decimalStep, useDecimalFormatter } from '@/Utils/formatters';
 import { Head, Link, router, useForm, usePage } from '@inertiajs/react';
 import { useState } from 'react';
-
-const moneyFormatter = new Intl.NumberFormat('es-BO', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-});
 
 export default function Index({ payments, receivables, branches, methods, methodCatalog, filters }) {
     const permissions = usePage().props.auth.permissions;
     const canManage = permissions.includes('payments.manage');
+    const decimalFormat = useDecimalFormatter('finance');
     const [editingMethod, setEditingMethod] = useState(null);
     const filterForm = useForm({
         branch_id: filters.branch_id ?? '',
@@ -128,7 +125,7 @@ export default function Index({ payments, receivables, branches, methods, method
                                     </div>
                                     <div className="text-left sm:text-right">
                                         <p className="text-sm text-slate-500">Saldo</p>
-                                        <p className="font-semibold">{sale.currency?.symbol ?? 'Bs'} {moneyFormatter.format(Number(sale.balance_due ?? 0))}</p>
+                                        <p className="font-semibold">{sale.currency?.symbol ?? 'Bs'} {decimalFormat.money(sale.balance_due ?? 0)}</p>
                                     </div>
                                 </div>
                             ))}
@@ -152,7 +149,7 @@ export default function Index({ payments, receivables, branches, methods, method
                                 </SelectField>
                                 <div className="grid gap-4 sm:grid-cols-2">
                                     <FormField label="Fecha de pago" name="paid_at" value="Se registrara automaticamente al guardar" disabled className="mt-1 block w-full rounded-md border-gray-300 bg-slate-100 shadow-sm dark:border-gray-700 dark:bg-slate-800 dark:text-gray-300" error={paymentForm.errors.paid_at} />
-                                    <FormField label="Monto" name="amount" type="number" step="0.01" min="0.01" value={paymentForm.data.amount} onChange={(event) => paymentForm.setData('amount', event.target.value)} error={paymentForm.errors.amount} required />
+                                    <FormField label="Monto" name="amount" type="number" step={decimalStep(decimalFormat.decimalsFor('money'))} min={decimalStep(decimalFormat.decimalsFor('money'))} value={paymentForm.data.amount} onChange={(event) => paymentForm.setData('amount', event.target.value)} error={paymentForm.errors.amount} required />
                                 </div>
                                 <FormField label="Referencia" name="reference" value={paymentForm.data.reference} onChange={(event) => paymentForm.setData('reference', event.target.value)} error={paymentForm.errors.reference} />
                                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300" htmlFor="notes">
@@ -284,7 +281,7 @@ export default function Index({ payments, receivables, branches, methods, method
                                         <td className="px-4 py-3">{payment.sale?.customer_name ?? '-'}</td>
                                         <td className="px-4 py-3">{payment.method?.name ?? '-'}</td>
                                         <td className="px-4 py-3">{payment.reference ?? '-'}</td>
-                                        <td className="px-4 py-3 text-right">Bs {moneyFormatter.format(Number(payment.amount_bob ?? 0))}</td>
+                                        <td className="px-4 py-3 text-right">Bs {decimalFormat.money(payment.amount_bob ?? 0)}</td>
                                         {canManage ? (
                                             <td className="px-4 py-3 text-right">
                                                 <IconButton icon="close" label="Anular" tone="danger" onClick={() => voidPayment(payment)} />

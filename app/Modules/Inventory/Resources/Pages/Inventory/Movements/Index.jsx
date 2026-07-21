@@ -3,13 +3,11 @@ import FormField from '../../../../../Shared/Resources/Components/FormField';
 import ModuleHeader from '../../../../../Shared/Resources/Components/ModuleHeader';
 import Pagination from '../../../../../Shared/Resources/Components/Pagination';
 import SelectField from '../../../../../Shared/Resources/Components/SelectField';
+import { useDecimalFormatter } from '@/Utils/formatters';
 import { Head, router, useForm } from '@inertiajs/react';
 
-const numberFormatter = new Intl.NumberFormat('es-BO', {
-    maximumFractionDigits: 3,
-});
-
 export default function Index({ movements, branches = [], products = [], coils = [], types = [], filters = {} }) {
+    const decimalFormat = useDecimalFormatter('inventory');
     const { data, setData, get, processing } = useForm({
         branch_id: filters.branch_id ?? '',
         product_id: filters.product_id ?? '',
@@ -96,9 +94,9 @@ export default function Index({ movements, branches = [], products = [], coils =
                                     <td className="px-4 py-3">{movement.coil?.barcode ?? 'Global'}</td>
                                     <td className="px-4 py-3">{movement.branch?.name ?? '-'}</td>
                                     <td className="px-4 py-3">{movementType(movement.type)}</td>
-                                    <td className="px-4 py-3 text-right">{numberFormatter.format(Number(movement.meters_delta ?? 0))} m</td>
-                                    <td className="px-4 py-3 text-right">{numberFormatter.format(Number(movement.meters_before ?? 0))} m</td>
-                                    <td className="px-4 py-3 text-right">{numberFormatter.format(Number(movement.meters_after ?? 0))} m</td>
+                                    <td className="px-4 py-3 text-right">{decimalFormat.measure(movement.meters_delta ?? 0)} m</td>
+                                    <td className="px-4 py-3 text-right">{decimalFormat.measure(movement.meters_before ?? 0)} m</td>
+                                    <td className="px-4 py-3 text-right">{decimalFormat.measure(movement.meters_after ?? 0)} m</td>
                                     <td className="px-4 py-3">{movement.user?.name ?? '-'}</td>
                                     <td className="px-4 py-3">{movement.reason ?? '-'}</td>
                                 </tr>

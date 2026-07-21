@@ -7,10 +7,6 @@ import SelectField from '../../../../../Shared/Resources/Components/SelectField'
 import { Head, router, useForm, usePage } from '@inertiajs/react';
 import { decimalStep, useDecimalFormatter } from '@/Utils/formatters';
 
-const numberFormatter = new Intl.NumberFormat('es-BO', {
-    maximumFractionDigits: 3,
-});
-
 export default function Index({ transfers, branches, products, coils, filters }) {
     const permissions = usePage().props.auth.permissions;
     const decimalFormat = useDecimalFormatter('inventory');

@@ -73,9 +73,9 @@ function labelDocument(type) {
 function labelPaper(type, width) {
     return {
         letter: 'Bond carta',
-        half_letter: 'Bond carta media hoja',
+        half_letter: 'Bond carta media hoja vertical',
         legal: 'Oficio',
-        half_legal: 'Oficio media hoja',
+        half_legal: 'Oficio media hoja vertical',
         full_page: 'Hoja completa',
         thermal: `Termica ${width}mm`,
     }[type] ?? type;

@@ -2,6 +2,7 @@ import IconButton from '@/Components/IconButton';
 import PrimaryButton from '@/Components/PrimaryButton';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { confirmAction } from '@/Utils/alerts';
+import { useDecimalFormatter } from '@/Utils/formatters';
 import DecimalPrecisionEditor, { decimalDefaults, setDecimalPath } from '../../../../Shared/Resources/Components/DecimalPrecisionEditor';
 import FormField from '../../../../Shared/Resources/Components/FormField';
 import ModuleHeader from '../../../../Shared/Resources/Components/ModuleHeader';
@@ -40,6 +41,7 @@ const catalogs = {
 
 export default function Settings({ saleTypes, currencies, advanceOptions, documentSequences, branches, decimalPrecision }) {
     const [editing, setEditing] = useState(null);
+    const decimalFormat = useDecimalFormatter('sales');
     const { data, setData, post, put, processing, errors, reset, clearErrors } = useForm(emptyForm());
     const decimalForm = useForm({
         decimal_precision: decimalDefaults(decimalPrecision),
@@ -255,7 +257,7 @@ function Catalog({ kind, title, rows, columns, links, onEdit, onDelete }) {
                         {rows.map((row) => (
                             <tr key={row.id}>
                                 {columns.map((column) => (
-                                    <td key={column} className="px-4 py-3">{formatValue(column, row[column])}</td>
+                                    <td key={column} className="px-4 py-3">{formatValue(column, row[column], decimalFormat)}</td>
                                 ))}
                                 <td className="px-4 py-3">
                                     <div className="flex justify-end gap-3">
@@ -294,7 +296,7 @@ function label(column) {
     }[column] ?? column;
 }
 
-function formatValue(column, value) {
+function formatValue(column, value, decimalFormat) {
     if (column === 'is_active') {
         return value ? 'Activo' : 'Inactivo';
     }
@@ -304,11 +306,11 @@ function formatValue(column, value) {
     }
 
     if (column === 'percentage') {
-        return value === null || value === undefined ? '-' : `${Number(value ?? 0).toFixed(2)}%`;
+        return value === null || value === undefined ? '-' : `${decimalFormat.percent(value ?? 0)}%`;
     }
 
     if (column === 'amount') {
-        return value === null || value === undefined ? '-' : `Bs ${Number(value ?? 0).toFixed(2)}`;
+        return value === null || value === undefined ? '-' : `Bs ${decimalFormat.money(value ?? 0)}`;
     }
 
     if (column === 'type') {
@@ -316,7 +318,7 @@ function formatValue(column, value) {
     }
 
     if (column === 'exchange_rate_to_bob') {
-        return Number(value ?? 0).toFixed(6);
+        return decimalFormat.exchangeRate(value ?? 0);
     }
 
     if (column === 'branch') {

@@ -93,7 +93,8 @@ class SaleController extends Controller
             $customer = $request->filled('customer_id')
                 ? Customer::query()->findOrFail($request->integer('customer_id'))
                 : null;
-            $advanceOption = $request->filled('advance_option_id')
+            $advanceMode = $request->input('advance_mode', 'none');
+            $advanceOption = $advanceMode === 'percentage' && $request->filled('advance_option_id')
                 ? AdvanceOption::query()->findOrFail($request->integer('advance_option_id'))
                 : null;
 
@@ -123,7 +124,7 @@ class SaleController extends Controller
             $subtotal = round($items->sum(fn ($item) => (float) $item['meters'] * (float) $item['unit_price']), 2);
             $discountTotal = round($items->sum(fn ($item) => (float) $item['discount_amount']), 2);
             $total = round($items->sum('total'), 2);
-            [$advancePercentage, $advanceAmount] = $this->advanceValues($advanceOption, $total, (float) $request->input('advance_amount_input', 0));
+            [$advancePercentage, $advanceAmount] = $this->advanceValues($advanceOption, $total, (float) $request->input('advance_amount_input', 0), $advanceMode);
 
             $sourceQuotation = $request->filled('source_quotation_id')
                 ? Sale::query()
@@ -134,7 +135,7 @@ class SaleController extends Controller
                 : null;
 
             $sale = Sale::query()->create([
-                ...$request->safe()->except(['items', 'source_quotation_id', 'advance_amount_input']),
+                ...$request->safe()->except(['items', 'source_quotation_id', 'advance_mode', 'advance_amount_input']),
                 'receipt_number' => $request->filled('receipt_number')
                     ? $request->validated('receipt_number')
                     : $this->nextReceiptNumber($request->integer('branch_id'), $request->string('document_type')->toString()),
@@ -832,14 +833,14 @@ class SaleController extends Controller
         return $receiptNumber;
     }
 
-    private function advanceValues(?AdvanceOption $advanceOption, float $total, float $manualAmount): array
+    private function advanceValues(?AdvanceOption $advanceOption, float $total, float $manualAmount, string $advanceMode = 'none'): array
     {
-        if (! $advanceOption) {
-            return [0, 0];
+        if ($advanceMode === 'amount') {
+            return [0, round(min(max($manualAmount, 0), $total), 2)];
         }
 
-        if ($advanceOption->type === AdvanceOption::TYPE_AMOUNT) {
-            return [0, round(min(max($manualAmount, 0), $total), 2)];
+        if (! $advanceOption) {
+            return [0, 0];
         }
 
         $percentage = (float) $advanceOption->percentage;

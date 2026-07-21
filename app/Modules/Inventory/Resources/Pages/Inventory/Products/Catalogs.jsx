@@ -4,10 +4,12 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import FormField from '../../../../../Shared/Resources/Components/FormField';
 import ModuleHeader from '../../../../../Shared/Resources/Components/ModuleHeader';
 import SelectField from '../../../../../Shared/Resources/Components/SelectField';
+import { decimalStep, useDecimalFormatter } from '@/Utils/formatters';
 import { Head, Link, useForm } from '@inertiajs/react';
 import { useState } from 'react';
 
 export default function Catalogs({ categories, units, thicknesses = [] }) {
+    const decimalFormat = useDecimalFormatter('inventory');
     const [editingUnit, setEditingUnit] = useState(null);
     const [editingThickness, setEditingThickness] = useState(null);
     const [editingCategory, setEditingCategory] = useState(null);
@@ -146,12 +148,12 @@ export default function Catalogs({ categories, units, thicknesses = [] }) {
                     <Panel title={editingThickness ? 'Editar espesor' : 'Nuevo espesor'}>
                         <form onSubmit={submitThickness} className="grid gap-4 sm:grid-cols-2">
                             <FormField label="Nombre" name="thickness_name" value={thicknessForm.data.name} onChange={(event) => thicknessForm.setData('name', event.target.value)} error={thicknessForm.errors.name} required />
-                            <FormField label="Milimetros" name="millimeters" type="number" step="0.0001" value={thicknessForm.data.millimeters} onChange={(event) => thicknessForm.setData('millimeters', event.target.value)} error={thicknessForm.errors.millimeters} required />
-                            <FormField label="Kg por metro" name="kg_per_meter" type="number" step="0.000001" value={thicknessForm.data.kg_per_meter} onChange={(event) => thicknessForm.setData('kg_per_meter', event.target.value)} error={thicknessForm.errors.kg_per_meter} required />
+                            <FormField label="Milimetros" name="millimeters" type="number" step={decimalStep(decimalFormat.decimalsFor('measure'))} value={thicknessForm.data.millimeters} onChange={(event) => thicknessForm.setData('millimeters', event.target.value)} error={thicknessForm.errors.millimeters} required />
+                            <FormField label="Kg por metro" name="kg_per_meter" type="number" step={decimalStep(decimalFormat.decimalsFor('exchange_rate'))} value={thicknessForm.data.kg_per_meter} onChange={(event) => thicknessForm.setData('kg_per_meter', event.target.value)} error={thicknessForm.errors.kg_per_meter} required />
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Factor kg a metros</label>
                                 <div className="mt-1 flex min-h-10 items-center rounded-2xl border border-slate-200 bg-slate-50 px-3 text-sm font-semibold text-slate-700 dark:border-white/10 dark:bg-white/5 dark:text-slate-200">
-                                    {conversionFactor(thicknessForm.data.kg_per_meter)}
+                                    {conversionFactor(thicknessForm.data.kg_per_meter, decimalFormat)}
                                 </div>
                             </div>
                             <SelectField label="Estado" name="thickness_active" value={thicknessForm.data.is_active ? '1' : '0'} onChange={(event) => thicknessForm.setData('is_active', event.target.value === '1')} error={thicknessForm.errors.is_active}>
@@ -167,9 +169,9 @@ export default function Catalogs({ categories, units, thicknesses = [] }) {
                         <SimpleTable
                             headers={['Espesor', 'Kg/m', 'Factor', 'Uso', 'Estado', '']}
                             rows={thicknesses.map((thickness) => [
-                                `${thickness.name} (${Number(thickness.millimeters).toLocaleString('es-BO')} mm)`,
-                                Number(thickness.kg_per_meter).toLocaleString('es-BO', { maximumFractionDigits: 6 }),
-                                Number(thickness.kg_to_meter_factor).toLocaleString('es-BO', { maximumFractionDigits: 6 }),
+                                `${thickness.name} (${decimalFormat.measure(thickness.millimeters)} mm)`,
+                                decimalFormat.exchangeRate(thickness.kg_per_meter),
+                                decimalFormat.exchangeRate(thickness.kg_to_meter_factor),
                                 thickness.products_count,
                                 thickness.is_active ? 'Activo' : 'Inactivo',
                                 <IconButton key={thickness.id} icon="edit" label="Editar" onClick={() => editThickness(thickness)} />,
@@ -289,12 +291,12 @@ function thicknessDefaults() {
     };
 }
 
-function conversionFactor(kgPerMeter) {
+function conversionFactor(kgPerMeter, decimalFormat) {
     const value = Number(kgPerMeter);
 
     if (!value || value <= 0) {
         return 'Ingrese kg/m';
     }
 
-    return `${(1 / value).toLocaleString('es-BO', { maximumFractionDigits: 6 })} m por kg`;
+    return `${decimalFormat.exchangeRate(1 / value)} m por kg`;
 }

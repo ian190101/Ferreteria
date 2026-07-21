@@ -4,16 +4,13 @@ import FormField from '../../../../../Shared/Resources/Components/FormField';
 import ModuleHeader from '../../../../../Shared/Resources/Components/ModuleHeader';
 import Pagination from '../../../../../Shared/Resources/Components/Pagination';
 import SelectField from '../../../../../Shared/Resources/Components/SelectField';
+import { decimalStep, useDecimalFormatter } from '@/Utils/formatters';
 import { Head, Link, router, useForm, usePage } from '@inertiajs/react';
-
-const moneyFormatter = new Intl.NumberFormat('es-BO', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-});
 
 export default function Index({ promises, summary, branches, receivables, statuses, channels, filters }) {
     const permissions = usePage().props.auth.permissions;
     const canManage = permissions.includes('payment-promises.manage');
+    const decimalFormat = useDecimalFormatter('finance');
     const filterForm = useForm({
         branch_id: filters.branch_id ?? '',
         status: filters.status ?? '',
@@ -69,7 +66,7 @@ export default function Index({ promises, summary, branches, receivables, status
                     <Metric label="Pendientes" value={summary.pending_count} />
                     <Metric label="Vencidas" value={summary.overdue_count} tone="danger" />
                     <Metric label="Vencen hoy" value={summary.due_today_count} tone="warning" />
-                    <Metric label="Monto prometido" value={`Bs ${moneyFormatter.format(Number(summary.pending_amount ?? 0))}`} />
+                    <Metric label="Monto prometido" value={`Bs ${decimalFormat.money(summary.pending_amount ?? 0)}`} />
                 </div>
 
                 <div className="mb-6 grid gap-6 xl:grid-cols-[1fr_1fr]">
@@ -88,7 +85,7 @@ export default function Index({ promises, summary, branches, receivables, status
                                     </div>
                                     <div className="text-left sm:text-right">
                                         <p className="text-sm text-slate-500">Saldo</p>
-                                        <p className="font-semibold">{sale.currency?.symbol ?? 'Bs'} {moneyFormatter.format(Number(sale.balance_due ?? 0))}</p>
+                                        <p className="font-semibold">{sale.currency?.symbol ?? 'Bs'} {decimalFormat.money(sale.balance_due ?? 0)}</p>
                                     </div>
                                 </div>
                             ))}
@@ -111,7 +108,7 @@ export default function Index({ promises, summary, branches, receivables, status
                                     <FormField label="Fecha prometida" name="promised_date" type="date" value={promiseForm.data.promised_date} onChange={(event) => promiseForm.setData('promised_date', event.target.value)} error={promiseForm.errors.promised_date} required />
                                 </div>
                                 <div className="grid gap-4 sm:grid-cols-2">
-                                    <FormField label="Monto" name="promised_amount" type="number" step="0.01" min="0.01" value={promiseForm.data.promised_amount} onChange={(event) => promiseForm.setData('promised_amount', event.target.value)} error={promiseForm.errors.promised_amount} required />
+                                    <FormField label="Monto" name="promised_amount" type="number" step={decimalStep(decimalFormat.decimalsFor('money'))} min={decimalStep(decimalFormat.decimalsFor('money'))} value={promiseForm.data.promised_amount} onChange={(event) => promiseForm.setData('promised_amount', event.target.value)} error={promiseForm.errors.promised_amount} required />
                                     <SelectField label="Canal" name="channel" value={promiseForm.data.channel} onChange={(event) => promiseForm.setData('channel', event.target.value)} error={promiseForm.errors.channel} required>
                                         {channels.map((channel) => <option key={channel} value={channel}>{channelLabel(channel)}</option>)}
                                     </SelectField>
@@ -189,7 +186,7 @@ export default function Index({ promises, summary, branches, receivables, status
                                             <p>{promise.contact_name ?? '-'}</p>
                                             <p className="text-xs text-slate-500">{promise.contact_phone ?? channelLabel(promise.channel)}</p>
                                         </td>
-                                        <td className="px-4 py-3 text-right">Bs {moneyFormatter.format(Number(promise.promised_amount ?? 0))}</td>
+                                        <td className="px-4 py-3 text-right">Bs {decimalFormat.money(promise.promised_amount ?? 0)}</td>
                                         <td className="px-4 py-3">{statusLabel(promise.status)}</td>
                                         <td className="px-4 py-3">{promise.user?.name ?? '-'}</td>
                                         {canManage ? (

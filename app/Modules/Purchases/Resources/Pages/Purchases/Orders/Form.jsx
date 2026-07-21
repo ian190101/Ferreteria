@@ -3,17 +3,8 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import FormField from '../../../../../Shared/Resources/Components/FormField';
 import ModuleHeader from '../../../../../Shared/Resources/Components/ModuleHeader';
 import SelectField from '../../../../../Shared/Resources/Components/SelectField';
+import { decimalStep, useDecimalFormatter } from '@/Utils/formatters';
 import { Head, Link, useForm } from '@inertiajs/react';
-
-const moneyFormatter = new Intl.NumberFormat('es-BO', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-});
-
-const numberFormatter = new Intl.NumberFormat('es-BO', {
-    minimumFractionDigits: 3,
-    maximumFractionDigits: 3,
-});
 
 const DEFAULT_ITEM = {
     product_id: '',
@@ -29,6 +20,7 @@ const DEFAULT_ITEM = {
 };
 
 export default function Form({ branches, suppliers, products }) {
+    const decimalFormat = useDecimalFormatter('purchases');
     const { data, setData, post, processing, errors, transform } = useForm({
         branch_id: branches[0]?.id ?? '',
         supplier_id: '',
@@ -52,14 +44,14 @@ export default function Form({ branches, suppliers, products }) {
         const enteredWeight = Number(item.kilograms || 0);
         const kg = item.weight_unit === 'ton' ? enteredWeight * 1000 : enteredWeight;
 
-        return item.meters || (kgPerMeter && kg ? (kg / kgPerMeter).toFixed(3) : '');
+        return item.meters || (kgPerMeter && kg ? decimalFormat.fixed(kg / kgPerMeter, 'measure') : '');
     };
 
     const submit = (event) => {
         event.preventDefault();
         transform((payload) => ({
             ...payload,
-            items: payload.items.map((item) => preparePurchaseItem(item, products)),
+            items: payload.items.map((item) => preparePurchaseItem(item, products, decimalFormat)),
         }));
         post(route('purchases.orders.store'), { preserveScroll: true });
     };
@@ -110,27 +102,27 @@ export default function Form({ branches, suppliers, products }) {
                                             <option value="">Seleccionar</option>
                                             {products.map((product) => <option key={product.id} value={product.id}>{product.name} ({product.sku})</option>)}
                                         </SelectField>
-                                        <FormField label="Peso" name={`items.${index}.kilograms`} type="number" step="0.001" value={item.kilograms} onChange={(event) => updateItem(index, 'kilograms', event.target.value)} error={errors[`items.${index}.kilograms`]} />
+                                        <FormField label="Peso" name={`items.${index}.kilograms`} type="number" step={decimalStep(decimalFormat.decimalsFor('weight'))} value={item.kilograms} onChange={(event) => updateItem(index, 'kilograms', event.target.value)} error={errors[`items.${index}.kilograms`]} />
                                         <SelectField label="Unidad" name={`items.${index}.weight_unit`} value={item.weight_unit ?? 'kg'} onChange={(event) => updateItem(index, 'weight_unit', event.target.value)} error={errors[`items.${index}.weight_unit`]}>
                                             <option value="kg">Kg</option>
                                             <option value="ton">Toneladas</option>
                                         </SelectField>
-                                        <FormField label="Metros" name={`items.${index}.meters`} type="number" step="0.001" value={item.meters} placeholder={convertedMeters(item)} onChange={(event) => updateItem(index, 'meters', event.target.value)} error={errors[`items.${index}.meters`]} />
+                                        <FormField label="Metros" name={`items.${index}.meters`} type="number" step={decimalStep(decimalFormat.decimalsFor('measure'))} value={item.meters} placeholder={convertedMeters(item)} onChange={(event) => updateItem(index, 'meters', event.target.value)} error={errors[`items.${index}.meters`]} />
                                         <SelectField label="Costo en" name={`items.${index}.cost_mode`} value={item.cost_mode ?? 'meter'} onChange={(event) => updateItem(index, 'cost_mode', event.target.value)}>
                                             <option value="meter">Costo por metro</option>
                                             <option value="ton">Costo por tonelada</option>
                                         </SelectField>
                                         {item.cost_mode === 'ton' ? (
-                                            <FormField label="Costo/TON (Bs.)" name={`items.${index}.cost_per_ton`} type="number" step="0.01" value={item.cost_per_ton} placeholder="Bs. 0.00" onChange={(event) => updateItem(index, 'cost_per_ton', event.target.value)} />
+                                            <FormField label="Costo/TON (Bs.)" name={`items.${index}.cost_per_ton`} type="number" step={decimalStep(decimalFormat.decimalsFor('cost'))} value={item.cost_per_ton} placeholder={`Bs. ${decimalFormat.cost(0)}`} onChange={(event) => updateItem(index, 'cost_per_ton', event.target.value)} />
                                         ) : (
-                                            <FormField label="Costo/metro" name={`items.${index}.unit_cost`} type="number" step="0.0001" value={item.unit_cost} onChange={(event) => updateItem(index, 'unit_cost', event.target.value)} error={errors[`items.${index}.unit_cost`]} required />
+                                            <FormField label="Costo/metro" name={`items.${index}.unit_cost`} type="number" step={decimalStep(decimalFormat.decimalsFor('cost'))} value={item.unit_cost} onChange={(event) => updateItem(index, 'unit_cost', event.target.value)} error={errors[`items.${index}.unit_cost`]} required />
                                         )}
                                         <FormField label="Lote" name={`items.${index}.lot_number`} value={item.lot_number} onChange={(event) => updateItem(index, 'lot_number', event.target.value)} error={errors[`items.${index}.lot_number`]} />
                                         <FormField label="Barcode bobina" name={`items.${index}.coil_barcode`} value={item.coil_barcode} disabled={!isCoil} onChange={(event) => updateItem(index, 'coil_barcode', event.target.value)} error={errors[`items.${index}.coil_barcode`]} />
                                         <div className="sm:col-span-7">
                                             <div className="mb-3 rounded-md border border-slate-200 bg-slate-50 px-4 py-3 text-sm dark:border-slate-800 dark:bg-slate-950">
-                                                <p className="text-slate-500 dark:text-slate-400">Equivalente: <span className="font-semibold text-emerald-600">{numberFormatter.format(summary.meters)} m</span></p>
-                                                <p className="mt-1 text-slate-500 dark:text-slate-400">Subtotal costo: <span className="font-semibold text-slate-950 dark:text-slate-50">Bs {moneyFormatter.format(summary.total)}</span></p>
+                                                <p className="text-slate-500 dark:text-slate-400">Equivalente: <span className="font-semibold text-emerald-600">{decimalFormat.measure(summary.meters)} m</span></p>
+                                                <p className="mt-1 text-slate-500 dark:text-slate-400">Subtotal costo: <span className="font-semibold text-slate-950 dark:text-slate-50">Bs {decimalFormat.money(summary.total)}</span></p>
                                             </div>
                                             <FormField label="Descripcion" name={`items.${index}.description`} value={item.description} onChange={(event) => updateItem(index, 'description', event.target.value)} error={errors[`items.${index}.description`]} />
                                         </div>
@@ -151,7 +143,7 @@ export default function Form({ branches, suppliers, products }) {
     );
 }
 
-function preparePurchaseItem(item, products) {
+function preparePurchaseItem(item, products, decimalFormat) {
     const product = products.find((product) => String(product.id) === String(item.product_id));
     const summary = purchaseItemSummary(item, product);
 
@@ -159,8 +151,8 @@ function preparePurchaseItem(item, products) {
         product_id: item.product_id,
         weight_unit: item.weight_unit,
         kilograms: item.kilograms,
-        meters: summary.meters ? summary.meters.toFixed(3) : item.meters,
-        unit_cost: summary.unitCost ? summary.unitCost.toFixed(4) : item.unit_cost,
+        meters: summary.meters ? decimalFormat.fixed(summary.meters, 'measure') : item.meters,
+        unit_cost: summary.unitCost ? decimalFormat.fixed(summary.unitCost, 'cost') : item.unit_cost,
         lot_number: item.lot_number,
         coil_barcode: item.coil_barcode,
         description: item.description,

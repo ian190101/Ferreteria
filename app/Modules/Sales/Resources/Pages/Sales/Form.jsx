@@ -51,6 +51,7 @@ export default function Form({
         sale_type_id: saleTypes[0]?.id ?? '',
         currency_id: currencies[0]?.id ?? '',
         customer_id: '',
+        advance_mode: 'none',
         advance_option_id: '',
         receipt_number: '',
         customer_name: '',
@@ -63,7 +64,16 @@ export default function Form({
         internal_notes: '',
         items: [{ ...DEFAULT_ITEM }],
     });
-    const selectedAdvance = advanceOptions.find((option) => String(option.id) === String(data.advance_option_id));
+    const percentageAdvanceOptions = advanceOptions.filter((option) => option.type === 'percentage');
+
+    const updateAdvanceMode = (mode) => {
+        setData({
+            ...data,
+            advance_mode: mode,
+            advance_option_id: mode === 'percentage' ? data.advance_option_id : '',
+            advance_amount_input: mode === 'amount' ? data.advance_amount_input : '',
+        });
+    };
 
     const updateItem = (index, field, value) => {
         const items = data.items.map((item, itemIndex) => (itemIndex === index ? { ...item, [field]: value } : item));
@@ -133,13 +143,16 @@ export default function Form({
             sale_type_id: quotation.sale_type_id ?? data.sale_type_id,
             currency_id: quotation.currency_id ?? data.currency_id,
             customer_id: quotation.customer_id ?? '',
-            advance_option_id: quotation.advance_option_id ?? '',
+            advance_mode: quotation.advance_option?.type === 'percentage'
+                ? 'percentage'
+                : (Number(quotation.advance_amount ?? 0) > 0 ? 'amount' : 'none'),
+            advance_option_id: quotation.advance_option?.type === 'percentage' ? quotation.advance_option_id ?? '' : '',
             receipt_number: '',
             customer_name: quotation.customer_name ?? '',
             customer_document: quotation.customer_document ?? '',
             customer_contact: quotation.customer_contact ?? '',
             requires_delivery: false,
-            advance_amount_input: quotation.advance_option?.type === 'amount' ? quotation.advance_amount ?? '' : '',
+            advance_amount_input: quotation.advance_option?.type === 'percentage' ? '' : quotation.advance_amount ?? '',
             terms: quotation.terms ?? '',
             internal_notes: `Generada desde cotizacion ${quotation.receipt_number}`,
             items: (quotation.items ?? []).map((item) => saleItemFromQuotation(item, products, canOverridePrices)),
@@ -214,11 +227,18 @@ export default function Form({
                                 </option>
                             ))}
                         </SelectField>
-                        <SelectField label="Anticipo" name="advance_option_id" value={data.advance_option_id} onChange={(event) => setData('advance_option_id', event.target.value)} error={errors.advance_option_id}>
-                            <option value="">Sin anticipo</option>
-                            {advanceOptions.map((option) => <option key={option.id} value={option.id}>{advanceOptionLabel(option)}</option>)}
+                        <SelectField label="Tipo de anticipo" name="advance_mode" value={data.advance_mode} onChange={(event) => updateAdvanceMode(event.target.value)} error={errors.advance_mode}>
+                            <option value="none">Sin anticipo</option>
+                            <option value="percentage">Porcentaje preconfigurado</option>
+                            <option value="amount">Monto manual</option>
                         </SelectField>
-                        {selectedAdvance?.type === 'amount' ? (
+                        {data.advance_mode === 'percentage' ? (
+                            <SelectField label="Porcentaje de anticipo" name="advance_option_id" value={data.advance_option_id} onChange={(event) => setData('advance_option_id', event.target.value)} error={errors.advance_option_id} required>
+                                <option value="">Seleccionar porcentaje</option>
+                                {percentageAdvanceOptions.map((option) => <option key={option.id} value={option.id}>{advanceOptionLabel(option, decimalFormat)}</option>)}
+                            </SelectField>
+                        ) : null}
+                        {data.advance_mode === 'amount' ? (
                             <FormField label="Monto de anticipo" name="advance_amount_input" type="number" step={decimalStep(decimalFormat.decimalsFor('money'))} min="0" value={data.advance_amount_input} onChange={(event) => setData('advance_amount_input', event.target.value)} error={errors.advance_amount_input} required />
                         ) : null}
                         <FormField label="Fecha" name="sold_at" value="Se registrara automaticamente al guardar" disabled className="mt-1 block w-full rounded-md border-gray-300 bg-slate-100 shadow-sm dark:border-gray-700 dark:bg-slate-800 dark:text-gray-300" />
@@ -640,12 +660,12 @@ function productSalePrice(product) {
     return product?.sale_price ?? '0';
 }
 
-function advanceOptionLabel(option) {
+function advanceOptionLabel(option, decimalFormat) {
     if (option.type === 'amount') {
-        return `${option.name} - Bs ${Number(option.amount ?? 0).toFixed(2)}`;
+        return `${option.name} - Bs ${decimalFormat.money(option.amount ?? 0)}`;
     }
 
-    return `${option.name} - ${Number(option.percentage ?? 0).toFixed(2)}%`;
+    return `${option.name} - ${decimalFormat.percent(option.percentage ?? 0)}%`;
 }
 
 function baseQuantityFieldValue(item) {

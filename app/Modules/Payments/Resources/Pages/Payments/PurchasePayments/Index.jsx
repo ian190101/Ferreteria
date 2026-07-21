@@ -6,15 +6,12 @@ import FormField from '../../../../../Shared/Resources/Components/FormField';
 import ModuleHeader from '../../../../../Shared/Resources/Components/ModuleHeader';
 import Pagination from '../../../../../Shared/Resources/Components/Pagination';
 import SelectField from '../../../../../Shared/Resources/Components/SelectField';
+import { decimalStep, useDecimalFormatter } from '@/Utils/formatters';
 import { Head, Link, router, useForm, usePage } from '@inertiajs/react';
-
-const moneyFormatter = new Intl.NumberFormat('es-BO', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-});
 
 export default function Index({ payments, payables, branches, methods, filters }) {
     const canManage = usePage().props.auth.permissions.includes('payments.manage');
+    const decimalFormat = useDecimalFormatter('finance');
     const filterForm = useForm({
         branch_id: filters.branch_id ?? '',
         payment_method_id: filters.payment_method_id ?? '',
@@ -78,7 +75,7 @@ export default function Index({ payments, payables, branches, methods, filters }
                                     </div>
                                     <div className="text-left sm:text-right">
                                         <p className="text-sm text-slate-500">Saldo</p>
-                                        <p className="font-semibold">Bs {moneyFormatter.format(Number(purchase.balance_due ?? 0))}</p>
+                                        <p className="font-semibold">Bs {decimalFormat.money(purchase.balance_due ?? 0)}</p>
                                     </div>
                                 </div>
                             ))}
@@ -102,7 +99,7 @@ export default function Index({ payments, payables, branches, methods, filters }
                                 </SelectField>
                                 <div className="grid gap-4 sm:grid-cols-2">
                                     <FormField label="Fecha de pago" name="paid_at" value="Se registrara automaticamente al guardar" disabled className="mt-1 block w-full rounded-md border-gray-300 bg-slate-100 shadow-sm dark:border-gray-700 dark:bg-slate-800 dark:text-gray-300" error={paymentForm.errors.paid_at} />
-                                    <FormField label="Monto" name="amount" type="number" step="0.01" min="0.01" value={paymentForm.data.amount} onChange={(event) => paymentForm.setData('amount', event.target.value)} error={paymentForm.errors.amount} required />
+                                    <FormField label="Monto" name="amount" type="number" step={decimalStep(decimalFormat.decimalsFor('money'))} min={decimalStep(decimalFormat.decimalsFor('money'))} value={paymentForm.data.amount} onChange={(event) => paymentForm.setData('amount', event.target.value)} error={paymentForm.errors.amount} required />
                                 </div>
                                 <FormField label="Referencia" name="reference" value={paymentForm.data.reference} onChange={(event) => paymentForm.setData('reference', event.target.value)} error={paymentForm.errors.reference} />
                                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300" htmlFor="purchase-payment-notes">
@@ -165,7 +162,7 @@ export default function Index({ payments, payables, branches, methods, filters }
                                         <td className="px-4 py-3">{payment.purchase?.supplier?.name ?? '-'}</td>
                                         <td className="px-4 py-3">{payment.method?.name ?? '-'}</td>
                                         <td className="px-4 py-3">{payment.reference ?? '-'}</td>
-                                        <td className="px-4 py-3 text-right">Bs {moneyFormatter.format(Number(payment.amount ?? 0))}</td>
+                                        <td className="px-4 py-3 text-right">Bs {decimalFormat.money(payment.amount ?? 0)}</td>
                                         {canManage ? (
                                             <td className="px-4 py-3 text-right">
                                                 <IconButton icon="close" label="Anular" tone="danger" onClick={() => voidPayment(payment)} />

@@ -5,15 +5,12 @@ import FormField from '../../../../../Shared/Resources/Components/FormField';
 import ModuleHeader from '../../../../../Shared/Resources/Components/ModuleHeader';
 import Pagination from '../../../../../Shared/Resources/Components/Pagination';
 import SelectField from '../../../../../Shared/Resources/Components/SelectField';
+import { useDecimalFormatter } from '@/Utils/formatters';
 import { Head, Link, router, useForm, usePage } from '@inertiajs/react';
-
-const moneyFormatter = new Intl.NumberFormat('es-BO', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-});
 
 export default function Index({ orders, filters }) {
     const canManage = usePage().props.auth.permissions.includes('purchases.manage');
+    const decimalFormat = useDecimalFormatter('purchases');
     const filterForm = useForm({
         search: filters.search ?? '',
         status: filters.status ?? '',
@@ -89,8 +86,8 @@ export default function Index({ orders, filters }) {
                                     <td className="px-4 py-3">{order.branch?.name ?? '-'}</td>
                                     <td className="px-4 py-3">{order.ordered_at}</td>
                                     <td className="px-4 py-3 text-right">{order.items_count}</td>
-                                    <td className="px-4 py-3 text-right">{formatProgress(order)}</td>
-                                    <td className="px-4 py-3 text-right">Bs {moneyFormatter.format(Number(order.total_amount ?? 0))}</td>
+                                    <td className="px-4 py-3 text-right">{formatProgress(order, decimalFormat)}</td>
+                                    <td className="px-4 py-3 text-right">Bs {decimalFormat.money(order.total_amount ?? 0)}</td>
                                     <td className="px-4 py-3">{statusLabel(order.status)}</td>
                                     <td className="px-4 py-3">
                                         <div className="flex justify-end gap-3">
@@ -135,7 +132,7 @@ function statusLabel(status) {
     return labels[status] ?? status;
 }
 
-function formatProgress(order) {
+function formatProgress(order, decimalFormat) {
     const ordered = Number(order.ordered_meters ?? 0);
     const received = Number(order.received_meters ?? 0);
 
@@ -143,5 +140,5 @@ function formatProgress(order) {
         return '-';
     }
 
-    return `${received.toFixed(3)} / ${ordered.toFixed(3)} m`;
+    return `${decimalFormat.measure(received)} / ${decimalFormat.measure(ordered)} m`;
 }

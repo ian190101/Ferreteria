@@ -4,20 +4,13 @@ import FormField from '../../../../../Shared/Resources/Components/FormField';
 import ModuleHeader from '../../../../../Shared/Resources/Components/ModuleHeader';
 import Pagination from '../../../../../Shared/Resources/Components/Pagination';
 import SelectField from '../../../../../Shared/Resources/Components/SelectField';
+import { decimalStep, useDecimalFormatter } from '@/Utils/formatters';
 import { Head, router, useForm, usePage } from '@inertiajs/react';
-
-const meterFormatter = new Intl.NumberFormat('es-BO', {
-    maximumFractionDigits: 3,
-});
-
-const moneyFormatter = new Intl.NumberFormat('es-BO', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-});
 
 export default function Index({ returns, branches, sales, saleItems, filters }) {
     const permissions = usePage().props.auth.permissions;
     const canManage = permissions.includes('sales.returns.manage');
+    const decimalFormat = useDecimalFormatter('sales');
     const filterForm = useForm({
         branch_id: filters.branch_id ?? '',
         sale_id: filters.sale_id ?? '',
@@ -77,13 +70,13 @@ export default function Index({ returns, branches, sales, saleItems, filters }) 
                             <option value="">Seleccionar</option>
                             {availableItems.map((item) => (
                                 <option key={item.id} value={item.id}>
-                                    {item.product?.name ?? item.description} - {meterFormatter.format(Number(item.remaining_meters))} m disp.
+                                    {item.product?.name ?? item.description} - {decimalFormat.measure(item.remaining_meters)} m disp.
                                 </option>
                             ))}
                         </SelectField>
                         <FormField label="Numero" name="return_number" value={returnForm.data.return_number} onChange={(event) => returnForm.setData('return_number', event.target.value)} error={returnForm.errors.return_number} required />
                         <FormField label="Fecha" name="returned_at" value="Se registrara automaticamente al guardar" disabled className="mt-1 block w-full rounded-md border-gray-300 bg-slate-100 shadow-sm dark:border-gray-700 dark:bg-slate-800 dark:text-gray-300" error={returnForm.errors.returned_at} />
-                        <FormField label="Metros" name="meters" type="number" step="0.001" min="0.001" max={selectedItem?.remaining_meters ?? undefined} value={returnForm.data.items[0]?.meters ?? ''} onChange={(event) => updateFirstItem('meters', event.target.value)} error={returnForm.errors['items.0.meters'] ?? returnForm.errors.items} required />
+                        <FormField label="Metros" name="meters" type="number" step={decimalStep(decimalFormat.decimalsFor('measure'))} min={decimalStep(decimalFormat.decimalsFor('measure'))} max={selectedItem?.remaining_meters ?? undefined} value={returnForm.data.items[0]?.meters ?? ''} onChange={(event) => updateFirstItem('meters', event.target.value)} error={returnForm.errors['items.0.meters'] ?? returnForm.errors.items} required />
                         <FormField label="Motivo" name="reason" value={returnForm.data.reason} onChange={(event) => returnForm.setData('reason', event.target.value)} error={returnForm.errors.reason} required />
                         <div className="sm:col-span-2">
                             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300" htmlFor="notes">Notas</label>
@@ -97,7 +90,7 @@ export default function Index({ returns, branches, sales, saleItems, filters }) 
                         </div>
                         {selectedItem ? (
                             <div className="rounded-md bg-slate-100 p-3 text-xs text-slate-600 dark:bg-slate-800 dark:text-slate-300 sm:col-span-2 lg:col-span-4">
-                                Disponible: {meterFormatter.format(Number(selectedItem.remaining_meters))} m. Bobina: {selectedItem.coil?.barcode ?? 'Stock global'}. Precio: Bs {moneyFormatter.format(Number(selectedItem.unit_price))}.
+                                Disponible: {decimalFormat.measure(selectedItem.remaining_meters)} m. Bobina: {selectedItem.coil?.barcode ?? 'Stock global'}. Precio: Bs {decimalFormat.money(selectedItem.unit_price)}.
                             </div>
                         ) : null}
                     </form>
@@ -153,11 +146,11 @@ export default function Index({ returns, branches, sales, saleItems, filters }) 
                                     <td className="px-4 py-3">
                                         {saleReturn.items.map((item) => (
                                             <p key={item.id} className="text-xs">
-                                                {item.product?.name ?? '-'} - {meterFormatter.format(Number(item.meters))} m {item.coil ? `(${item.coil.barcode})` : '(global)'}
+                                                {item.product?.name ?? '-'} - {decimalFormat.measure(item.meters)} m {item.coil ? `(${item.coil.barcode})` : '(global)'}
                                             </p>
                                         ))}
                                     </td>
-                                    <td className="px-4 py-3 text-right">Bs {moneyFormatter.format(Number(saleReturn.total_amount ?? 0))}</td>
+                                    <td className="px-4 py-3 text-right">Bs {decimalFormat.money(saleReturn.total_amount ?? 0)}</td>
                                     <td className="px-4 py-3">{saleReturn.reason}</td>
                                     <td className="px-4 py-3">{saleReturn.user?.name ?? '-'}</td>
                                 </tr>

@@ -5,15 +5,6 @@ import SelectField from '../../../../Shared/Resources/Components/SelectField';
 import { Head, Link, router, useForm } from '@inertiajs/react';
 import { useDecimalFormatter } from '@/Utils/formatters';
 
-const moneyFormatter = new Intl.NumberFormat('es-BO', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-});
-
-const numberFormatter = new Intl.NumberFormat('es-BO', {
-    maximumFractionDigits: 3,
-});
-
 export default function Index({
     scope,
     metrics = {},
@@ -156,6 +147,8 @@ export default function Index({
 }
 
 function CashProfitTable({ rows }) {
+    const decimalFormat = useDecimalFormatter('finance');
+
     if (rows.length === 0) {
         return <EmptyState text="Sin ingresos o gastos en efectivo en los ultimos 7 dias." />;
     }
@@ -177,10 +170,10 @@ function CashProfitTable({ rows }) {
                         <tr key={`${row.date}-${row.branch_id}`}>
                             <td className="whitespace-nowrap px-4 py-3">{formatDateOnly(row.date)}</td>
                             <td className="px-4 py-3">{row.branch_name}</td>
-                            <td className="px-4 py-3 text-right text-emerald-700 dark:text-emerald-300">Bs {moneyFormatter.format(Number(row.income ?? 0))}</td>
-                            <td className="px-4 py-3 text-right text-red-700 dark:text-red-300">Bs {moneyFormatter.format(Number(row.outflows ?? row.expenses ?? 0))}</td>
+                            <td className="px-4 py-3 text-right text-emerald-700 dark:text-emerald-300">Bs {decimalFormat.money(row.income ?? 0)}</td>
+                            <td className="px-4 py-3 text-right text-red-700 dark:text-red-300">Bs {decimalFormat.money(row.outflows ?? row.expenses ?? 0)}</td>
                             <td className={`px-4 py-3 text-right font-semibold ${Number(row.profit ?? 0) < 0 ? 'text-red-700 dark:text-red-300' : 'text-slate-900 dark:text-slate-100'}`}>
-                                Bs {moneyFormatter.format(Number(row.profit ?? 0))}
+                                Bs {decimalFormat.money(row.profit ?? 0)}
                             </td>
                         </tr>
                     ))}
@@ -203,6 +196,7 @@ function ChartPanel({ title, subtitle, children }) {
 }
 
 function LineChart({ data, color, valuePrefix = '' }) {
+    const decimalFormat = useDecimalFormatter('finance');
     const points = normalizedPoints(data);
     const max = Math.max(...data.map((item) => Number(item.value ?? 0)), 1);
 
@@ -220,7 +214,7 @@ function LineChart({ data, color, valuePrefix = '' }) {
                 {points.map((point) => (
                     <g key={point.label}>
                         <circle cx={point.x} cy={point.y} r="5" fill="white" stroke={color} strokeWidth="4" />
-                        <title>{`${point.label}: ${valuePrefix}${moneyFormatter.format(point.value)}`}</title>
+                        <title>{`${point.label}: ${valuePrefix}${decimalFormat.money(point.value)}`}</title>
                     </g>
                 ))}
                 {points.map((point, index) => (
@@ -229,7 +223,7 @@ function LineChart({ data, color, valuePrefix = '' }) {
                     </text>
                 ))}
                 <text x="42" y="36" className="fill-slate-500 text-[16px] dark:fill-slate-400">
-                    {valuePrefix}{moneyFormatter.format(max)}
+                    {valuePrefix}{decimalFormat.money(max)}
                 </text>
             </svg>
         </div>
@@ -237,6 +231,7 @@ function LineChart({ data, color, valuePrefix = '' }) {
 }
 
 function HorizontalBarChart({ data, color, unit = '' }) {
+    const decimalFormat = useDecimalFormatter('inventory');
     const cleanData = data.filter((item) => Number(item.value ?? 0) > 0).slice(0, 8);
     const max = Math.max(...cleanData.map((item) => Number(item.value)), 1);
 
@@ -255,7 +250,7 @@ function HorizontalBarChart({ data, color, unit = '' }) {
                         <div className="h-4 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
                             <div className="h-full rounded-full" style={{ width: `${width}%`, backgroundColor: color }} />
                         </div>
-                        <p className="text-right text-sm font-semibold text-slate-900 dark:text-slate-100">{numberFormatter.format(Number(item.value))} {item.unit ?? unit}</p>
+                        <p className="text-right text-sm font-semibold text-slate-900 dark:text-slate-100">{formatQuantityForUnit(item.value, item.unit ?? unit, decimalFormat)} {item.unit ?? unit}</p>
                     </div>
                 );
             })}
@@ -264,6 +259,7 @@ function HorizontalBarChart({ data, color, unit = '' }) {
 }
 
 function VerticalBarChart({ data, color, unit = '' }) {
+    const decimalFormat = useDecimalFormatter('inventory');
     const cleanData = data.filter((item) => Number(item.value ?? 0) > 0).slice(0, 6);
     const max = Math.max(...cleanData.map((item) => Number(item.value)), 1);
 
@@ -280,7 +276,7 @@ function VerticalBarChart({ data, color, unit = '' }) {
                     <div key={item.label} className="flex h-full flex-col justify-end gap-2">
                         <div className="flex flex-1 items-end rounded-t-md bg-slate-100 dark:bg-slate-800">
                             <div className="w-full rounded-t-md" style={{ height: `${height}%`, backgroundColor: color }}>
-                                <span className="sr-only">{`${item.label}: ${numberFormatter.format(Number(item.value))}${unit}`}</span>
+                                <span className="sr-only">{`${item.label}: ${formatQuantityForUnit(item.value, unit, decimalFormat)}${unit}`}</span>
                             </div>
                         </div>
                         <p className="truncate text-center text-xs text-slate-500 dark:text-slate-400" title={item.label}>{item.label}</p>
@@ -292,6 +288,7 @@ function VerticalBarChart({ data, color, unit = '' }) {
 }
 
 function IncomeExpenseProfitChart({ data }) {
+    const decimalFormat = useDecimalFormatter('finance');
     const hasData = data.some((item) => Number(item.income ?? 0) > 0 || Number(item.purchases ?? 0) > 0 || Number(item.expenses ?? 0) > 0 || Number(item.profit ?? 0) !== 0);
     const max = Math.max(...data.flatMap((item) => [
         Math.abs(Number(item.income ?? 0)),
@@ -334,7 +331,7 @@ function IncomeExpenseProfitChart({ data }) {
                                 <rect x={x - 5} y={150} width="10" height={purchaseHeight} rx="3" fill="#f97316" />
                                 <rect x={x + 10} y={150} width="10" height={expenseHeight} rx="3" fill="#ef4444" />
                                 <text x={x} y="286" textAnchor="middle" className="fill-slate-500 text-[16px] dark:fill-slate-400">{item.label}</text>
-                                <title>{`${item.label}: Ingresos Bs ${moneyFormatter.format(Number(item.income ?? 0))}, Compras Bs ${moneyFormatter.format(Number(item.purchases ?? 0))}, Gastos Bs ${moneyFormatter.format(Number(item.expenses ?? 0))}, Ganancia Bs ${moneyFormatter.format(Number(item.profit ?? 0))}`}</title>
+                                <title>{`${item.label}: Ingresos Bs ${decimalFormat.money(item.income ?? 0)}, Compras Bs ${decimalFormat.money(item.purchases ?? 0)}, Gastos Bs ${decimalFormat.money(item.expenses ?? 0)}, Ganancia Bs ${decimalFormat.money(item.profit ?? 0)}`}</title>
                             </g>
                         );
                     })}
@@ -355,6 +352,7 @@ function IncomeExpenseProfitChart({ data }) {
 }
 
 function BranchProfitChart({ data }) {
+    const decimalFormat = useDecimalFormatter('finance');
     const cleanData = data
         .filter((item) => Number(item.income ?? 0) > 0 || Number(item.outflows ?? item.expenses ?? 0) > 0 || Number(item.profit ?? 0) !== 0)
         .slice(0, 8);
@@ -379,12 +377,12 @@ function BranchProfitChart({ data }) {
                                     {index + 1}. {item.label}
                                 </p>
                                 <p className="text-xs text-slate-500 dark:text-slate-400">
-                                    Ingresos Bs {moneyFormatter.format(Number(item.income ?? 0))} - Egresos Bs {moneyFormatter.format(Number(item.outflows ?? item.expenses ?? 0))}
-                                    <span className="block">Compras Bs {moneyFormatter.format(Number(item.purchases ?? 0))} - Gastos Bs {moneyFormatter.format(Number(item.expenses ?? 0))}</span>
+                                    Ingresos Bs {decimalFormat.money(item.income ?? 0)} - Egresos Bs {decimalFormat.money(item.outflows ?? item.expenses ?? 0)}
+                                    <span className="block">Compras Bs {decimalFormat.money(item.purchases ?? 0)} - Gastos Bs {decimalFormat.money(item.expenses ?? 0)}</span>
                                 </p>
                             </div>
                             <p className={`whitespace-nowrap text-sm font-bold ${positive ? 'text-emerald-700 dark:text-emerald-300' : 'text-red-700 dark:text-red-300'}`}>
-                                Bs {moneyFormatter.format(profit)}
+                                Bs {decimalFormat.money(profit)}
                             </p>
                         </div>
                         <div className="h-3 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
@@ -429,6 +427,7 @@ function GroupedBarChart({ data }) {
 }
 
 function DonutChart({ data }) {
+    const decimalFormat = useDecimalFormatter('finance');
     const cleanData = data.filter((item) => Number(item.value ?? 0) > 0);
     const total = cleanData.reduce((sum, item) => sum + Number(item.value), 0);
     const colors = ['#22c55e', '#f59e0b', '#ef4444'];
@@ -455,14 +454,14 @@ function DonutChart({ data }) {
             </svg>
             <div className="space-y-2">
                 <p className="text-sm text-slate-500 dark:text-slate-400">Total pendiente</p>
-                <p className="text-2xl font-semibold text-slate-950 dark:text-slate-50">Bs {moneyFormatter.format(total)}</p>
+                <p className="text-2xl font-semibold text-slate-950 dark:text-slate-50">Bs {decimalFormat.money(total)}</p>
                 {cleanData.map((item, index) => (
                     <div key={item.label} className="flex items-center justify-between gap-3 text-sm">
                         <span className="inline-flex items-center gap-2 text-slate-600 dark:text-slate-300">
                             <span className="h-2 w-2 rounded-full" style={{ backgroundColor: colors[index % colors.length] }} />
                             {item.label}
                         </span>
-                        <span className="font-semibold text-slate-900 dark:text-slate-100">Bs {moneyFormatter.format(Number(item.value))}</span>
+                        <span className="font-semibold text-slate-900 dark:text-slate-100">Bs {decimalFormat.money(item.value)}</span>
                     </div>
                 ))}
             </div>
@@ -591,6 +590,7 @@ function Panel({ title, children }) {
 }
 
 function SalesList({ sales }) {
+    const decimalFormat = useDecimalFormatter('finance');
     if (sales.length === 0) {
         return <EmptyState text="Sin ventas recientes visibles." />;
     }
@@ -607,7 +607,7 @@ function SalesList({ sales }) {
                         <p className="text-xs text-slate-500">{sale.branch?.name ?? '-'} - {documentType(sale.document_type)} - {formatDate(sale.sold_at)}</p>
                     </div>
                     <p className="text-right font-semibold text-slate-900 dark:text-slate-100">
-                        {sale.currency?.symbol ?? 'Bs'} {moneyFormatter.format(Number(sale.total ?? 0))}
+                        {sale.currency?.symbol ?? 'Bs'} {decimalFormat.money(sale.total ?? 0)}
                     </p>
                 </div>
             ))}
@@ -616,6 +616,7 @@ function SalesList({ sales }) {
 }
 
 function ReceivableList({ sales }) {
+    const decimalFormat = useDecimalFormatter('finance');
     if (sales.length === 0) {
         return <EmptyState text="Sin saldos pendientes visibles." />;
     }
@@ -632,7 +633,7 @@ function ReceivableList({ sales }) {
                             <p className="text-sm text-slate-600 dark:text-slate-300">{sale.customer_name ?? 'Consumidor final'}</p>
                         </div>
                         <p className="whitespace-nowrap font-semibold text-amber-700 dark:text-amber-200">
-                            {sale.currency?.symbol ?? 'Bs'} {moneyFormatter.format(Number(sale.balance_due ?? 0))}
+                            {sale.currency?.symbol ?? 'Bs'} {decimalFormat.money(sale.balance_due ?? 0)}
                         </p>
                     </div>
                     <p className="text-xs text-slate-500">{sale.branch?.name ?? '-'} - {formatDate(sale.sold_at)}</p>
@@ -643,6 +644,7 @@ function ReceivableList({ sales }) {
 }
 
 function LowStockList({ stocks }) {
+    const decimalFormat = useDecimalFormatter('inventory');
     if (stocks.length === 0) {
         return <EmptyState text="Sin alertas de stock bajo." />;
     }
@@ -661,7 +663,7 @@ function LowStockList({ stocks }) {
                         </span>
                     </div>
                     <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
-                        {numberFormatter.format(Number(stock.available_meters ?? 0))} {unitLabel(stock.product?.base_unit)} disponibles - minimo {numberFormatter.format(Number(stock.product?.minimum_stock_meters ?? 0))} {unitLabel(stock.product?.base_unit)}
+                        {formatQuantityForUnit(stock.available_meters ?? 0, unitLabel(stock.product?.base_unit), decimalFormat)} {unitLabel(stock.product?.base_unit)} disponibles - minimo {formatQuantityForUnit(stock.product?.minimum_stock_meters ?? 0, unitLabel(stock.product?.base_unit), decimalFormat)} {unitLabel(stock.product?.base_unit)}
                     </p>
                 </div>
             ))}
@@ -670,6 +672,7 @@ function LowStockList({ stocks }) {
 }
 
 function CashList({ sessions }) {
+    const decimalFormat = useDecimalFormatter('finance');
     if (sessions.length === 0) {
         return <EmptyState text="No hay cajas abiertas visibles." />;
     }
@@ -684,7 +687,7 @@ function CashList({ sessions }) {
                             <p className="text-sm text-slate-600 dark:text-slate-300">Abierta por {session.opener?.name ?? '-'}</p>
                         </div>
                         <p className="text-right font-semibold text-slate-900 dark:text-slate-100">
-                            Bs {moneyFormatter.format(Number(session.expected_cash_amount ?? session.opening_amount ?? 0))}
+                            Bs {decimalFormat.money(session.expected_cash_amount ?? session.opening_amount ?? 0)}
                         </p>
                     </div>
                     <p className="text-xs text-slate-500">{formatDate(session.opened_at)}</p>
@@ -715,6 +718,20 @@ function unitLabel(unit) {
         galon: 'gal.',
         rollo: 'rollos',
     }[unit] ?? 'unid.';
+}
+
+function formatQuantityForUnit(value, unit, decimalFormat) {
+    const normalized = String(unit ?? '').toLowerCase();
+
+    if (['m', 'mt', 'mts', 'metro', 'metros'].includes(normalized)) {
+        return decimalFormat.measure(value);
+    }
+
+    if (['kg', 'kilo', 'kilos', 'ton', 'tn', 'tonelada', 'toneladas', 'lb', 'lbs'].includes(normalized)) {
+        return decimalFormat.weight(value);
+    }
+
+    return decimalFormat.quantity(value);
 }
 
 function formatDate(value) {

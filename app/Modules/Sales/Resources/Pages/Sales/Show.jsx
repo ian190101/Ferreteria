@@ -4,13 +4,14 @@ import FormField from '../../../../Shared/Resources/Components/FormField';
 import SelectField from '../../../../Shared/Resources/Components/SelectField';
 import { Head, Link, router, useForm, usePage } from '@inertiajs/react';
 import { confirmAction, promptAction } from '@/Utils/alerts';
+import { decimalStep, useDecimalFormatter } from '@/Utils/formatters';
 import { useEffect, useRef, useState } from 'react';
 
 const PAPER_SIZES = {
     letter: { width: '216mm', height: '279mm', page: 'letter' },
-    half_letter: { width: '216mm', height: '139.5mm', page: '216mm 139.5mm', compact: true },
+    half_letter: { width: '139.5mm', height: '216mm', page: '139.5mm 216mm', compact: true },
     legal: { width: '216mm', height: '356mm', page: 'legal' },
-    half_legal: { width: '216mm', height: '178mm', page: '216mm 178mm', compact: true },
+    half_legal: { width: '178mm', height: '216mm', page: '178mm 216mm', compact: true },
     full_page: { width: '210mm', height: '297mm', page: 'A4' },
     thermal: { width: null, height: null, page: 'auto' },
 };
@@ -34,6 +35,7 @@ export default function Show({ sale, template, paymentMethods = [], conversionRe
     const errors = page.props.errors ?? {};
     const canManagePayments = permissions.includes('payments.manage');
     const canManageSales = permissions.includes('sales.manage');
+    const decimalFormat = useDecimalFormatter('sales');
     const canConvertQuotation = canManageSales && sale.document_type === 'quotation' && sale.status === 'quoted' && (conversionReadiness?.can_convert ?? false);
     const currency = sale.currency ?? { symbol: 'Bs', code: 'BOB' };
     const branch = sale.branch ?? {};
@@ -120,7 +122,7 @@ export default function Show({ sale, template, paymentMethods = [], conversionRe
     };
 
     const renderSection = (section) => {
-        const props = { sale, branch, currency, documentTitle, fields, primary, secondary, layout, logoPath, compact: isCompactPaper };
+        const props = { sale, branch, currency, documentTitle, fields, primary, secondary, layout, logoPath, compact: isCompactPaper, decimalFormat };
 
         return {
             header: <HeaderSection key="header" {...props} />,
@@ -241,7 +243,7 @@ export default function Show({ sale, template, paymentMethods = [], conversionRe
                 ) : null}
 
                 {sale.document_type === 'sale_note' && sale.requires_delivery ? (
-                    <DeliveryProgress sale={sale} />
+                    <DeliveryProgress sale={sale} decimalFormat={decimalFormat} />
                 ) : sale.document_type === 'sale_note' ? (
                     <section className="print-hidden mx-auto mb-4 max-w-4xl rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800 shadow-sm dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-100">
                         Esta nota fue registrada como entrega inmediata, por eso no entra al modulo de despachos.
@@ -293,7 +295,7 @@ export default function Show({ sale, template, paymentMethods = [], conversionRe
                                         <p className="font-medium">{payment.method?.name ?? '-'}</p>
                                         <p className="text-xs text-slate-500">{new Date(payment.paid_at).toLocaleString('es-BO')}</p>
                                     </div>
-                                    <p className="font-semibold">{currency.symbol} {payment.amount}</p>
+                                    <p className="font-semibold">{currency.symbol} {decimalFormat.money(payment.amount)}</p>
                                 </div>
                             ))}
                         </div>
@@ -309,7 +311,7 @@ export default function Show({ sale, template, paymentMethods = [], conversionRe
                                 </SelectField>
                                 <div className="grid gap-4 sm:grid-cols-2">
                                     <FormField label="Fecha" name="paid_at" value="Se registrara automaticamente al guardar" disabled className="mt-1 block w-full rounded-md border-gray-300 bg-slate-100 shadow-sm dark:border-gray-700 dark:bg-slate-800 dark:text-gray-300" />
-                                    <FormField label="Monto" name="amount" type="number" step="0.01" min="0.01" max={sale.balance_due} value={paymentForm.data.amount} onChange={(event) => paymentForm.setData('amount', event.target.value)} error={paymentForm.errors.amount} required />
+                                    <FormField label="Monto" name="amount" type="number" step={decimalStep(decimalFormat.decimalsFor('money'))} min={decimalStep(decimalFormat.decimalsFor('money'))} max={sale.balance_due} value={paymentForm.data.amount} onChange={(event) => paymentForm.setData('amount', event.target.value)} error={paymentForm.errors.amount} required />
                                 </div>
                                 <FormField label="Referencia" name="reference" value={paymentForm.data.reference} onChange={(event) => paymentForm.setData('reference', event.target.value)} error={paymentForm.errors.reference} />
                                 <button disabled={paymentForm.processing || !paymentMethods.length} className="rounded-md bg-brand-primary px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60" type="submit">
@@ -358,7 +360,7 @@ function DocumentSection({ sale, documentTitle, fields, secondary }) {
     );
 }
 
-function CustomerSection({ sale, branch, currency, fields, compact = false }) {
+function CustomerSection({ sale, branch, currency, fields, compact = false, decimalFormat }) {
     return (
         <section className={`${compact ? 'mt-1 pt-1' : 'mt-3 pt-2'} grid grid-cols-2 gap-x-8 gap-y-0.5 border-t border-black`}>
             {fields.date ? <p><span className="font-bold">Fecha:</span> {new Date(sale.sold_at).toLocaleDateString('es-BO')}</p> : null}
@@ -368,15 +370,15 @@ function CustomerSection({ sale, branch, currency, fields, compact = false }) {
             {fields.customer ? <p><span className="font-bold">Cliente:</span> {sale.customer_document} {sale.customer_name}</p> : null}
             {fields.sale_type ? <p><span className="font-bold">Tipo:</span> {sale.sale_type?.name}</p> : null}
             {fields.customer_contact ? <p><span className="font-bold">Contacto:</span> {sale.customer_contact}</p> : null}
-            {fields.exchange_rate ? <p><span className="font-bold">Cambio:</span> 1 {currency.code} = {sale.exchange_rate_to_bob} Bs</p> : null}
+            {fields.exchange_rate ? <p><span className="font-bold">Cambio:</span> 1 {currency.code} = {decimalFormat.exchangeRate(sale.exchange_rate_to_bob)} Bs</p> : null}
             <p><span className="font-bold">Plazo entrega:</span> -</p>
             <p><span className="font-bold">Observaciones:</span> {sale.internal_notes ?? '-'}</p>
-            <p><span className="font-bold">Anticipo:</span> {sale.advance_amount}</p>
+            <p><span className="font-bold">Anticipo:</span> {decimalFormat.money(sale.advance_amount)}</p>
         </section>
     );
 }
 
-function ItemsSection({ sale, fields, layout, compact = false }) {
+function ItemsSection({ sale, fields, layout, compact = false, decimalFormat }) {
     const columns = itemColumns(sale.items ?? [], fields, layout.item_columns ?? []);
 
     return (
@@ -393,7 +395,7 @@ function ItemsSection({ sale, fields, layout, compact = false }) {
                     <tr key={item.id ?? index} className="align-top">
                         {columns.map((column) => (
                             <td key={column.key} className={`${compact ? 'py-0.5' : 'py-1'} ${column.align === 'right' ? 'text-right' : 'text-left'}`}>
-                                {itemColumnValue(column.key, item, index)}
+                                {itemColumnValue(column.key, item, index, decimalFormat)}
                             </td>
                         ))}
                     </tr>
@@ -446,24 +448,91 @@ function itemAttributeColumns(items, fields) {
     return [...columns.values()];
 }
 
-function itemColumnValue(key, item, index) {
+function itemColumnValue(key, item, index, decimalFormat) {
     if (key.startsWith('item_attribute_')) {
         return itemAttributeValue(item, key.replace('item_attribute_', ''));
     }
 
+    const itemUnit = displayUnitForItem(item);
     const values = {
         item_number: index + 1,
-        item_description: <p className="font-bold">{item.description}</p>,
+        item_description: <ItemDescription item={item} decimalFormat={decimalFormat} />,
         item_lot: item.coil?.lot_number ?? '-',
         item_model: item.product?.sku ?? '-',
-        item_unit: item.display_unit_label ?? item.unit_label,
-        item_quantity: item.display_quantity ?? '1.000',
-        item_base: (item.calculation_mode ?? 'direct') === 'direct' ? '-' : item.meters,
-        item_price: item.unit_price,
-        item_subtotal: item.total,
+        item_unit: itemUnit,
+        item_quantity: decimalFormat.format(item.display_quantity ?? 1, precisionKindForUnit(itemUnit)),
+        item_base: itemBaseValue(item, decimalFormat),
+        item_price: decimalFormat.money(item.unit_price),
+        item_subtotal: decimalFormat.money(item.total),
     };
 
     return values[key] ?? '-';
+}
+
+function ItemDescription({ item, decimalFormat }) {
+    const lengthDetail = lengthDetailLabel(item, decimalFormat);
+
+    return (
+        <div>
+            <p className="font-bold">{item.description}</p>
+            {lengthDetail ? <p className="text-[0.86em] font-normal">{lengthDetail}</p> : null}
+        </div>
+    );
+}
+
+function itemBaseValue(item, decimalFormat) {
+    const calculationMode = item.calculation_mode ?? 'direct';
+
+    if (calculationMode === 'direct') {
+        return '-';
+    }
+
+    if (calculationMode === 'length') {
+        return decimalFormat.measure(lengthPerUnit(item));
+    }
+
+    return decimalFormat.measure(item.meters);
+}
+
+function lengthDetailLabel(item, decimalFormat) {
+    if ((item.calculation_mode ?? 'direct') !== 'length') {
+        return null;
+    }
+
+    const quantity = Number(item.display_quantity ?? 0);
+    const length = lengthPerUnit(item);
+    const total = Number(item.meters ?? 0);
+
+    if (quantity <= 0 || length <= 0 || total <= 0) {
+        return null;
+    }
+
+    return `${decimalFormat.quantity(quantity)} ${sheetUnitName(item)} de ${decimalFormat.measure(length)} m, total ${decimalFormat.measure(total)} m`;
+}
+
+function lengthPerUnit(item) {
+    const quantity = Number(item.display_quantity ?? 0);
+    const total = Number(item.meters ?? 0);
+
+    return quantity > 0 ? total / quantity : total;
+}
+
+function displayUnitForItem(item) {
+    if ((item.calculation_mode ?? 'direct') === 'length' && isSheetProduct(item)) {
+        return 'hojas';
+    }
+
+    return item.display_unit_label ?? item.unit_label;
+}
+
+function sheetUnitName(item) {
+    return isSheetProduct(item) ? 'hojas' : (item.display_unit_label ?? item.unit_label ?? 'unidades');
+}
+
+function isSheetProduct(item) {
+    const text = `${item.product?.name ?? ''} ${item.description ?? ''}`.toLowerCase();
+
+    return text.includes('calamina');
 }
 
 function fieldEnabled(fields, field) {
@@ -494,7 +563,7 @@ function itemAttributeValue(item, code) {
     return attribute.value;
 }
 
-function DeliveryProgress({ sale }) {
+function DeliveryProgress({ sale, decimalFormat }) {
     const rows = (sale.items ?? []).map((item) => {
         const deliveries = item.delivery_items ?? item.deliveryItems ?? [];
         const delivered = deliveries.reduce((sum, deliveryItem) => sum + Number(deliveryItem.display_quantity || deliveryItem.meters || 0), 0);
@@ -534,7 +603,7 @@ function DeliveryProgress({ sale }) {
                             </span>
                         </div>
                         <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                            Total: {formatDeliveryQuantity(row.total, row.unit)} | Entregado: {formatDeliveryQuantity(row.delivered, row.unit)} | Pendiente: {formatDeliveryQuantity(row.pending, row.unit)}
+                            Total: {formatDeliveryQuantity(row.total, row.unit, decimalFormat)} | Entregado: {formatDeliveryQuantity(row.delivered, row.unit, decimalFormat)} | Pendiente: {formatDeliveryQuantity(row.pending, row.unit, decimalFormat)}
                         </p>
                     </div>
                 ))}
@@ -543,18 +612,18 @@ function DeliveryProgress({ sale }) {
     );
 }
 
-function formatDeliveryQuantity(value, unit) {
-    return `${Number(value ?? 0).toLocaleString('es-BO', { maximumFractionDigits: 3 })} ${unit ?? ''}`.trim();
+function formatDeliveryQuantity(value, unit, decimalFormat) {
+    return `${decimalFormat.format(value, precisionKindForUnit(unit))} ${unit ?? ''}`.trim();
 }
 
-function TotalsSection({ sale, currency, fields, compact = false }) {
+function TotalsSection({ sale, currency, fields, compact = false, decimalFormat }) {
     return (
         <section className={`${compact ? 'mt-1 pt-1' : 'mt-2 pt-2'} border-t border-black`}>
-            {fields.subtotal ? <TotalLine label="Subtotal" value={sale.subtotal} /> : null}
-            {fields.discount ? <TotalLine label="Descuento" value={sale.discount_total} /> : null}
-            <TotalLine label="Total" value={`${currency.symbol} ${sale.total}`} strong />
-            {fields.advance ? <TotalLine label={advanceLabel(sale)} value={sale.advance_amount} /> : null}
-            {fields.balance_due ? <TotalLine label="Saldo por pagar" value={sale.balance_due} /> : null}
+            {fields.subtotal ? <TotalLine label="Subtotal" value={decimalFormat.money(sale.subtotal)} /> : null}
+            {fields.discount ? <TotalLine label="Descuento" value={decimalFormat.money(sale.discount_total)} /> : null}
+            <TotalLine label="Total" value={`${currency.symbol} ${decimalFormat.money(sale.total)}`} strong />
+            {fields.advance ? <TotalLine label={advanceLabel(sale, decimalFormat)} value={decimalFormat.money(sale.advance_amount)} /> : null}
+            {fields.balance_due ? <TotalLine label="Saldo por pagar" value={decimalFormat.money(sale.balance_due)} /> : null}
             <p className={`${compact ? 'mt-1' : 'mt-2'} font-bold`}>Son: {amountToLiteral(Number(sale.total ?? 0), currency.name ?? currency.code)}</p>
         </section>
     );
@@ -569,12 +638,32 @@ function TotalLine({ label, value, strong = false }) {
     );
 }
 
-function advanceLabel(sale) {
+function advanceLabel(sale, decimalFormat) {
+    if (Number(sale.advance_amount ?? 0) <= 0) {
+        return 'Anticipo';
+    }
+
     if (sale.advanceOption?.type === 'amount' || sale.advance_option?.type === 'amount') {
         return 'Anticipo';
     }
 
-    return `Anticipo ${sale.advance_percentage}%`;
+    return Number(sale.advance_percentage ?? 0) > 0
+        ? `Anticipo ${decimalFormat.percent(sale.advance_percentage)}%`
+        : 'Anticipo';
+}
+
+function precisionKindForUnit(unit) {
+    const normalized = String(unit ?? '').toLowerCase();
+
+    if (['m', 'mt', 'mts', 'metro', 'metros'].includes(normalized)) {
+        return 'measure';
+    }
+
+    if (['kg', 'kilo', 'kilos', 'ton', 'tn', 'tonelada', 'toneladas', 'lb', 'lbs'].includes(normalized)) {
+        return 'weight';
+    }
+
+    return 'quantity';
 }
 
 function TermsSection({ sale, compact = false }) {
