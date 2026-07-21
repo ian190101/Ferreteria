@@ -9,9 +9,9 @@ import { useEffect, useRef, useState } from 'react';
 
 const PAPER_SIZES = {
     letter: { width: '216mm', height: '279mm', page: 'letter' },
-    half_letter: { width: '216mm', height: '139.5mm', page: '216mm 139.5mm', compact: true },
+    half_letter: { width: '139.5mm', height: '216mm', page: '139.5mm 216mm', compact: true },
     legal: { width: '216mm', height: '356mm', page: 'legal' },
-    half_legal: { width: '216mm', height: '178mm', page: '216mm 178mm', compact: true },
+    half_legal: { width: '178mm', height: '216mm', page: '178mm 216mm', compact: true },
     full_page: { width: '210mm', height: '297mm', page: 'A4' },
     thermal: { width: null, height: null, page: 'auto' },
 };

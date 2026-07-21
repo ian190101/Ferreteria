@@ -66,9 +66,9 @@ const DEFAULT_ITEM_COLUMNS = [
 
 const PAPER_PREVIEW_SIZES = {
     letter: { width: '100%', minHeight: '520px', aspectRatio: '216 / 279' },
-    half_letter: { width: '100%', minHeight: '320px', aspectRatio: '216 / 139.5', compact: true },
+    half_letter: { width: '72%', minHeight: '520px', aspectRatio: '139.5 / 216', compact: true },
     legal: { width: '100%', minHeight: '660px', aspectRatio: '216 / 356' },
-    half_legal: { width: '100%', minHeight: '360px', aspectRatio: '216 / 178', compact: true },
+    half_legal: { width: '82%', minHeight: '520px', aspectRatio: '178 / 216', compact: true },
     full_page: { width: '100%', minHeight: '560px', aspectRatio: '210 / 297' },
     thermal: { width: null, minHeight: '360px' },
 };
