@@ -9,9 +9,9 @@ import { useEffect, useRef, useState } from 'react';
 
 const PAPER_SIZES = {
     letter: { width: '216mm', height: '279mm', page: 'letter' },
-    half_letter: { width: '139.5mm', height: '216mm', page: '139.5mm 216mm', compact: true },
+    half_letter: { width: '216mm', height: '139.5mm', page: '216mm 139.5mm', compact: true },
     legal: { width: '216mm', height: '356mm', page: 'legal' },
-    half_legal: { width: '178mm', height: '216mm', page: '178mm 216mm', compact: true },
+    half_legal: { width: '216mm', height: '178mm', page: '216mm 178mm', compact: true },
     full_page: { width: '210mm', height: '297mm', page: 'A4' },
     thermal: { width: null, height: null, page: 'auto' },
 };
@@ -326,12 +326,12 @@ export default function Show({ sale, template, paymentMethods = [], conversionRe
     );
 }
 
-function HeaderSection({ branch, fields, layout, primary, logoPath, compact = false }) {
+function HeaderSection({ sale, branch, documentTitle, fields, layout, primary, logoPath, compact = false }) {
     const logo = layout.logo ?? {};
     const logoSrc = assetUrl(logoPath);
 
     return (
-        <section className={`grid grid-cols-2 ${compact ? 'gap-3' : 'gap-6'}`} style={{ color: primary }}>
+        <section className={`grid grid-cols-2 items-start ${compact ? 'gap-3' : 'gap-6'}`} style={{ color: primary }}>
             <div className="text-left">
                 {logo.show && logoSrc ? (
                     <img src={logoSrc} alt="Logo" className={`${compact ? 'mb-1' : 'mb-2'} object-contain`} style={{ width: `${logo.width_mm ?? 28}mm` }} />
@@ -345,18 +345,18 @@ function HeaderSection({ branch, fields, layout, primary, logoPath, compact = fa
                 <p>DOCUMENTO SIN VALOR FISCAL</p>
                 <p>*** Exija su factura ***</p>
                 <p className="font-bold">NOTA DE VENTA</p>
+                <div className={compact ? 'mt-9' : 'mt-12'}>
+                    {fields.document_title ? <p className="font-bold">{documentTitle}</p> : null}
+                    {fields.receipt_number ? <p>Nro.: {sale.receipt_number}</p> : null}
+                </div>
             </div>
         </section>
     );
 }
 
-function DocumentSection({ sale, documentTitle, fields, secondary }) {
+function DocumentSection() {
     return (
-        <section className="mt-1 text-right" style={{ color: secondary }}>
-            {fields.document_title ? <p className="font-bold">{documentTitle}</p> : null}
-            {fields.receipt_number ? <p>Nro.: {sale.receipt_number}</p> : null}
-            {fields.date ? <p>{new Date(sale.sold_at).toLocaleDateString('es-BO')}</p> : null}
-        </section>
+        null
     );
 }
 

@@ -66,9 +66,9 @@ const DEFAULT_ITEM_COLUMNS = [
 
 const PAPER_PREVIEW_SIZES = {
     letter: { width: '100%', minHeight: '520px', aspectRatio: '216 / 279' },
-    half_letter: { width: '68%', minHeight: '420px', aspectRatio: '139.5 / 216', compact: true },
+    half_letter: { width: '100%', minHeight: '320px', aspectRatio: '216 / 139.5', compact: true },
     legal: { width: '100%', minHeight: '660px', aspectRatio: '216 / 356' },
-    half_legal: { width: '82%', minHeight: '420px', aspectRatio: '178 / 216', compact: true },
+    half_legal: { width: '100%', minHeight: '360px', aspectRatio: '216 / 178', compact: true },
     full_page: { width: '100%', minHeight: '560px', aspectRatio: '210 / 297' },
     thermal: { width: null, minHeight: '360px' },
 };
@@ -203,9 +203,9 @@ export default function Form({ template, branches, defaultLayout, attributeField
                                 </SelectField>
                                 <SelectField label="Tipo de hoja" name="paper_type" value={data.paper_type} onChange={(event) => setData('paper_type', event.target.value)} error={errors.paper_type}>
                                     <option value="letter">Bond carta</option>
-                                    <option value="half_letter">Bond carta media hoja vertical</option>
+                                    <option value="half_letter">Bond carta media hoja exacta</option>
                                     <option value="legal">Oficio</option>
-                                    <option value="half_legal">Oficio media hoja vertical</option>
+                                    <option value="half_legal">Oficio media hoja exacta</option>
                                     <option value="full_page">Hoja completa</option>
                                     <option value="thermal">Impresora termica</option>
                                 </SelectField>
