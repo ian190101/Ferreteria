@@ -66,11 +66,11 @@ export default function Index({ sessions, openSessions, branches, filters }) {
                     <div className="mb-6 grid gap-6 xl:grid-cols-[0.8fr_1.2fr]">
                         <Panel title="Abrir caja">
                             <form onSubmit={submitOpen} className="grid gap-4 p-4">
-                                <SelectField label="Sucursal" name="branch_id" value={openForm.data.branch_id} onChange={(event) => openForm.setData('branch_id', event.target.value)} error={openForm.errors.branch_id} required>
+                                <SelectField label="Sucursal" name="branch_id" value={openForm.data.branch_id} onChange={(event) => openForm.setData('branch_id', event.target.value)} error={openForm.errors.branch_id} helpTitle="Caja por sucursal" helpTooltip="Una caja abierta habilita operaciones de venta para esa sucursal. Usuarios cajeros solo deben operar con su caja y sucursal permitida." helpText="La caja queda abierta solo para esta sucursal. Las ventas en efectivo de usuarios no superadministradores requieren una caja abierta." required>
                                     {branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
                                 </SelectField>
                                 <FormField label="Fecha de apertura" name="opened_at" value="Se registrara automaticamente al guardar" disabled className="mt-1 block w-full rounded-md border-gray-300 bg-slate-100 shadow-sm dark:border-gray-700 dark:bg-slate-800 dark:text-gray-300" />
-                                <FormField label="Monto inicial" name="opening_amount" type="number" step="0.01" min="0" value={openForm.data.opening_amount} onChange={(event) => openForm.setData('opening_amount', event.target.value)} error={openForm.errors.opening_amount} required />
+                                <FormField label="Monto inicial" name="opening_amount" type="number" step="0.01" min="0" value={openForm.data.opening_amount} onChange={(event) => openForm.setData('opening_amount', event.target.value)} error={openForm.errors.opening_amount} helpTitle="Efectivo inicial" helpTooltip="Registra solo el efectivo fisico que hay en caja al inicio del turno. QR y banco se concilian por separado." helpText="Es el efectivo fisico con el que inicia la caja. Al cerrar se compara contra ventas, gastos y conteo de billetes/monedas." required />
                                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300" htmlFor="opening_notes">
                                     Notas
                                     <textarea id="opening_notes" rows="3" value={openForm.data.opening_notes} onChange={(event) => openForm.setData('opening_notes', event.target.value)} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-brand-primary focus:ring-brand-primary dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300" />
@@ -207,7 +207,7 @@ function CloseSessionForm({ session, canViewBanks }) {
                     <p className="text-sm text-slate-500">QR/Banco ingresos Bs {decimalFormat.money(bankIncome)} - egresos Bs {decimalFormat.money(bankExpense)} - neto Bs {decimalFormat.money(bankNet)}</p>
                     <p className="text-xs text-slate-500">Responsable: {session.opener?.name ?? '-'}</p>
                 </div>
-                <FormField label="Fecha cierre" name="closed_at" value="Se registrara automaticamente al guardar" disabled className="mt-1 block w-full rounded-md border-gray-300 bg-slate-100 shadow-sm dark:border-gray-700 dark:bg-slate-800 dark:text-gray-300" error={closeForm.errors.closed_at} />
+                <FormField label="Fecha cierre" name="closed_at" value="Se registrara automaticamente al guardar" disabled className="mt-1 block w-full rounded-md border-gray-300 bg-slate-100 shadow-sm dark:border-gray-700 dark:bg-slate-800 dark:text-gray-300" error={closeForm.errors.closed_at} helpTitle="Hora segura" helpTooltip="La fecha y hora no son editables para mantener trazabilidad. El servidor registra el momento exacto al cerrar." helpText="La hora real la registra el servidor para evitar cambios manuales." />
             </div>
 
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">

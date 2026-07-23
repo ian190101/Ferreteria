@@ -143,7 +143,7 @@ export default function Form({ branches = [], suppliers = [], units = [], catego
                 <form onSubmit={submit} className="space-y-6">
                     <div className="grid gap-5 rounded-lg border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:grid-cols-4">
                         <FormField label="Documento" name="document_number" value={data.document_number} onChange={(event) => setData('document_number', event.target.value)} error={errors.document_number} required />
-                        <SelectField label="Sucursal" name="branch_id" value={data.branch_id} onChange={(event) => setData('branch_id', event.target.value)} error={errors.branch_id}>
+                        <SelectField label="Sucursal" name="branch_id" value={data.branch_id} onChange={(event) => setData('branch_id', event.target.value)} error={errors.branch_id} helpTitle="Sucursal de ingreso" helpTooltip="Todo stock que ingrese por esta compra quedara disponible en esta sucursal, salvo que la compra quede como borrador." helpText="La sucursal seleccionada recibira el stock cuando la compra quede como recibida.">
                             {branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
                         </SelectField>
                         <SelectField label="Proveedor" name="supplier_id" value={data.supplier_id} onChange={(event) => setData('supplier_id', event.target.value)} error={errors.supplier_id}>
@@ -151,7 +151,7 @@ export default function Form({ branches = [], suppliers = [], units = [], catego
                             {suppliers.map((supplier) => <option key={supplier.id} value={supplier.id}>{supplier.name}</option>)}
                         </SelectField>
                         <FormField label="Fecha" name="purchase_date" type="date" value={data.purchase_date} onChange={(event) => setData('purchase_date', event.target.value)} error={errors.purchase_date} required />
-                        <SelectField label="Estado" name="status" value={data.status} onChange={(event) => setData('status', event.target.value)} error={errors.status}>
+                        <SelectField label="Estado" name="status" value={data.status} onChange={(event) => setData('status', event.target.value)} error={errors.status} helpTitle="Estado de compra" helpTooltip="Recibida aumenta stock y registra movimiento de inventario. Borrador sirve para guardar la compra sin afectar cantidades." helpText="Recibida mueve inventario inmediatamente. Borrador guarda la compra sin aumentar stock.">
                             <option value="received">Recibida e ingresar inventario</option>
                             <option value="draft">Borrador sin mover inventario</option>
                         </SelectField>
@@ -173,7 +173,7 @@ export default function Form({ branches = [], suppliers = [], units = [], catego
 
                                 return (
                                     <div key={index} className="grid gap-3 border-t border-slate-100 pt-5 dark:border-slate-800 sm:grid-cols-7">
-                                        <SelectField label="Tipo de item" name={`items.${index}.product_mode`} value={item.product_mode ?? 'existing'} onChange={(event) => setProductMode(index, event.target.value)}>
+                                        <SelectField label="Tipo de item" name={`items.${index}.product_mode`} value={item.product_mode ?? 'existing'} onChange={(event) => setProductMode(index, event.target.value)} helpTitle="Producto de compra" helpTooltip="Si el producto ya existe, seleccionalo para mantener historial y stock. Si no existe, crea el producto desde aqui sin abrir otra pantalla." helpText="Usa producto existente si ya esta creado. Usa producto nuevo si llego mercaderia que aun no existe en inventario.">
                                             <option value="existing">Producto existente</option>
                                             <option value="new">Producto nuevo</option>
                                         </SelectField>
@@ -223,7 +223,7 @@ export default function Form({ branches = [], suppliers = [], units = [], catego
                                                 <option key={unit.symbol} value={unit.symbol}>{unit.name} ({unit.symbol})</option>
                                             ))}
                                         </SelectField>
-                                        <SelectField label="Calculo opcional" name={`items.${index}.calculation_mode`} value={item.calculation_mode ?? 'direct'} onChange={(event) => updateItem(index, 'calculation_mode', event.target.value)}>
+                                        <SelectField label="Calculo opcional" name={`items.${index}.calculation_mode`} value={item.calculation_mode ?? 'direct'} onChange={(event) => updateItem(index, 'calculation_mode', event.target.value)} helpTitle="Calculo de ingreso" helpTooltip="Usa calculo solo cuando el documento de compra viene en otra unidad. Ejemplo: toneladas compradas que deben convertirse a metros por espesor." helpText="Sin calculo ingresa cantidad directa. Cantidad x largo registra piezas por medida. Peso a metros convierte kg o toneladas segun el espesor.">
                                             <option value="direct">Sin calculo</option>
                                             <option value="length">Cantidad x largo</option>
                                             <option value="weight">Peso a metros</option>

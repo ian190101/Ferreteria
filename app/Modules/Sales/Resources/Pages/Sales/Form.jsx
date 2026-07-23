@@ -182,7 +182,16 @@ export default function Form({
                     <div className="grid gap-5 rounded-lg border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:grid-cols-3">
                         {documentType === 'sale_note' ? (
                             <div className="sm:col-span-3">
-                                <SelectField label="Crear desde cotizacion" name="source_quotation_id" value={data.source_quotation_id} onChange={(event) => selectQuotation(event.target.value)} error={errors.source_quotation_id}>
+                                <SelectField
+                                    label="Crear desde cotizacion"
+                                    name="source_quotation_id"
+                                    value={data.source_quotation_id}
+                                    onChange={(event) => selectQuotation(event.target.value)}
+                                    error={errors.source_quotation_id}
+                                    helpTitle="Convertir cotizacion"
+                                    helpTooltip="Usa este campo para generar una nota de venta desde una cotizacion ya aprobada por el cliente. No descuenta inventario hasta que la nota de venta se registre."
+                                    helpText="Selecciona una cotizacion vigente si quieres convertirla en nota de venta. El sistema copiara cliente, items, anticipo y observaciones."
+                                >
                                     <option value="">Nota nueva sin cotizacion</option>
                                     {quotations.map((quotation) => (
                                         <option key={quotation.id} value={quotation.id}>
@@ -190,14 +199,13 @@ export default function Form({
                                         </option>
                                     ))}
                                 </SelectField>
-                                <p className="mt-1 text-xs text-slate-500">Al seleccionar una cotizacion vigente se precargan sus datos e items para emitir la nota de venta.</p>
                             </div>
                         ) : null}
                         <div>
                             <FormField label="Numero" name="receipt_number" value={data.receipt_number} onChange={(event) => setData('receipt_number', event.target.value)} error={errors.receipt_number} placeholder={nextPreview(sequencePreviews, data.branch_id, data.document_type)} />
                             <p className="mt-1 text-xs text-slate-500">Vacio usa automatico: {nextPreview(sequencePreviews, data.branch_id, data.document_type)}</p>
                         </div>
-                        <SelectField label="Sucursal" name="branch_id" value={data.branch_id} onChange={(event) => setData('branch_id', event.target.value)} error={errors.branch_id}>
+                        <SelectField label="Sucursal" name="branch_id" value={data.branch_id} onChange={(event) => setData('branch_id', event.target.value)} error={errors.branch_id} helpTitle="Sucursal de venta" helpTooltip="La venta queda registrada en esta sucursal. Para usuarios que no son superadministradores, la sucursal tambien define si se requiere caja abierta." helpText="La sucursal define el punto de venta, la numeracion del documento, el stock disponible y la caja que se usara.">
                             {branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
                         </SelectField>
                         <SelectField label="Tipo de venta" name="sale_type_id" value={data.sale_type_id} onChange={(event) => setData('sale_type_id', event.target.value)} error={errors.sale_type_id}>
@@ -227,7 +235,7 @@ export default function Form({
                                 </option>
                             ))}
                         </SelectField>
-                        <SelectField label="Tipo de anticipo" name="advance_mode" value={data.advance_mode} onChange={(event) => updateAdvanceMode(event.target.value)} error={errors.advance_mode}>
+                        <SelectField label="Tipo de anticipo" name="advance_mode" value={data.advance_mode} onChange={(event) => updateAdvanceMode(event.target.value)} error={errors.advance_mode} helpTitle="Anticipo" helpTooltip="El anticipo no cambia el total de la venta. Solo registra cuanto adelanta el cliente y calcula el saldo real pendiente contra el total." helpText="El anticipo se resta del total para mostrar el saldo por pagar. Puede ser porcentaje preconfigurado o monto manual.">
                             <option value="none">Sin anticipo</option>
                             <option value="percentage">Porcentaje preconfigurado</option>
                             <option value="amount">Monto manual</option>
@@ -265,7 +273,7 @@ export default function Form({
                                         {productsForCategory(products, item.product_category_id, data.branch_id).map((product) => <option key={product.id} value={product.id}>{product.name} ({trackingLabel(product)})</option>)}
                                     </SelectField>
                                     {documentType === 'sale_note' && product?.inventory_tracking_mode === 'coil' ? (
-                                        <SelectField label="Lote/unidad fisica" name={`items.${index}.product_coil_id`} value={item.product_coil_id} onChange={(event) => updateItem(index, 'product_coil_id', event.target.value)} error={errors[`items.${index}.product_coil_id`]}>
+                                        <SelectField label="Lote/unidad fisica" name={`items.${index}.product_coil_id`} value={item.product_coil_id} onChange={(event) => updateItem(index, 'product_coil_id', event.target.value)} error={errors[`items.${index}.product_coil_id`]} helpTitle="Lote o unidad fisica" helpTooltip="Se usa para productos que se venden por una pieza fisica identificable: bobinas, rollos, lotes con vencimiento o materiales que se cortan por partes." helpText="Obligatorio solo si el producto se controla por lote, rollo, bobina o unidad fisica.">
                                             <option value="">Seleccionar</option>
                                             {availableCoils(coils, data.branch_id, item.product_id).map((coil) => (
                                                 <option key={coil.id} value={coil.id}>
@@ -290,7 +298,7 @@ export default function Form({
                                             <option key={unit.symbol} value={unit.symbol}>{unit.name} ({unit.symbol})</option>
                                         ))}
                                     </SelectField>
-                                    <SelectField label="Calculo opcional" name={`items.${index}.quantity_mode`} value={item.quantity_mode ?? 'direct'} onChange={(event) => updateItem(index, 'quantity_mode', event.target.value)}>
+                                    <SelectField label="Calculo opcional" name={`items.${index}.quantity_mode`} value={item.quantity_mode ?? 'direct'} onChange={(event) => updateItem(index, 'quantity_mode', event.target.value)} helpTitle="Calculo de cantidad" helpTooltip="Sin calculo: 3 bolsas. Cantidad x largo: 10 calaminas de 5 m = 50 m. Peso a metros: convierte kg o toneladas usando el espesor configurado." helpText="Sin calculo usa la cantidad directa. Cantidad x largo sirve para hojas/piezas por medida. Peso a metros convierte kg o toneladas segun el espesor.">
                                         <option value="direct">Sin calculo</option>
                                         <option value="length">Cantidad x largo</option>
                                         <option value="weight">Peso a metros</option>

@@ -2,6 +2,7 @@ import PrimaryButton from '@/Components/PrimaryButton';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { assetUrl } from '@/Utils/assets';
 import FormField from '../../../../../Shared/Resources/Components/FormField';
+import ContextHelp from '../../../../../Shared/Resources/Components/ContextHelp';
 import ModuleHeader from '../../../../../Shared/Resources/Components/ModuleHeader';
 import SelectField from '../../../../../Shared/Resources/Components/SelectField';
 import { Head, Link, useForm } from '@inertiajs/react';
@@ -189,7 +190,7 @@ export default function Form({ template, branches, defaultLayout, attributeField
 
                 <form onSubmit={submit} className="grid gap-6 lg:grid-cols-[1fr_420px]">
                     <div className="space-y-6">
-                        <Panel title="Datos generales">
+                        <Panel title={<span className="inline-flex items-center gap-2">Datos generales <ContextHelp title="Configuracion de impresion">Aqui defines para que documento aplica la plantilla, el tipo de hoja y si usara identidad de sucursal o colores propios. La vista previa refleja estos cambios antes de guardar.</ContextHelp></span>}>
                             <div className="grid gap-5 sm:grid-cols-3">
                                 <FormField label="Nombre" name="name" value={data.name} onChange={(event) => setData('name', event.target.value)} error={errors.name} required />
                                 <SelectField label="Sucursal" name="branch_id" value={data.branch_id ?? ''} onChange={(event) => setData('branch_id', event.target.value || null)} error={errors.branch_id}>
@@ -201,7 +202,7 @@ export default function Form({ template, branches, defaultLayout, attributeField
                                     <option value="quotation">Cotizacion</option>
                                     <option value="sale_note">Nota de venta</option>
                                 </SelectField>
-                                <SelectField label="Tipo de hoja" name="paper_type" value={data.paper_type} onChange={(event) => setData('paper_type', event.target.value)} error={errors.paper_type}>
+                                <SelectField label="Tipo de hoja" name="paper_type" value={data.paper_type} onChange={(event) => setData('paper_type', event.target.value)} error={errors.paper_type} helpTitle="Tipo de hoja" helpTooltip="Media hoja carta/oficio imprime en una sola mitad vertical. No crea dos copias; solo ajusta el area imprimible del documento.">
                                     <option value="letter">Bond carta</option>
                                     <option value="half_letter">Bond carta media hoja exacta</option>
                                     <option value="legal">Oficio</option>
@@ -219,7 +220,7 @@ export default function Form({ template, branches, defaultLayout, attributeField
                                     <option value="Arial, sans-serif">Arial</option>
                                     <option value="Georgia, serif">Serif</option>
                                 </SelectField>
-                                <SelectField label="Branding" name="use_branding" value={data.use_branding ? '1' : '0'} onChange={(event) => setData('use_branding', event.target.value === '1')} error={errors.use_branding}>
+                                <SelectField label="Branding" name="use_branding" value={data.use_branding ? '1' : '0'} onChange={(event) => setData('use_branding', event.target.value === '1')} error={errors.use_branding} helpTitle="Branding de plantilla" helpTooltip="Si usas colores/logo de sucursal, la plantilla toma la identidad de la sucursal activa. Si usas colores/logo de plantilla, el comprobante ignora el branding general del sistema y usa estos colores propios.">
                                     <option value="1">Usar colores/logo de sucursal</option>
                                     <option value="0">Usar colores/logo de plantilla</option>
                                 </SelectField>
@@ -230,7 +231,7 @@ export default function Form({ template, branches, defaultLayout, attributeField
                             </div>
                         </Panel>
 
-                        <Panel title="Logo y colores">
+                        <Panel title={<span className="inline-flex items-center gap-2">Logo y colores <ContextHelp title="Identidad visual del comprobante">Estos datos afectan solo la impresion o vista previa de la plantilla cuando eliges usar colores/logo de plantilla. No cambian el color general del sistema.</ContextHelp></span>}>
                             <div className="grid gap-5 sm:grid-cols-3">
                                 <FormField label="Ruta logo" name="logo_path" value={data.layout.logo.path ?? ''} onChange={(event) => setLayout(['logo', 'path'], event.target.value)} error={errors['layout.logo.path']} />
                                 <FormField label="Ancho logo mm" name="logo_width" type="number" value={data.layout.logo.width_mm} onChange={(event) => setLayout(['logo', 'width_mm'], Number(event.target.value))} error={errors['layout.logo.width_mm']} />

@@ -1,5 +1,6 @@
 import FormField from '../../../../../Shared/Resources/Components/FormField';
 import SelectField from '../../../../../Shared/Resources/Components/SelectField';
+import ContextHelp from '../../../../../Shared/Resources/Components/ContextHelp';
 import { decimalStep } from '@/Utils/formatters';
 import { useState } from 'react';
 
@@ -160,7 +161,7 @@ export default function ProductFormFields({ data, setData, errors = {}, thicknes
     return (
         <div className={`grid gap-5 ${compact ? 'sm:grid-cols-2' : 'sm:grid-cols-2'}`}>
             <FormField label="Nombre" name="name" value={data.name} onChange={(event) => setData('name', event.target.value)} error={errors.name} required />
-            <SelectField label="Categoria" name="product_category_id" value={data.product_category_id} onChange={(event) => selectCategory(event.target.value)} error={errors.product_category_id} required>
+            <SelectField label="Categoria" name="product_category_id" value={data.product_category_id} onChange={(event) => selectCategory(event.target.value)} error={errors.product_category_id} helpTitle="Categoria del producto" helpTooltip="La categoria ayuda a filtrar productos en compras, ventas y cotizaciones. Tambien define valores sugeridos como unidad base, espesor requerido y rastreo adicional por defecto." required>
                 <option value="">Seleccione una categoria</option>
                 {categories.map((category) => (
                     <option key={category.id} value={category.id}>
@@ -179,7 +180,7 @@ export default function ProductFormFields({ data, setData, errors = {}, thicknes
                 ))}
             </SelectField>
             <InventoryControl data={data} setData={setData} errors={errors} />
-            <SelectField label="Unidad base" name="product_unit_id" value={data.product_unit_id} onChange={(event) => selectUnit(event.target.value)} error={errors.product_unit_id} required>
+            <SelectField label="Unidad base" name="product_unit_id" value={data.product_unit_id} onChange={(event) => selectUnit(event.target.value)} error={errors.product_unit_id} helpTitle="Unidad base" helpTooltip="Es la unidad principal del inventario. El stock se guarda en esta unidad. Otras unidades como caja, bolsa o kilo pueden venderse si configuras su equivalencia hacia la unidad base." required>
                 <option value="">Seleccione unidad</option>
                 {units.map((unit) => (
                     <option key={unit.id} value={unit.id}>
@@ -189,8 +190,8 @@ export default function ProductFormFields({ data, setData, errors = {}, thicknes
             </SelectField>
             <AllowedUnits data={data} units={units} selectedUnit={selectedUnit} errors={errors} toggleAllowedUnit={toggleAllowedUnit} />
             <UnitConversions data={data} units={units} selectedUnit={selectedUnit} errors={errors} addUnitConversion={addUnitConversion} updateUnitConversion={updateUnitConversion} removeUnitConversion={removeUnitConversion} />
-            <FormField label="Precio compra" name="purchase_price" type="number" step={decimalStep(decimalFormat.decimalsFor('cost'))} min="0" value={data.purchase_price} onChange={(event) => setData('purchase_price', event.target.value)} error={errors.purchase_price} required />
-            <FormField label="Precio venta" name="sale_price" type="number" step={decimalStep(decimalFormat.decimalsFor('money'))} min="0" value={data.sale_price} onChange={(event) => setData('sale_price', event.target.value)} error={errors.sale_price} required />
+            <FormField label="Precio compra" name="purchase_price" type="number" step={decimalStep(decimalFormat.decimalsFor('cost'))} min="0" value={data.purchase_price} onChange={(event) => setData('purchase_price', event.target.value)} error={errors.purchase_price} helpTitle="Precio de compra" helpTooltip="Es el costo referencial del producto en la unidad base. Sirve para calcular ganancia estimada y reportes." required />
+            <FormField label="Precio venta" name="sale_price" type="number" step={decimalStep(decimalFormat.decimalsFor('money'))} min="0" value={data.sale_price} onChange={(event) => setData('sale_price', event.target.value)} error={errors.sale_price} helpTitle="Precio de venta" helpTooltip="Es el precio sugerido para ventas y cotizaciones. Solo usuarios con permiso pueden cambiarlo manualmente durante la venta." required />
             <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-100">
                 <p className="text-xs font-semibold uppercase tracking-wide">Ganancia estimada</p>
                 <p className="mt-1 text-xl font-bold">Bs {decimalFormat.money(profit)}</p>
@@ -276,7 +277,12 @@ function AllowedUnits({ data, units, selectedUnit, errors, toggleAllowedUnit }) 
     return (
         <div className="sm:col-span-2">
             <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950/40">
-                <h3 className="text-sm font-semibold text-slate-950 dark:text-white">Unidades para venta y compra</h3>
+                <div className="flex items-center gap-2">
+                    <h3 className="text-sm font-semibold text-slate-950 dark:text-white">Unidades para venta y compra</h3>
+                    <ContextHelp title="Unidades comerciales">
+                        Marca las unidades en las que este producto puede comprarse, venderse o cotizarse. La unidad base siempre queda habilitada. Si agregas otra unidad, configura su equivalencia para que el stock se descuente correctamente.
+                    </ContextHelp>
+                </div>
                 <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">La unidad base siempre queda habilitada. Agrega otras formas comerciales como caja, unidad, kg, bolsa o paquete.</p>
                 <div className="mt-3 grid gap-2 sm:grid-cols-3">
                     {units.map((unit) => {
@@ -303,7 +309,12 @@ function UnitConversions({ data, units, selectedUnit, errors, addUnitConversion,
             <div className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-950/40">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                     <div>
-                        <h3 className="text-sm font-semibold text-slate-950 dark:text-white">Equivalencias de unidades</h3>
+                        <div className="flex items-center gap-2">
+                            <h3 className="text-sm font-semibold text-slate-950 dark:text-white">Equivalencias de unidades</h3>
+                            <ContextHelp title="Equivalencias">
+                                Indica cuanto representa una unidad comercial en la unidad base. Ejemplo: si la unidad base es unidad y vendes por caja, configura 1 caja = 12 unidades. Asi el sistema descuenta 12 del stock al vender una caja.
+                            </ContextHelp>
+                        </div>
                         <p className="text-xs text-slate-500 dark:text-slate-400">Define cuanto descuenta del stock base cada unidad comercial. Ejemplo: 1 caja = 12 {selectedUnit?.symbol ?? data.base_unit}.</p>
                     </div>
                     <button type="button" onClick={addUnitConversion} className="rounded-md border border-brand-primary px-3 py-2 text-sm font-semibold text-brand-primary">
@@ -393,7 +404,12 @@ function CustomAttributes({ data, units, errors, attributeDefinitions, addCustom
             <div className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-950/40">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                     <div>
-                        <h3 className="text-sm font-semibold text-slate-950 dark:text-white">Caracteristicas propias del producto</h3>
+                        <div className="flex items-center gap-2">
+                            <h3 className="text-sm font-semibold text-slate-950 dark:text-white">Caracteristicas propias del producto</h3>
+                            <ContextHelp title="Caracteristicas en documentos">
+                                Usa caracteristicas para datos como modelo, color, largo, acabado o presentacion. En cotizaciones y notas de venta aparecen como columnas si la plantilla las tiene activadas. Si un producto no tiene esa caracteristica, se imprime "-".
+                            </ContextHelp>
+                        </div>
                         <p className="text-xs text-slate-500 dark:text-slate-400">
                             Puedes reutilizar una caracteristica ya creada, como Modelo o Color, y solo cambiar el valor de este producto. En cotizaciones y notas de venta estas caracteristicas aparecen como columnas si la plantilla las tiene activadas; si un producto no tiene esa caracteristica, se muestra "-".
                         </p>
