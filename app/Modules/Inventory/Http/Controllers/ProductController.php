@@ -80,6 +80,7 @@ class ProductController extends Controller
             'categories' => $this->activeCategories(),
             'units' => $this->activeUnits(),
             'branches' => $this->activeBranches(request()),
+            'attributeDefinitions' => UiCatalogCache::productAttributeDefinitions(),
         ]);
     }
 
@@ -108,6 +109,7 @@ class ProductController extends Controller
             'categories' => $this->activeCategories(),
             'units' => $this->activeUnits(),
             'branches' => $this->activeBranches(request()),
+            'attributeDefinitions' => UiCatalogCache::productAttributeDefinitions(),
         ]);
     }
 

@@ -5,7 +5,7 @@ import { Head, Link, useForm } from '@inertiajs/react';
 import { useDecimalFormatter } from '@/Utils/formatters';
 import ProductFormFields, { buildProductFormData } from './ProductFormFields';
 
-export default function Form({ product, thicknesses, categories, units, branches = [] }) {
+export default function Form({ product, thicknesses, categories, units, branches = [], attributeDefinitions = [] }) {
     const isEditing = Boolean(product);
     const decimalFormat = useDecimalFormatter('inventory');
     const { data, setData, post, put, processing, errors } = useForm(buildProductFormData({
@@ -45,6 +45,7 @@ export default function Form({ product, thicknesses, categories, units, branches
                         categories={categories}
                         units={units}
                         branches={branches}
+                        attributeDefinitions={attributeDefinitions}
                         decimalFormat={decimalFormat}
                     />
 

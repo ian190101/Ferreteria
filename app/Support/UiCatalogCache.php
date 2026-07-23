@@ -108,6 +108,26 @@ class UiCatalogCache
             ->get(['id', 'name', 'symbol', 'kind']));
     }
 
+    public static function productAttributeDefinitions()
+    {
+        return self::remember('product-attribute-definitions', fn () => Product::query()
+            ->where('is_active', true)
+            ->whereNotNull('custom_attributes')
+            ->get(['custom_attributes'])
+            ->flatMap(fn (Product $product) => collect($product->custom_attributes ?? []))
+            ->filter(fn ($attribute) => is_array($attribute) && filled($attribute['code'] ?? null) && filled($attribute['name'] ?? null))
+            ->map(fn (array $attribute) => [
+                'code' => (string) $attribute['code'],
+                'name' => (string) $attribute['name'],
+                'type' => in_array(($attribute['type'] ?? 'text'), ['text', 'number', 'boolean'], true) ? $attribute['type'] : 'text',
+                'has_unit' => (bool) ($attribute['has_unit'] ?? filled($attribute['unit'] ?? null)),
+                'unit' => (string) ($attribute['unit'] ?? ''),
+            ])
+            ->unique('code')
+            ->sortBy('name')
+            ->values());
+    }
+
     public static function availableCoils(int $limit = 500)
     {
         return Cache::remember('ui-catalog:available-coils:'.SystemCacheInvalidator::operationalVersion().":{$limit}", now()->addSeconds(30), fn () => ProductCoil::query()
@@ -195,6 +215,7 @@ class UiCatalogCache
             'coil-products',
             'product-categories',
             'product-units',
+            'product-attribute-definitions',
             'thicknesses',
         ] as $key) {
             Cache::forget("ui-catalog:{$key}");

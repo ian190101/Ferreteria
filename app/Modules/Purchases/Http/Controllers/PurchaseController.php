@@ -65,6 +65,7 @@ class PurchaseController extends Controller
             'units' => UiCatalogCache::productUnits(),
             'categories' => UiCatalogCache::productCategories(),
             'thicknesses' => UiCatalogCache::activeThicknesses(),
+            'attributeDefinitions' => UiCatalogCache::productAttributeDefinitions(),
             'suppliers' => Inertia::defer(fn () => UiCatalogCache::activeSuppliers(), 'purchase-form-catalogs'),
             'products' => Inertia::defer(fn () => UiCatalogCache::activeProductsWithThickness(), 'purchase-form-catalogs'),
         ]);

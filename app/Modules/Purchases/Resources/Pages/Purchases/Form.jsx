@@ -28,7 +28,7 @@ const DEFAULT_ITEM = {
     description: '',
 };
 
-export default function Form({ branches = [], suppliers = [], units = [], categories = [], thicknesses = [], products = [] }) {
+export default function Form({ branches = [], suppliers = [], units = [], categories = [], thicknesses = [], products = [], attributeDefinitions = [] }) {
     const catalogsReady = categories.length > 0 && units.length > 0;
     const decimalFormat = useDecimalFormatter('purchases');
     const { data, setData, post, processing, errors, transform } = useForm({
@@ -193,6 +193,7 @@ export default function Form({ branches = [], suppliers = [], units = [], catego
                                                     categories={categories}
                                                     units={units}
                                                     branches={branches}
+                                                    attributeDefinitions={attributeDefinitions}
                                                     decimalFormat={decimalFormat}
                                                     compact
                                                 />

@@ -1,6 +1,7 @@
 import FormField from '../../../../../Shared/Resources/Components/FormField';
 import SelectField from '../../../../../Shared/Resources/Components/SelectField';
 import { decimalStep } from '@/Utils/formatters';
+import { useState } from 'react';
 
 export function buildProductFormData({ product = null, categories = [], units = [], branches = [] }) {
     const initialBranchIds = (product?.branch_stocks ?? product?.branchStocks ?? [])
@@ -39,7 +40,7 @@ export function buildProductFormData({ product = null, categories = [], units = 
     };
 }
 
-export default function ProductFormFields({ data, setData, errors = {}, thicknesses = [], categories = [], units = [], branches = [], decimalFormat, compact = false }) {
+export default function ProductFormFields({ data, setData, errors = {}, thicknesses = [], categories = [], units = [], branches = [], attributeDefinitions = [], decimalFormat, compact = false }) {
     const selectedCategory = categories.find((category) => Number(category.id) === Number(data.product_category_id));
     const selectedUnit = units.find((unit) => Number(unit.id) === Number(data.product_unit_id));
     const profit = Math.max(Number(data.sale_price || 0) - Number(data.purchase_price || 0), 0);
@@ -86,6 +87,23 @@ export default function ProductFormFields({ data, setData, errors = {}, thicknes
         ...(data.custom_attributes ?? []),
         { code: '', name: '', type: 'text', value: '', has_unit: false, unit: '' },
     ]);
+    const addExistingCustomAttribute = (definition) => {
+        if (!definition?.code || (data.custom_attributes ?? []).some((attribute) => attribute.code === definition.code)) {
+            return;
+        }
+
+        setData('custom_attributes', [
+            ...(data.custom_attributes ?? []),
+            {
+                code: definition.code,
+                name: definition.name,
+                type: definition.type ?? 'text',
+                value: '',
+                has_unit: Boolean(definition.has_unit ?? definition.unit),
+                unit: definition.unit ?? '',
+            },
+        ]);
+    };
     const updateCustomAttribute = (index, field, value) => {
         setData('custom_attributes', (data.custom_attributes ?? []).map((attribute, attributeIndex) => (
             attributeIndex === index ? { ...attribute, [field]: value } : attribute
@@ -193,7 +211,16 @@ export default function ProductFormFields({ data, setData, errors = {}, thicknes
                 <option value="0">Inactivo</option>
             </SelectField>
             <BranchAvailability data={data} branches={branches} errors={errors} setBranchScope={setBranchScope} toggleBranch={toggleBranch} />
-            <CustomAttributes data={data} units={units} errors={errors} addCustomAttribute={addCustomAttribute} updateCustomAttribute={updateCustomAttribute} removeCustomAttribute={removeCustomAttribute} />
+            <CustomAttributes
+                data={data}
+                units={units}
+                errors={errors}
+                attributeDefinitions={attributeDefinitions}
+                addCustomAttribute={addCustomAttribute}
+                addExistingCustomAttribute={addExistingCustomAttribute}
+                updateCustomAttribute={updateCustomAttribute}
+                removeCustomAttribute={removeCustomAttribute}
+            />
         </div>
     );
 }
@@ -351,18 +378,48 @@ function BranchAvailability({ data, branches, errors, setBranchScope, toggleBran
     );
 }
 
-function CustomAttributes({ data, units, errors, addCustomAttribute, updateCustomAttribute, removeCustomAttribute }) {
+function CustomAttributes({ data, units, errors, attributeDefinitions, addCustomAttribute, addExistingCustomAttribute, updateCustomAttribute, removeCustomAttribute }) {
+    const [selectedDefinitionCode, setSelectedDefinitionCode] = useState('');
+    const currentCodes = new Set((data.custom_attributes ?? []).map((attribute) => attribute.code).filter(Boolean));
+    const availableDefinitions = (attributeDefinitions ?? []).filter((definition) => definition?.code && !currentCodes.has(definition.code));
+    const selectedDefinition = availableDefinitions.find((definition) => definition.code === selectedDefinitionCode);
+    const useExistingAttribute = () => {
+        addExistingCustomAttribute(selectedDefinition);
+        setSelectedDefinitionCode('');
+    };
+
     return (
         <div className="sm:col-span-2">
             <div className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-950/40">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                     <div>
                         <h3 className="text-sm font-semibold text-slate-950 dark:text-white">Caracteristicas propias del producto</h3>
-                        <p className="text-xs text-slate-500 dark:text-slate-400">Se aplican solo a este producto y aparecen en ventas, cotizaciones y compras.</p>
+                        <p className="text-xs text-slate-500 dark:text-slate-400">
+                            Puedes reutilizar una caracteristica ya creada, como Modelo o Color, y solo cambiar el valor de este producto. En cotizaciones y notas de venta estas caracteristicas aparecen como columnas si la plantilla las tiene activadas; si un producto no tiene esa caracteristica, se muestra "-".
+                        </p>
                     </div>
                     <button type="button" onClick={addCustomAttribute} className="rounded-md border border-brand-primary px-3 py-2 text-sm font-semibold text-brand-primary">
-                        Agregar caracteristica
+                        Crear nueva caracteristica
                     </button>
+                </div>
+
+                <div className="mt-4 rounded-lg border border-brand-primary/20 bg-brand-primary/5 p-4 dark:border-brand-primary/30 dark:bg-brand-primary/10">
+                    <div className="grid gap-3 md:grid-cols-[1fr_auto]">
+                        <SelectField label="Usar caracteristica existente" name="existing_attribute_definition" value={selectedDefinitionCode} onChange={(event) => setSelectedDefinitionCode(event.target.value)} disabled={!availableDefinitions.length}>
+                            <option value="">{availableDefinitions.length ? 'Seleccione una caracteristica reutilizable' : 'No hay caracteristicas reutilizables disponibles'}</option>
+                            {availableDefinitions.map((definition) => (
+                                <option key={definition.code} value={definition.code}>
+                                    {definition.name} ({definition.code})
+                                </option>
+                            ))}
+                        </SelectField>
+                        <button type="button" onClick={useExistingAttribute} disabled={!selectedDefinition} className="self-end rounded-md bg-brand-primary px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50">
+                            Agregar seleccionada
+                        </button>
+                    </div>
+                    <p className="mt-2 text-xs text-slate-600 dark:text-slate-300">
+                        Usa esta opcion para no crear duplicados como "Modelo", "modelo calamina" o "Modelo 2". Si no existe la caracteristica que necesitas, usa "Crear nueva caracteristica".
+                    </p>
                 </div>
 
                 {(data.custom_attributes ?? []).length ? (
