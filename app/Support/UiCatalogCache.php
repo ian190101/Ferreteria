@@ -227,7 +227,7 @@ class UiCatalogCache
             ->get(['id', 'name', 'code']));
     }
 
-    public static function activePaymentMethods(array $columns = ['id', 'name', 'requires_reference'])
+    public static function activePaymentMethods(array $columns = ['id', 'name', 'code', 'requires_reference'])
     {
         return self::remember('payment-methods:'.implode(',', $columns), fn () => PaymentMethod::query()
             ->where('is_active', true)

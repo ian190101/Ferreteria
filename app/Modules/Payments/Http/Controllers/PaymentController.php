@@ -27,7 +27,7 @@ class PaymentController extends Controller
     public function index(Request $request): Response
     {
         $documentPolicy = app(SalesDocumentPolicy::class);
-        $allowedMethods = UiCatalogCache::activePaymentMethods()
+        $allowedMethods = UiCatalogCache::activePaymentMethods(['id', 'name', 'code', 'requires_reference'])
             ->filter(fn ($method) => $documentPolicy->isPaymentMethodAllowed($method->code, 'collections'))
             ->values();
 

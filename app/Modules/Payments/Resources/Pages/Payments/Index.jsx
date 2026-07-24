@@ -144,9 +144,14 @@ export default function Index({ payments, receivables, branches, methods, method
                                     ))}
                                 </SelectField>
                                 <SelectField label="Metodo de pago" name="payment_method_id" value={paymentForm.data.payment_method_id} onChange={(event) => paymentForm.setData('payment_method_id', event.target.value)} error={paymentForm.errors.payment_method_id} required>
-                                    <option value="">Seleccionar</option>
+                                    <option value="">{methods.length ? 'Seleccionar' : 'No hay metodos permitidos para cobros'}</option>
                                     {methods.map((method) => <option key={method.id} value={method.id}>{method.name}</option>)}
                                 </SelectField>
+                                {!methods.length ? (
+                                    <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200">
+                                        No hay metodos de pago permitidos para cobros en el perfil de negocio actual. Revisa Catalogos &gt; Metodos de pago y la configuracion del negocio.
+                                    </p>
+                                ) : null}
                                 <div className="grid gap-4 sm:grid-cols-2">
                                     <FormField label="Fecha de pago" name="paid_at" value="Se registrara automaticamente al guardar" disabled className="mt-1 block w-full rounded-md border-gray-300 bg-slate-100 shadow-sm dark:border-gray-700 dark:bg-slate-800 dark:text-gray-300" error={paymentForm.errors.paid_at} />
                                     <FormField label="Monto" name="amount" type="number" step={decimalStep(decimalFormat.decimalsFor('money'))} min={decimalStep(decimalFormat.decimalsFor('money'))} value={paymentForm.data.amount} onChange={(event) => paymentForm.setData('amount', event.target.value)} error={paymentForm.errors.amount} required />
@@ -156,7 +161,7 @@ export default function Index({ payments, receivables, branches, methods, method
                                     Notas
                                     <textarea id="notes" rows="3" value={paymentForm.data.notes} onChange={(event) => paymentForm.setData('notes', event.target.value)} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-brand-primary focus:ring-brand-primary dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300" />
                                 </label>
-                                <button disabled={paymentForm.processing} className="rounded-md bg-brand-primary px-4 py-2 text-sm font-semibold text-white" type="submit">
+                                <button disabled={paymentForm.processing || !methods.length} className="rounded-md bg-brand-primary px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60" type="submit">
                                     Guardar pago
                                 </button>
                             </form>

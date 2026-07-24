@@ -12,6 +12,7 @@ use App\Modules\Sales\Models\Sale;
 use App\Modules\SystemSuperadmin\Models\BusinessProfile;
 use App\Modules\SystemSuperadmin\Services\BusinessProfileConfiguration;
 use App\Support\SystemCacheInvalidator;
+use App\Support\UiCatalogCache;
 use Inertia\Testing\AssertableInertia as Assert;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
@@ -94,6 +95,20 @@ function paymentSale(User $user, float $balance = 100): Sale
         'status' => 'issued',
     ]);
 }
+
+it('mantiene el codigo en el catalogo base de metodos de pago', function () {
+    PaymentMethod::query()->create([
+        'name' => 'Efectivo',
+        'code' => 'cash',
+        'requires_reference' => false,
+        'is_active' => true,
+    ]);
+
+    $method = UiCatalogCache::activePaymentMethods()->first();
+
+    expect($method)->not->toBeNull()
+        ->and($method->code)->toBe('cash');
+});
 
 function paymentPurchase(User $user, float $balance = 100): Purchase
 {
@@ -342,6 +357,12 @@ it('anula pago de compra y restaura saldo por pagar', function () {
 it('lista pagos de proveedor y cuentas por pagar con permiso', function () {
     $user = paymentsUser(['payments.view']);
     paymentPurchase($user, 80);
+    PaymentMethod::query()->create([
+        'name' => 'Efectivo proveedor',
+        'code' => 'cash',
+        'requires_reference' => false,
+        'is_active' => true,
+    ]);
 
     $this->actingAs($user)
         ->get(route('payments.purchase-payments.index'))
@@ -349,6 +370,8 @@ it('lista pagos de proveedor y cuentas por pagar con permiso', function () {
         ->assertInertia(fn (Assert $page) => $page
             ->component('Payments/PurchasePayments/Index', false)
             ->has('payables', 1)
+            ->has('methods', 1)
+            ->where('methods.0.code', 'cash')
             ->has('payments.data', 0)
         );
 });
