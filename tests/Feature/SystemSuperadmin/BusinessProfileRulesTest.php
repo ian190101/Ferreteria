@@ -6,9 +6,11 @@ use App\Modules\SystemSuperadmin\Models\BusinessProfile;
 use App\Modules\SystemSuperadmin\Models\BusinessProfileDraft;
 use App\Modules\SystemSuperadmin\Models\BusinessProfilePreset;
 use App\Modules\SystemSuperadmin\Models\BusinessProfileSandboxSession;
+use App\Modules\Exports\Services\ExportDatasetService;
 use App\Modules\SystemSuperadmin\Services\BusinessProfileConfiguration;
 use App\Modules\SystemSuperadmin\Services\BusinessProfileSandboxService;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Http\Request;
 use App\Support\SystemRoles;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
@@ -88,6 +90,36 @@ it('bloquea rutas secundarias cuando el perfil empresarial desactiva el modulo',
     $this->actingAs($user)->get(route('inventory.reservations.index'))->assertNotFound();
     $this->actingAs($user)->get(route('inventory.transfers.index'))->assertNotFound();
 });
+
+it('oculta y bloquea datasets de modulos desactivados en exportaciones', function () {
+    $user = businessProfileUser(['settings.manage', 'billing.view']);
+    activeBusinessProfile([
+        'modules' => [
+            'exports' => true,
+            'billing' => false,
+            'inventory' => true,
+        ],
+        'billing' => [
+            'enabled' => false,
+        ],
+    ]);
+
+    $this->actingAs($user)
+        ->get(route('exports.index'))
+        ->assertOk()
+        ->assertDontSee('Facturacion SIAT')
+        ->assertDontSee('Configuracion SIAT');
+
+    $request = Request::create(route('exports.download'), 'POST', [
+        'format' => 'pdf',
+        'modules' => ['billing_invoices'],
+    ]);
+    $request->setUserResolver(fn () => $user);
+
+    expect(app(ExportDatasetService::class)->catalog($request))->not->toHaveKey('billing_invoices');
+
+    app(ExportDatasetService::class)->build($request);
+})->throws(\Symfony\Component\HttpKernel\Exception\HttpException::class, 'Debe seleccionar al menos un modulo para exportar.');
 
 it('solo permite entrar al configurador empresarial al rol sistemasuperadmin', function () {
     $normalUser = businessProfileUser();

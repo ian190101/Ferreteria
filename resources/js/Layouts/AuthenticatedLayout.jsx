@@ -251,7 +251,7 @@ function Icon({ path }) {
 
 function buildNavigation(permissions, isSystemSuperadmin = false, modules = {}) {
     const can = (permission) => permissions.includes(permission);
-    const moduleEnabled = (module) => isSystemSuperadmin || modules[module] !== false;
+    const moduleEnabled = (module) => isSystemSuperadmin || modules[module] === true;
     const item = (condition, section, label, href, active, icon) => condition ? { section, label, href, active, icon } : null;
 
     return [

@@ -37,6 +37,10 @@ class ExportDatasetService
 {
     public function catalog(?Request $request = null): array
     {
+        if (! $this->exportsEnabled($request)) {
+            return [];
+        }
+
         return collect([
             'inventory' => [
                 'label' => 'Inventario',
@@ -353,6 +357,8 @@ class ExportDatasetService
 
     public function build(Request $request): array
     {
+        abort_unless($this->exportsEnabled($request), 404);
+
         $catalog = $this->catalog($request);
         $modules = collect($request->input('modules', []))
             ->filter(fn ($module) => isset($catalog[$module]))
@@ -466,11 +472,28 @@ class ExportDatasetService
             'workers' => ActiveBusinessProfile::enabled('workers'),
             'payroll' => ActiveBusinessProfile::enabled('payroll'),
             'barcode_templates' => ActiveBusinessProfile::enabled('barcode_labels'),
-            'billing_invoices', 'billing_settings', 'billing_products', 'billing_events', 'billing_logs' => ActiveBusinessProfile::enabled('billing'),
+            'billing_invoices', 'billing_settings', 'billing_products', 'billing_events', 'billing_logs' => $this->billingEnabled(),
             'deliveries' => ActiveBusinessProfile::enabled('deliveries'),
             'branches', 'users', 'audit' => true,
             default => true,
         };
+    }
+
+    private function exportsEnabled(?Request $request): bool
+    {
+        if ($request?->user()?->hasRole(SystemRoles::SYSTEM_SUPERADMIN)) {
+            return true;
+        }
+
+        return ActiveBusinessProfile::enabled('exports');
+    }
+
+    private function billingEnabled(): bool
+    {
+        $payload = ActiveBusinessProfile::payload();
+
+        return (bool) ($payload['modules']['billing'] ?? false)
+            && (bool) ($payload['billing']['enabled'] ?? false);
     }
 
     private function canExport(string $module, ?Request $request): bool
