@@ -408,12 +408,31 @@ export default function Index({ activeProfile, drafts, versions, presets = [], o
                                     <Toggle label="Registrar sueldo como gasto" checked={form.data.configuration.human_resources?.salary_expense_integration ?? true} onChange={(value) => setConfig('human_resources', 'salary_expense_integration', value)} helpTooltip="Cuando esta activo, cada sueldo pagado se registra automaticamente como egreso en gastos y puede conciliarse con banco/QR." />
                                 </Section> : null}
 
-                                {activeConfigStep === 'modules' ? <Section title="Modulos y UX">
+                                {activeConfigStep === 'modules' ? <Section
+                                    title="Modulos, submodulos y experiencia"
+                                    description="Desde aqui puedes desactivar un modulo completo o solo ciertas funciones internas. Desactivar un modulo lo oculta del menu, bloquea sus rutas para usuarios normales y tambien evita que aparezca en exportaciones cuando el perfil no lo permite."
+                                >
                                     {Object.keys(form.data.configuration.modules).map((key) => (
-                                        <Toggle key={key} label={moduleLabel(key)} checked={form.data.configuration.modules[key]} onChange={(value) => setConfig('modules', key, value)} />
+                                        <Toggle
+                                            key={key}
+                                            label={`Modulo de ${moduleLabel(key)}`}
+                                            checked={form.data.configuration.modules[key]}
+                                            onChange={(value) => setConfig('modules', key, value)}
+                                            helpTooltip={moduleToggleHelp(key)}
+                                            enableText={`Activar modulo de ${moduleLabel(key)}`}
+                                            disableText={`Desactivar modulo de ${moduleLabel(key)}`}
+                                        />
                                     ))}
                                     {Object.keys(form.data.configuration.ux).map((key) => (
-                                        <Toggle key={key} label={uxLabel(key)} checked={form.data.configuration.ux[key]} onChange={(value) => setConfig('ux', key, value)} />
+                                        <Toggle
+                                            key={key}
+                                            label={`Caracteristica de experiencia: ${uxLabel(key)}`}
+                                            checked={form.data.configuration.ux[key]}
+                                            onChange={(value) => setConfig('ux', key, value)}
+                                            helpTooltip={uxToggleHelp(key)}
+                                            enableText={`Activar caracteristica ${uxLabel(key)}`}
+                                            disableText={`Desactivar caracteristica ${uxLabel(key)}`}
+                                        />
                                     ))}
                                 </Section> : null}
 
@@ -485,26 +504,48 @@ export default function Index({ activeProfile, drafts, versions, presets = [], o
     );
 }
 
-function Section({ title, children }) {
+function Section({ title, children, description = null }) {
     return (
         <div>
             <h3 className="mb-3 text-base font-semibold text-slate-950 dark:text-white">{title}</h3>
+            {description ? (
+                <p className="mb-4 rounded-2xl border border-sky-100 bg-sky-50 px-4 py-3 text-sm leading-6 text-sky-900 dark:border-sky-500/20 dark:bg-sky-500/10 dark:text-sky-100">
+                    {description}
+                </p>
+            ) : null}
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{children}</div>
         </div>
     );
 }
 
-function Toggle({ label, checked, onChange, helpTooltip = null }) {
+function Toggle({ label, checked, onChange, helpTooltip = null, enableText = null, disableText = null }) {
+    const actionText = checked ? (disableText ?? `Desactivar ${label}`) : (enableText ?? `Activar ${label}`);
+
     return (
-        <label className="flex min-h-12 items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm dark:border-slate-800 dark:bg-white/5">
-            <span>
+        <div className="flex min-h-24 items-start justify-between gap-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm dark:border-slate-800 dark:bg-white/5">
+            <div className="min-w-0 flex-1">
                 <span className="font-medium text-slate-700 dark:text-slate-200">{label}</span>
                 {helpTooltip ? <span className="mt-1 block text-xs leading-5 text-slate-500 dark:text-slate-400">{helpTooltip}</span> : null}
-            </span>
-            <button type="button" onClick={() => onChange(!checked)} className={`relative h-7 w-12 rounded-full transition ${checked ? 'bg-brand-primary' : 'bg-slate-300 dark:bg-slate-700'}`} aria-pressed={checked}>
-                <span className={`absolute top-1 h-5 w-5 rounded-full bg-white shadow transition ${checked ? 'left-6' : 'left-1'}`} />
+                <span className={`mt-2 inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] ${checked ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-200' : 'bg-slate-200 text-slate-600 dark:bg-slate-800 dark:text-slate-300'}`}>
+                    {checked ? 'Activo' : 'Desactivado'}
+                </span>
+            </div>
+            <button
+                type="button"
+                onClick={() => onChange(!checked)}
+                className="flex shrink-0 flex-col items-end gap-1 text-right"
+                aria-pressed={checked}
+                aria-label={actionText}
+                title={actionText}
+            >
+                <span className={`relative block h-6 w-11 rounded-full transition ${checked ? 'bg-brand-primary' : 'bg-slate-300 dark:bg-slate-700'}`}>
+                    <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition ${checked ? 'left-5' : 'left-0.5'}`} />
+                </span>
+                <span className="max-w-24 text-[10px] font-semibold leading-3 text-slate-500 dark:text-slate-400">
+                    {actionText}
+                </span>
             </button>
-        </label>
+        </div>
     );
 }
 
@@ -2056,6 +2097,36 @@ function moduleLabel(key) {
     }[key] ?? key;
 }
 
+function moduleToggleHelp(key) {
+    return {
+        quotes: 'Desactivar este modulo oculta cotizaciones y evita crear documentos previos a la venta.',
+        alerts: 'Desactivar este modulo oculta alertas operativas y avisos de stock o vencimientos.',
+        sales_notes: 'Desactivar este modulo oculta notas de venta y afecta cobros, devoluciones y promesas de pago.',
+        pos: 'Desactivar este modulo oculta el punto de venta rapido por busqueda o codigo de barras.',
+        purchases: 'Desactivar este modulo bloquea compras, compras rapidas y pagos asociados a proveedores.',
+        quick_purchases: 'Desactivar este submodulo quita la compra rapida por barcode, pero mantiene compras tradicionales si el modulo Compras sigue activo.',
+        cash: 'Desactivar este modulo oculta apertura, cierre e historial de caja.',
+        banks: 'Desactivar este modulo oculta cuentas bancarias, movimientos QR y conciliaciones.',
+        billing: 'Desactivar este modulo oculta facturacion SIAT y deja solo documentos internos.',
+        inventory: 'Desactivar este modulo oculta stock central, kardex, reservas, transferencias y alertas de inventario.',
+        deliveries: 'Desactivar este modulo oculta despachos y bloquea nuevos registros de entrega.',
+        customers: 'Desactivar este modulo oculta clientes; las ventas deberan trabajar como cliente opcional u oculto segun el flujo.',
+        suppliers: 'Desactivar este modulo oculta proveedores; compras no podra exigir proveedor aunque el flujo lo marque como obligatorio.',
+        expenses: 'Desactivar este modulo oculta gastos y egresos operativos.',
+        returns: 'Desactivar este submodulo oculta devoluciones de venta.',
+        payment_promises: 'Desactivar este submodulo oculta promesas de pago y seguimiento de compromisos.',
+        reports: 'Desactivar este modulo oculta reportes e informes para usuarios normales.',
+        exports: 'Desactivar este modulo oculta exportaciones y evita descargar datos desde perfiles normales.',
+        production: 'Desactivar este modulo oculta funciones de produccion o fabricacion simple.',
+        barcode_labels: 'Desactivar esta caracteristica oculta impresion de etiquetas con codigo de barras desde productos.',
+        workers: 'Desactivar este modulo oculta gestion de trabajadores.',
+        payroll: 'Desactivar este modulo oculta pago de sueldos aunque existan trabajadores registrados.',
+        reservations: 'Desactivar este submodulo oculta reservas de inventario.',
+        transfers: 'Desactivar este submodulo oculta transferencias entre sucursales.',
+        offline_pos: 'Desactivar esta caracteristica impide usar el POS en modo offline o contingencia.',
+    }[key] ?? 'Desactivar esta opcion la oculta del perfil de negocio y bloquea sus acciones relacionadas cuando corresponda.';
+}
+
 function uxLabel(key) {
     return {
         context_help: 'Ayudas contextuales',
@@ -2063,4 +2134,13 @@ function uxLabel(key) {
         responsive_tables: 'Tablas responsivas',
         demo_mode: 'Modo demo',
     }[key] ?? key;
+}
+
+function uxToggleHelp(key) {
+    return {
+        context_help: 'Desactivar esta caracteristica quita los mensajes de ayuda con signo de pregunta.',
+        spanish_messages: 'Desactivar esta caracteristica permite mensajes tecnicos; se recomienda mantenerla activa para clientes finales.',
+        responsive_tables: 'Desactivar esta caracteristica reduce los ajustes especiales de tablas en pantallas pequenas.',
+        demo_mode: 'Desactivar esta caracteristica oculta la demo previa de cambios antes de aplicar el perfil.',
+    }[key] ?? 'Controla una caracteristica visual o de experiencia del sistema.';
 }
