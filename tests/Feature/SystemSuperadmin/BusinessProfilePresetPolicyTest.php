@@ -72,12 +72,33 @@ it('aplica el preset ferreteria con cotizacion y nota', function () {
 it('mantiene visibles las caracteristicas dinamicas configuradas por plantilla', function () {
     $layout = ReceiptTemplate::defaultLayout();
     $layout['item_columns'][] = [
-        'key' => 'item_attribute_talla',
-        'label' => 'Talla',
+        'key' => 'item_attribute_modelo',
+        'label' => 'modelo',
         'show' => true,
         'align' => 'left',
         'order' => 5,
     ];
+    $layout['item_columns'][] = [
+        'key' => 'item_attribute_talla',
+        'label' => 'Talla',
+        'show' => true,
+        'align' => 'left',
+        'order' => 6,
+    ];
+    $layout['item_columns'] = collect($layout['item_columns'])
+        ->map(function (array $column) {
+            return match ($column['key']) {
+                'item_quantity' => [...$column, 'order' => 7],
+                'item_unit' => [...$column, 'order' => 8],
+                'item_base' => [...$column, 'order' => 9],
+                'item_price' => [...$column, 'order' => 10],
+                'item_subtotal' => [...$column, 'order' => 11],
+                default => $column,
+            };
+        })
+        ->values()
+        ->all();
+    $layout['fields']['item_attribute_modelo'] = true;
     $layout['fields']['item_attribute_talla'] = true;
 
     $method = new ReflectionMethod(SaleController::class, 'layoutWithProfileColumns');
@@ -93,6 +114,8 @@ it('mantiene visibles las caracteristicas dinamicas configuradas por plantilla',
 
     expect($columns->get('item_model')['show'])->toBeFalse()
         ->and($columns->get('item_attribute_modelo')['show'])->toBeTrue()
+        ->and($columns->get('item_attribute_modelo')['order'])->toBe(5)
+        ->and($columns->get('item_quantity')['order'])->toBe(7)
         ->and($columns->get('item_attribute_talla')['show'])->toBeTrue()
         ->and($result['fields']['item_attribute_talla'])->toBeTrue();
 });

@@ -791,9 +791,6 @@ class SaleController extends Controller
         }
 
         $allowed = array_flip($profileColumns);
-        $orders = collect($profileColumns)
-            ->flip()
-            ->map(fn (int $index) => $index + 1);
         $layout['item_columns'] = collect($layout['item_columns'] ?? ReceiptTemplate::defaultLayout()['item_columns'])
             ->map(function (array $column) use ($allowed) {
                 if (! str_starts_with((string) ($column['key'] ?? ''), 'item_attribute_')) {
@@ -806,10 +803,6 @@ class SaleController extends Controller
             ->all();
 
         foreach ($layout['item_columns'] as $index => $column) {
-            if ($orders->has($column['key'])) {
-                $layout['item_columns'][$index]['order'] = (int) $orders->get($column['key']);
-            }
-
             $layout['fields'][$column['key']] = (bool) $column['show'];
         }
 
@@ -822,12 +815,18 @@ class SaleController extends Controller
                     'label' => '',
                     'show' => true,
                     'align' => in_array($columnKey, ['item_quantity', 'item_base', 'item_price', 'item_subtotal'], true) ? 'right' : 'left',
-                    'order' => (int) $orders->get($columnKey, 99),
+                    'order' => $this->nextItemColumnOrder($layout['item_columns']),
                 ];
             }
         }
 
         return $layout;
+    }
+
+    private function nextItemColumnOrder(array $columns): int
+    {
+        return collect($columns)
+            ->max(fn (array $column) => (int) ($column['order'] ?? 0)) + 1;
     }
 
     private function allowedPaymentMethods(string $flow = 'sales')
