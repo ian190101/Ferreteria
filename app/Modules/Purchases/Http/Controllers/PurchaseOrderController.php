@@ -351,6 +351,10 @@ class PurchaseOrderController extends Controller
             $meters = round($kilograms * (float) $conversionFactor, 3);
         }
 
+        if (! $meters && filled($item['display_quantity'] ?? null) && (float) $item['display_quantity'] > 0) {
+            $meters = (float) $item['display_quantity'];
+        }
+
         $item['meters'] = $meters;
         $item['kilograms'] = $kilograms;
         $item['conversion_factor'] = $conversionFactor;

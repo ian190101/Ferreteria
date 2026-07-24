@@ -129,7 +129,7 @@ class SaleController extends Controller
             $products = Product::query()
                 ->with(['unit:id,symbol', 'productCategory:id,name'])
                 ->whereIn('id', $validatedItems->pluck('product_id')->unique()->values())
-                ->get(['id', 'product_category_id', 'product_unit_id', 'name', 'sale_price', 'allowed_units', 'attributes', 'custom_attributes'])
+                ->get(['id', 'product_category_id', 'product_unit_id', 'name', 'sale_price', 'allowed_units', 'attributes', 'custom_attributes', 'inventory_tracking_mode'])
                 ->keyBy('id');
 
             $items = $validatedItems->map(function (array $item) use ($commercialPolicy, $canOverridePrices, $products, $request, $customer) {
@@ -879,15 +879,27 @@ class SaleController extends Controller
     private function ensureStockPolicyAllowsSale(array $items, $products, int $branchId, $user, CommercialPolicy $policy): void
     {
         $requiredByProduct = collect($items)
+            ->filter(function ($item) use ($products) {
+                $product = $products->get((int) $item['product_id']);
+
+                return $product?->inventory_tracking_mode !== Product::TRACKING_COIL;
+            })
             ->groupBy('product_id')
             ->map(fn ($group) => round((float) $group->sum('meters'), 3));
+
+        if ($requiredByProduct->isEmpty()) {
+            return;
+        }
+
         $stocks = ProductBranchStock::query()
             ->where('branch_id', $branchId)
             ->whereIn('product_id', $requiredByProduct->keys())
-            ->pluck('available_meters', 'product_id');
+            ->get(['product_id', 'available_meters', 'reserved_meters'])
+            ->keyBy('product_id');
 
         foreach ($requiredByProduct as $productId => $required) {
-            $available = (float) ($stocks[$productId] ?? 0);
+            $stock = $stocks->get((int) $productId);
+            $available = $stock ? (float) $stock->available_meters - (float) $stock->reserved_meters : 0.0;
 
             if ($available >= $required) {
                 continue;

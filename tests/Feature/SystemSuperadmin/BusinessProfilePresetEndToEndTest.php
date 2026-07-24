@@ -1,6 +1,8 @@
 <?php
 
 use App\Models\User;
+use App\Modules\Banks\Models\BankAccount;
+use App\Modules\Banks\Models\BankTransaction;
 use App\Modules\Branches\Models\Branch;
 use App\Modules\Cash\Models\CashRegisterSession;
 use App\Modules\Inventory\Models\InventoryMovement;
@@ -8,7 +10,7 @@ use App\Modules\Inventory\Models\Product;
 use App\Modules\Inventory\Models\ProductBranchStock;
 use App\Modules\Payments\Models\PaymentMethod;
 use App\Modules\Payments\Models\SalePayment;
-use App\Modules\Purchases\Models\Purchase;
+use App\Modules\Purchases\Models\Supplier;
 use App\Modules\Sales\Models\Currency;
 use App\Modules\Sales\Models\Sale;
 use App\Modules\Sales\Models\SaleType;
@@ -263,4 +265,125 @@ it('preset fabrica simple exige despacho cuando el descuento de inventario ocurr
         ->assertRedirect();
 
     expect((float) ProductBranchStock::query()->where('product_id', $product->id)->value('available_meters'))->toBe(50.0);
+});
+
+it('compra recibida aumenta inventario por sucursal aunque el producto activo no tenga stock previo', function () {
+    e2ePresetProfile('Inventario compras E2E', 'hardware_store', [
+        'modules' => ['purchases' => true, 'inventory' => true, 'suppliers' => true],
+        'purchases' => ['supplier_mode' => 'optional', 'allow_create_product' => true],
+    ]);
+    $user = e2ePresetUser(['purchases.view', 'purchases.manage', 'inventory.products.view']);
+    $supplier = Supplier::query()->create(['name' => 'Proveedor inventario E2E', 'is_active' => true]);
+    $product = Product::query()->create([
+        'name' => 'Casco compra E2E',
+        'sku' => 'CASCO-COMPRA-'.uniqid(),
+        'barcode' => 'BAR-CASCO-COMPRA-'.uniqid(),
+        'inventory_tracking_mode' => Product::TRACKING_GLOBAL,
+        'base_unit' => 'unidad',
+        'allowed_units' => ['unidad'],
+        'purchase_price' => 0,
+        'sale_price' => 55,
+        'minimum_stock_meters' => 0,
+        'is_active' => true,
+    ]);
+
+    $this->actingAs($user)
+        ->post(route('purchases.store'), [
+            'branch_id' => $user->branch_id,
+            'supplier_id' => $supplier->id,
+            'document_number' => 'COMP-STOCK-E2E',
+            'status' => 'received',
+            'items' => [[
+                'product_id' => $product->id,
+                'display_quantity' => 7,
+                'display_unit_label' => 'unidad',
+                'calculation_mode' => 'direct',
+                'meters' => null,
+                'kilograms' => null,
+                'unit_cost' => 30,
+                'lot_number' => null,
+                'coil_barcode' => null,
+                'description' => 'Ingreso de cascos',
+            ]],
+        ])
+        ->assertRedirect();
+
+    $stock = ProductBranchStock::query()
+        ->where('branch_id', $user->branch_id)
+        ->where('product_id', $product->id)
+        ->firstOrFail();
+
+    expect((float) $stock->available_meters)->toBe(7.0)
+        ->and($stock->is_enabled)->toBeTrue()
+        ->and(InventoryMovement::query()
+            ->where('branch_id', $user->branch_id)
+            ->where('product_id', $product->id)
+            ->where('type', 'purchase_entry_global')
+            ->exists())->toBeTrue();
+});
+
+it('venta descuenta inventario y cobro QR se refleja en banco y cierre de caja de la sucursal', function () {
+    e2ePresetProfile('Finanzas inventario E2E', 'hardware_store', [
+        'modules' => ['sales_notes' => true, 'cash' => true, 'banks' => true, 'inventory' => true],
+        'sales' => [
+            'workflow' => 'pos',
+            'quotation_mode' => 'disabled',
+            'inventory_discount_timing' => 'sale_note',
+            'allowed_payment_methods' => ['cash', 'qr'],
+            'payment_methods_by_flow' => ['sales' => ['cash', 'qr'], 'pos' => ['cash', 'qr'], 'collections' => ['cash', 'qr']],
+        ],
+        'cash' => ['required_to_sell' => true, 'bank_reconciliation' => true],
+        'banks' => ['reconciliation_mode' => 'automatic', 'require_branch_account' => true],
+    ]);
+    $user = e2ePresetUser(['sales.view', 'sales.manage', 'cash.view', 'cash.manage']);
+    [$saleType, $currency] = e2eCatalogs();
+    $product = e2eProduct($user->branch_id, 'Producto QR E2E', 12, 25);
+    $qr = PaymentMethod::query()->firstOrCreate(['code' => 'qr'], ['name' => 'QR', 'is_active' => true, 'requires_reference' => true]);
+    BankAccount::query()->create([
+        'branch_id' => $user->branch_id,
+        'name' => 'Cuenta QR E2E',
+        'bank_name' => 'Banco prueba',
+        'account_number' => 'QR-E2E',
+        'currency_code' => 'BOB',
+        'current_balance' => 0,
+        'is_active' => true,
+    ]);
+    e2eOpenCash($user);
+
+    $this->actingAs($user)
+        ->post(route('sales.store'), e2eSalePayload($user, $saleType, $currency, $product, [
+            'pos_payment_method_id' => $qr->id,
+            'pos_payment_amount' => 50,
+            'pos_payment_reference' => 'QR-REF-E2E',
+        ]))
+        ->assertRedirect();
+
+    $session = CashRegisterSession::query()->where('opened_by', $user->id)->where('status', CashRegisterSession::STATUS_OPEN)->firstOrFail();
+    $this->actingAs($user)
+        ->put(route('cash.close', $session), [
+            'cash_count' => [
+                'bill_200' => 0,
+                'bill_100' => 1,
+                'bill_50' => 0,
+                'bill_20' => 0,
+                'bill_10' => 0,
+                'coin_5' => 0,
+                'coin_2' => 0,
+                'coin_1' => 0,
+                'coin_050' => 0,
+                'coin_020' => 0,
+                'coin_010' => 0,
+            ],
+        ])
+        ->assertRedirect(route('cash.index'));
+
+    $sale = Sale::query()->latest('id')->firstOrFail();
+    $session->refresh();
+
+    expect((float) ProductBranchStock::query()->where('product_id', $product->id)->where('branch_id', $user->branch_id)->value('available_meters'))->toBe(10.0)
+        ->and(SalePayment::query()->where('sale_id', $sale->id)->where('payment_method_id', $qr->id)->exists())->toBeTrue()
+        ->and(BankTransaction::query()->where('branch_id', $user->branch_id)->where('type', BankTransaction::TYPE_DEPOSIT)->where('amount', 50)->exists())->toBeTrue()
+        ->and((float) $session->cash_income_amount)->toBe(0.0)
+        ->and((float) $session->bank_income_amount)->toBe(50.0)
+        ->and((float) $session->expected_cash_amount)->toBe(100.0);
 });

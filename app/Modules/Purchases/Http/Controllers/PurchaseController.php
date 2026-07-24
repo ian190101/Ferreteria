@@ -102,6 +102,11 @@ class PurchaseController extends Controller
                     $meters = round($kilograms * (float) $conversionFactor, 3);
                 }
 
+                $displayQuantity = filled($item['display_quantity'] ?? null) ? (float) $item['display_quantity'] : 1.0;
+                if (! $meters && $displayQuantity > 0) {
+                    $meters = $displayQuantity;
+                }
+
                 $item['meters'] = $meters;
                 $item['kilograms'] = $kilograms;
                 $item['conversion_factor'] = $conversionFactor;
@@ -383,6 +388,27 @@ class PurchaseController extends Controller
     private function ensureProductsEnabledForBranch(array $productIds, int $branchId): void
     {
         $productIds = collect($productIds)->map(fn ($id) => (int) $id)->unique()->values();
+        $existingProductIds = ProductBranchStock::query()
+            ->where('branch_id', $branchId)
+            ->whereIn('product_id', $productIds)
+            ->pluck('product_id')
+            ->map(fn ($id) => (int) $id);
+
+        $missingProductIds = $productIds->diff($existingProductIds)->values();
+        if ($missingProductIds->isNotEmpty()) {
+            Product::query()
+                ->whereIn('id', $missingProductIds)
+                ->where('is_active', true)
+                ->pluck('id')
+                ->each(fn ($productId) => ProductBranchStock::query()->create([
+                    'branch_id' => $branchId,
+                    'product_id' => (int) $productId,
+                    'available_meters' => 0,
+                    'reserved_meters' => 0,
+                    'is_enabled' => true,
+                ]));
+        }
+
         $enabledCount = ProductBranchStock::query()
             ->where('branch_id', $branchId)
             ->where('is_enabled', true)
