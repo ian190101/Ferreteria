@@ -80,8 +80,13 @@ class AuthSessionCache
 
     public static function isSuperAdministrator(User $user): bool
     {
-        return in_array('superadmin', self::roleNamesFor($user), true)
+        return self::isClientSuperadmin($user)
             || self::isSystemSuperadmin($user);
+    }
+
+    public static function isClientSuperadmin(User $user): bool
+    {
+        return in_array('superadmin', self::roleNamesFor($user), true);
     }
 
     public static function isSystemSuperadmin(User $user): bool

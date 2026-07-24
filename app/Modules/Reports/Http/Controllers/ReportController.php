@@ -32,8 +32,9 @@ class ReportController extends Controller
         abort_if($branchId && ! BranchAccess::canAccess($user, $branchId), 403);
 
         $cacheKey = sprintf(
-            'reports:dashboard:v3:%s:%s:%s:%s:%s',
+            'reports:dashboard:v4:%s:%s:%s:%s:%s:%s',
             SystemCacheInvalidator::operationalVersion(),
+            $this->financialVersion(),
             $user->id,
             $branchId ?? 'all',
             $from->toDateString(),
@@ -113,7 +114,16 @@ class ReportController extends Controller
 
     private function sectionCacheKey(string $section, int $userId, ?int $branchId, Carbon $from, Carbon $to): string
     {
-        return sprintf('reports:%s:v3:%s:%s:%s:%s:%s', $section, SystemCacheInvalidator::operationalVersion(), $userId, $branchId ?? 'all', $from->toDateString(), $to->toDateString());
+        return sprintf('reports:%s:v4:%s:%s:%s:%s:%s:%s', $section, SystemCacheInvalidator::operationalVersion(), $this->financialVersion(), $userId, $branchId ?? 'all', $from->toDateString(), $to->toDateString());
+    }
+
+    private function financialVersion(): string
+    {
+        return implode('-', [
+            Cache::get('banks:summary_version', 1),
+            Cache::get('expenses:summary_version', 1),
+            Cache::get('cash:summary_version', 1),
+        ]);
     }
 
     private function salesQuery(Carbon $from, Carbon $to, ?int $branchId)

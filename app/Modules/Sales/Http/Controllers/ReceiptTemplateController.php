@@ -35,8 +35,8 @@ class ReceiptTemplateController extends Controller
         return Inertia::render('Sales/Templates/Form', [
             'template' => null,
             'branches' => $this->branches($request),
-            'defaultLayout' => $this->layoutWithCatalogFields(ReceiptTemplate::defaultLayout()),
-            'attributeFields' => $this->attributeFields(),
+            'defaultLayout' => $this->layoutWithCatalogFields(ReceiptTemplate::defaultLayout(), $request),
+            'attributeFields' => $this->attributeFields($request),
             'documentPolicy' => app(SalesDocumentPolicy::class)->summary(),
         ]);
     }
@@ -70,11 +70,11 @@ class ReceiptTemplateController extends Controller
         return Inertia::render('Sales/Templates/Form', [
             'template' => [
                 ...$template->toArray(),
-                'layout' => $this->layoutWithCatalogFields($template->layout ?? []),
+                'layout' => $this->layoutWithCatalogFields($template->layout ?? [], $request),
             ],
             'branches' => $this->branches($request),
-            'defaultLayout' => $this->layoutWithCatalogFields(ReceiptTemplate::defaultLayout()),
-            'attributeFields' => $this->attributeFields(),
+            'defaultLayout' => $this->layoutWithCatalogFields(ReceiptTemplate::defaultLayout(), $request),
+            'attributeFields' => $this->attributeFields($request),
             'documentPolicy' => app(SalesDocumentPolicy::class)->summary(),
         ]);
     }
@@ -124,20 +124,20 @@ class ReceiptTemplateController extends Controller
         return UiCatalogCache::activeBranchesForUser($request->user());
     }
 
-    private function layoutWithCatalogFields(array $layout): array
+    private function layoutWithCatalogFields(array $layout, Request $request): array
     {
         $merged = array_replace_recursive(ReceiptTemplate::defaultLayout(), $layout);
 
-        foreach ($this->attributeFields() as $attribute) {
+        foreach ($this->attributeFields($request) as $attribute) {
             $merged['fields'][$attribute['field']] = $merged['fields'][$attribute['field']] ?? true;
         }
 
-        $merged['item_columns'] = $this->normalizeItemColumns($merged);
+        $merged['item_columns'] = $this->normalizeItemColumns($merged, $request);
 
         return $merged;
     }
 
-    private function normalizeItemColumns(array $layout): array
+    private function normalizeItemColumns(array $layout, Request $request): array
     {
         $columns = collect(ReceiptTemplate::defaultLayout()['item_columns']);
         $nextOrder = 10;
@@ -152,7 +152,7 @@ class ReceiptTemplateController extends Controller
             ];
         });
 
-        foreach ($this->attributeFields() as $attribute) {
+        foreach ($this->attributeFields($request) as $attribute) {
             $columns->push([
                 'key' => $attribute['field'],
                 'label' => $attribute['label'],
@@ -183,9 +183,9 @@ class ReceiptTemplateController extends Controller
             ->all();
     }
 
-    private function attributeFields(): array
+    private function attributeFields(Request $request): array
     {
-        return UiCatalogCache::activeProductsWithThickness()
+        return UiCatalogCache::activeProductsWithThicknessForUser($request->user())
             ->flatMap(fn ($product) => $product->custom_attributes ?? [])
             ->filter(fn ($attribute) => filled($attribute['code'] ?? null))
             ->unique('code')

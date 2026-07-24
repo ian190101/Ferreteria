@@ -67,6 +67,9 @@ Route::middleware(['auth', 'verified'])
         Route::put('/settings/catalogs/decimals', [SalesSettingController::class, 'updateDecimals'])
             ->middleware(['business_feature:sales_notes', 'permission:settings.manage'])
             ->name('settings.decimals.update');
+        Route::put('/settings/catalogs/item-merge', [SalesSettingController::class, 'updateItemMerge'])
+            ->middleware(['business_feature:sales_notes', 'permission:settings.manage'])
+            ->name('settings.item-merge.update');
         Route::delete('/settings/catalogs/{kind}/{setting}', [SalesSettingController::class, 'destroy'])
             ->whereIn('kind', ['sale_type', 'currency', 'advance_option', 'document_sequence'])
             ->middleware(['business_feature:sales_notes', 'permission:settings.manage'])

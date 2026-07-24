@@ -4,6 +4,7 @@ namespace App\Modules\Inventory\Models;
 
 use App\Models\User;
 use App\Modules\Branches\Models\Branch;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
@@ -33,6 +34,27 @@ class InventoryMovement extends Model
         'meters_after' => 'decimal:3',
         'created_at' => 'datetime',
     ];
+
+    protected $appends = [
+        'quantity_delta',
+        'quantity_before',
+        'quantity_after',
+    ];
+
+    protected function quantityDelta(): Attribute
+    {
+        return Attribute::get(fn () => (float) $this->meters_delta);
+    }
+
+    protected function quantityBefore(): Attribute
+    {
+        return Attribute::get(fn () => (float) $this->meters_before);
+    }
+
+    protected function quantityAfter(): Attribute
+    {
+        return Attribute::get(fn () => (float) $this->meters_after);
+    }
 
     public function branch(): BelongsTo
     {

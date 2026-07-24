@@ -316,6 +316,8 @@ class BusinessProfileController extends Controller
             'configuration.sales.credit_limit_policy' => ['required', 'string', Rule::in(array_keys($options['creditLimitPolicies']))],
             'configuration.sales.default_credit_limit' => ['nullable', 'numeric', 'min:0', 'max:999999999999.99'],
             'configuration.sales.inventory_discount_timing' => ['required', 'string', Rule::in(array_keys($options['inventoryTimings']))],
+            'configuration.sales.item_merge_control_enabled' => ['boolean'],
+            'configuration.sales.item_merge_rule' => ['required', 'string', Rule::in(array_keys($options['itemMergeRules']))],
             'configuration.sales.visible_columns' => ['nullable', 'array'],
             'configuration.sales.visible_columns.*' => ['string', Rule::in(array_keys($options['saleColumns']))],
             'configuration.sales.allowed_payment_methods' => ['nullable', 'array'],

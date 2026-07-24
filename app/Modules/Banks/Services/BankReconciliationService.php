@@ -6,13 +6,12 @@ use App\Modules\Banks\Models\BankAccount;
 use App\Modules\Banks\Models\BankTransaction;
 use App\Modules\Cash\Models\CashRegisterSession;
 use App\Modules\Expenses\Models\Expense;
+use App\Modules\Finance\Services\FinancialLedgerService;
 use App\Modules\Payments\Models\PaymentMethod;
 use App\Modules\Payments\Models\PurchasePayment;
 use App\Modules\Payments\Models\SalePayment;
 use App\Modules\SystemSuperadmin\Services\ActiveBusinessProfile;
-use App\Support\UiCatalogCache;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Validation\ValidationException;
 
 class BankReconciliationService
@@ -28,6 +27,10 @@ class BankReconciliationService
         'cheque',
         'check',
     ];
+
+    public function __construct(private readonly FinancialLedgerService $ledger)
+    {
+    }
 
     public function recordSalePayment(SalePayment $payment): void
     {
@@ -102,20 +105,7 @@ class BankReconciliationService
             return;
         }
 
-        $account = BankAccount::query()
-            ->whereKey($transaction->bank_account_id)
-            ->lockForUpdate()
-            ->firstOrFail();
-
-        $account->decrement('current_balance', $this->signedAmount($transaction->type, (float) $transaction->amount));
-
-        $transaction->update([
-            'status' => BankTransaction::STATUS_VOID,
-            'voided_at' => now(),
-            'void_reason' => $this->limit($reason, 255),
-        ]);
-
-        $this->bumpCaches();
+        $this->ledger->voidBankTransaction($transaction, $reason);
     }
 
     private function record(
@@ -158,8 +148,8 @@ class BankReconciliationService
             'source_id' => $source->getKey(),
         ]);
 
-        $account->increment('current_balance', $this->signedAmount($type, $amount));
-        $this->bumpCaches();
+        $account->increment('current_balance', $this->ledger->signedBankAmount($type, $amount));
+        $this->ledger->bumpFinancialCaches();
     }
 
     private function isBankMethod(?PaymentMethod $method): bool
@@ -211,6 +201,14 @@ class BankReconciliationService
         return $account;
     }
 
+    public function branchHasActiveAccount(int $branchId): bool
+    {
+        return BankAccount::query()
+            ->where('branch_id', $branchId)
+            ->where('is_active', true)
+            ->exists();
+    }
+
     private function openCashSessionId(int $branchId, int $userId, mixed $transactedAt): ?int
     {
         return CashRegisterSession::query()
@@ -230,11 +228,6 @@ class BankReconciliationService
             ->exists();
     }
 
-    private function signedAmount(string $type, float $amount): float
-    {
-        return $type === BankTransaction::TYPE_WITHDRAWAL ? -$amount : $amount;
-    }
-
     private function limit(?string $value, int $max): ?string
     {
         if ($value === null || $value === '') {
@@ -244,9 +237,4 @@ class BankReconciliationService
         return mb_substr($value, 0, $max);
     }
 
-    private function bumpCaches(): void
-    {
-        Cache::forever('banks:summary_version', ((int) Cache::get('banks:summary_version', 1)) + 1);
-        UiCatalogCache::forgetFinancialCatalogs();
-    }
 }

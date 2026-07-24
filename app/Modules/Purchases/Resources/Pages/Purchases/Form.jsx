@@ -3,9 +3,11 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import FormField from '../../../../Shared/Resources/Components/FormField';
 import ModuleHeader from '../../../../Shared/Resources/Components/ModuleHeader';
 import SelectField from '../../../../Shared/Resources/Components/SelectField';
+import ContextHelp from '../../../../Shared/Resources/Components/ContextHelp';
 import ProductFormFields, { buildProductFormData } from '../../../../Inventory/Resources/Pages/Inventory/Products/ProductFormFields';
 import { Head, Link, useForm } from '@inertiajs/react';
 import { decimalStep, useDecimalFormatter } from '@/Utils/formatters';
+import { infoAction } from '@/Utils/alerts';
 import { useMemo, useState } from 'react';
 
 const DEFAULT_ITEM = {
@@ -28,7 +30,7 @@ const DEFAULT_ITEM = {
     description: '',
 };
 
-export default function Form({ branches = [], suppliers = [], units = [], categories = [], thicknesses = [], products = [], attributeDefinitions = [], workflow = {} }) {
+export default function Form({ branches = [], suppliers = [], units = [], categories = [], thicknesses = [], products = [], attributeDefinitions = [], workflow = {}, documentPolicy = {} }) {
     const catalogsReady = categories.length > 0 && units.length > 0;
     const decimalFormat = useDecimalFormatter('purchases');
     const [barcodeQuery, setBarcodeQuery] = useState('');
@@ -36,6 +38,7 @@ export default function Form({ branches = [], suppliers = [], units = [], catego
     const supplierHidden = workflow?.supplierHidden;
     const supplierRequired = workflow?.supplierRequired;
     const supplierModeLabel = supplierHidden ? 'oculto' : (supplierRequired ? 'obligatorio' : 'opcional');
+    const itemMergePolicy = documentPolicy?.itemMerge ?? {};
     const { data, setData, post, processing, errors, transform } = useForm({
         branch_id: branches[0]?.id ?? '',
         supplier_id: '',
@@ -49,7 +52,7 @@ export default function Form({ branches = [], suppliers = [], units = [], catego
     const updateItem = (index, field, value) => {
         const items = data.items.map((item, itemIndex) => (itemIndex === index ? { ...item, [field]: value } : item));
 
-        setData('items', field === 'display_unit_label' ? mergeDuplicateItems(items, index, productMap) : items);
+        setItemsWithMergeNotice(field === 'display_unit_label' ? mergeDuplicateItems(items, index, productMap, itemMergePolicy) : { items, merged: false });
     };
     const selectProduct = (index, value) => {
         const product = productMap.get(String(value));
@@ -64,7 +67,7 @@ export default function Form({ branches = [], suppliers = [], units = [], catego
             meters: '',
         } : item));
 
-        setData('items', mergeDuplicateItems(items, index, productMap));
+        setItemsWithMergeNotice(mergeDuplicateItems(items, index, productMap, itemMergePolicy));
     };
     const selectItemCategory = (index, value) => {
         setData('items', data.items.map((item, itemIndex) => (itemIndex === index ? {
@@ -147,9 +150,22 @@ export default function Form({ branches = [], suppliers = [], units = [], catego
             return;
         }
 
-        setData('items', addOrIncrementProductItem(data.items, product, units, categories, branches));
+        setItemsWithMergeNotice(addOrIncrementProductItem(data.items, product, units, categories, branches, itemMergePolicy));
         setBarcodeQuery('');
         setBarcodeMessage(`${product.name} agregado a la compra.`);
+    };
+    const setItemsWithMergeNotice = (result) => {
+        const payload = Array.isArray(result) ? { items: result, merged: false } : result;
+
+        setData('items', payload.items);
+
+        if (payload.merged) {
+            infoAction({
+                title: 'Item fusionado',
+                html: itemMergeAlertHtml(itemMergePolicy),
+                confirmButtonText: 'Entendido',
+            });
+        }
     };
     const convertedMeters = (item) => {
         const product = productMap.get(String(item.product_id));
@@ -236,7 +252,13 @@ export default function Form({ branches = [], suppliers = [], units = [], catego
 
                     <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
                         <div className="mb-4 flex items-center justify-between">
-                            <h3 className="text-base font-semibold text-slate-900 dark:text-white">Items</h3>
+                            <h3 className="inline-flex items-center gap-2 text-base font-semibold text-slate-900 dark:text-white">
+                                Items
+                                <ContextHelp title="Fusion de items">
+                                    <p>{itemMergeHelpText(itemMergePolicy)}</p>
+                                    <p className="mt-2">Si compras el mismo producto en varias medidas, cada medida puede quedar como linea independiente cuando esta configuracion lo permite.</p>
+                                </ContextHelp>
+                            </h3>
                             <button type="button" onClick={addItem} className="rounded-md border border-brand-primary px-3 py-2 text-sm text-brand-primary">Agregar item</button>
                         </div>
 
@@ -405,19 +427,23 @@ function newDefaultItem(categories = [], units = [], branches = []) {
     };
 }
 
-function addOrIncrementProductItem(items, product, units = [], categories = [], branches = []) {
+function addOrIncrementProductItem(items, product, units = [], categories = [], branches = [], itemMergePolicy = {}) {
     const unit = productUnitSymbol(product);
     const duplicateIndex = items.findIndex((item) => (
         item.product_mode !== 'new'
         && String(item.product_id) === String(product.id)
         && String(item.display_unit_label || unit) === String(unit)
         && (item.calculation_mode ?? 'direct') === 'direct'
+        && canMergeChangedItem(item, { product_id: product.id, display_unit_label: unit, calculation_mode: 'direct', meters: '' }, product, product, itemMergePolicy)
     ));
 
     if (duplicateIndex >= 0) {
-        return items.map((item, index) => index === duplicateIndex
-            ? { ...item, display_quantity: String(Number(item.display_quantity || 0) + 1) }
-            : item);
+        return {
+            items: items.map((item, index) => index === duplicateIndex
+                ? { ...item, display_quantity: String(Number(item.display_quantity || 0) + 1) }
+                : item),
+            merged: true,
+        };
     }
 
     const nextItem = {
@@ -442,10 +468,10 @@ function addOrIncrementProductItem(items, product, units = [], categories = [], 
     ));
 
     if (emptyIndex >= 0) {
-        return items.map((item, index) => (index === emptyIndex ? nextItem : item));
+        return { items: items.map((item, index) => (index === emptyIndex ? nextItem : item)), merged: false };
     }
 
-    return [...items, nextItem];
+    return { items: [...items, nextItem], merged: false };
 }
 
 function nestedErrors(errors, prefix) {
@@ -658,11 +684,11 @@ function attributeUnit(attribute) {
     return typeof attribute.unit === 'string' ? attribute.unit : attribute.unit?.symbol ?? '';
 }
 
-function mergeDuplicateItems(items, changedIndex, productMap) {
+function mergeDuplicateItems(items, changedIndex, productMap, itemMergePolicy = {}) {
     const changed = items[changedIndex];
 
     if (!changed?.product_id) {
-        return items;
+        return { items, merged: false };
     }
 
     const changedProduct = productMap.get(String(changed.product_id));
@@ -673,18 +699,70 @@ function mergeDuplicateItems(items, changedIndex, productMap) {
         const product = productMap.get(String(item.product_id));
 
         return String(item.product_id) === String(changed.product_id)
-            && String(item.display_unit_label || productUnitSymbol(product)) === String(changedUnit);
+            && String(item.display_unit_label || productUnitSymbol(product)) === String(changedUnit)
+            && canMergeChangedItem(item, changed, product, changedProduct, itemMergePolicy);
     });
 
     if (duplicateIndex < 0) {
-        return items;
+        return { items, merged: false };
     }
 
-    return items
-        .map((item, index) => index === duplicateIndex
-            ? { ...item, display_quantity: String(Number(item.display_quantity || 0) + Number(changed.display_quantity || 0)) }
-            : item)
-        .filter((_, index) => index !== changedIndex);
+    return {
+        items: items
+            .map((item, index) => index === duplicateIndex
+                ? { ...item, display_quantity: String(Number(item.display_quantity || 0) + Number(changed.display_quantity || 0)) }
+                : item)
+            .filter((_, index) => index !== changedIndex),
+        merged: true,
+    };
+}
+
+function canMergeChangedItem(existing, changed, existingProduct, changedProduct, itemMergePolicy = {}) {
+    const rule = itemMergePolicy.rule ?? 'same_product_unit_and_measure';
+
+    if (rule === 'never') {
+        return false;
+    }
+
+    if (!itemMergePolicy.allowSameProductDifferentMeasure || rule === 'same_product_and_unit') {
+        return true;
+    }
+
+    return String(existing.calculation_mode ?? 'direct') === String(changed.calculation_mode ?? 'direct')
+        && normalizedMeasureKey(existing, existingProduct) === normalizedMeasureKey(changed, changedProduct)
+        && normalizedAttributeKey(existing) === normalizedAttributeKey(changed)
+        && String(existing.lot_number ?? '') === String(changed.lot_number ?? '')
+        && String(existing.coil_barcode ?? '') === String(changed.coil_barcode ?? '');
+}
+
+function normalizedMeasureKey(item, product) {
+    const mode = String(item.calculation_mode ?? 'direct');
+    const unit = String(item.display_unit_label || productUnitSymbol(product));
+    const length = mode === 'length' ? Number(item.meters || 0).toFixed(6) : '';
+
+    return `${mode}|${unit}|${length}`;
+}
+
+function normalizedAttributeKey(item) {
+    return JSON.stringify([...(item.item_attributes ?? [])]
+        .map((attribute) => [attribute.code, String(attribute.value ?? '')])
+        .sort((a, b) => String(a[0]).localeCompare(String(b[0]))));
+}
+
+function itemMergeHelpText(policy = {}) {
+    if (policy.rule === 'never') {
+        return 'La configuracion actual no fusiona items automaticamente. Cada linea se mantiene separada.';
+    }
+
+    if (!policy.allowSameProductDifferentMeasure || policy.rule === 'same_product_and_unit') {
+        return 'Si agregas el mismo producto con la misma unidad, el sistema suma la cantidad en la linea existente.';
+    }
+
+    return 'El sistema solo fusiona items cuando producto, unidad, calculo, largo/medida, lote y caracteristicas son iguales. Si cambia el largo o una caracteristica, se mantiene otra linea.';
+}
+
+function itemMergeAlertHtml(policy = {}) {
+    return `<p>${itemMergeHelpText(policy)}</p><p style="margin-top:8px">Si necesitas registrar el mismo producto con otro largo o medida, cambia el campo de largo/medida antes de agregarlo o usa una linea nueva.</p>`;
 }
 
 function precisionKind(kind) {

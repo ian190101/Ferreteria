@@ -4,6 +4,7 @@ namespace App\Modules\Payments\Http\Requests;
 
 use App\Modules\Payments\Models\PaymentMethod;
 use App\Modules\Purchases\Models\Purchase;
+use App\Modules\Sales\Services\SalesDocumentPolicy;
 use App\Support\BranchAccess;
 use Illuminate\Foundation\Http\FormRequest;
 
@@ -52,6 +53,10 @@ class StorePurchasePaymentRequest extends FormRequest
 
             if (! $method->is_active) {
                 $validator->errors()->add('payment_method_id', 'El metodo de pago no esta activo.');
+            }
+
+            if (! app(SalesDocumentPolicy::class)->isPaymentMethodAllowed($method->code, 'purchases')) {
+                $validator->errors()->add('payment_method_id', 'El perfil de negocio actual no permite usar este metodo de pago en pagos a proveedores.');
             }
 
             if ($method->requires_reference && blank($this->input('reference'))) {

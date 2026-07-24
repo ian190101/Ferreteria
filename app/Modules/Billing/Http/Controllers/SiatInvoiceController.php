@@ -8,6 +8,7 @@ use App\Modules\Billing\Services\BillingWorkflowPolicy;
 use App\Modules\Billing\Services\SiatInvoiceService;
 use App\Modules\Sales\Models\Sale;
 use App\Support\BranchAccess;
+use App\Support\SystemRoles;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -29,7 +30,7 @@ class SiatInvoiceController extends Controller
     public function issue(Request $request, Sale $sale, SiatInvoiceService $service, BillingWorkflowPolicy $policy): RedirectResponse
     {
         abort_unless(BranchAccess::canAccess($request->user(), (int) $sale->branch_id), 403);
-        abort_unless($policy->shouldShowManualButton($sale) || $request->user()->hasRole('sistemasuperadmin'), 403);
+        abort_unless($policy->shouldShowManualButton($sale) || $request->user()->hasRole(SystemRoles::SYSTEM_SUPERADMIN), 403);
 
         $invoice = $service->issueFromSale($sale, (int) $request->user()->id, $request->boolean('temporary_when_offline'));
 

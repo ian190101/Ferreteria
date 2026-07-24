@@ -6,12 +6,27 @@ use App\Modules\Inventory\Models\InventoryMovement;
 use App\Modules\Inventory\Models\Product;
 use App\Modules\Inventory\Models\ProductBranchStock;
 use App\Modules\Production\Models\ProductionOrder;
+use App\Modules\SystemSuperadmin\Models\BusinessProfile;
+use App\Modules\SystemSuperadmin\Services\BusinessProfileConfiguration;
+use App\Support\SystemCacheInvalidator;
 use Inertia\Testing\AssertableInertia as Assert;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 
 function productionUser(array $permissions): User
 {
+    BusinessProfile::query()->update(['status' => 'archived']);
+    BusinessProfile::query()->create([
+        'name' => 'Perfil test produccion',
+        'business_type' => 'factory',
+        'status' => 'active',
+        'configuration' => BusinessProfileConfiguration::normalized([
+            'modules' => ['production' => true],
+        ]),
+        'applied_at' => now(),
+    ]);
+    SystemCacheInvalidator::bumpOperational();
+
     foreach ($permissions as $permission) {
         Permission::firstOrCreate(['name' => $permission, 'guard_name' => 'web']);
     }
@@ -33,6 +48,7 @@ function productionUser(array $permissions): User
     ]);
 
     $user->assignRole($role);
+    $user->accessibleBranches()->sync([$branch->id]);
 
     return $user;
 }
@@ -43,7 +59,11 @@ function productionProduct(string $sku, string $name, string $mode = Product::TR
         'name' => $name,
         'sku' => $sku,
         'barcode' => 'PR-'.$sku,
+        'base_unit' => 'M',
+        'allowed_units' => ['M'],
         'inventory_tracking_mode' => $mode,
+        'purchase_price' => 10,
+        'sale_price' => 15,
         'minimum_stock_meters' => 0,
         'is_active' => true,
     ]);

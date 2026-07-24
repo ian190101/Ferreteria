@@ -143,8 +143,19 @@ it('cierra caja calculando efectivo esperado y diferencia', function () {
 
     $this->actingAs($user)
         ->put(route('cash.close', $session), [
-            'closed_at' => $closedAt->format('Y-m-d H:i:s'),
-            'counted_cash_amount' => 125,
+            'cash_count' => [
+                'bill_200' => 0,
+                'bill_100' => 1,
+                'bill_50' => 0,
+                'bill_20' => 1,
+                'bill_10' => 0,
+                'coin_5' => 1,
+                'coin_2' => 0,
+                'coin_1' => 0,
+                'coin_050' => 0,
+                'coin_020' => 0,
+                'coin_010' => 0,
+            ],
             'closing_notes' => 'Faltante revisado',
         ])
         ->assertRedirect(route('cash.index'));

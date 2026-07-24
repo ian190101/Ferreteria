@@ -4,6 +4,7 @@ namespace App\Modules\Payments\Http\Controllers;
 
 use App\Http\Controllers\Controller;
 use App\Modules\Banks\Services\BankReconciliationService;
+use App\Modules\Finance\Services\FinancialLedgerService;
 use App\Modules\Payments\Http\Requests\StoreSalePaymentRequest;
 use App\Modules\Payments\Http\Requests\VoidSalePaymentRequest;
 use App\Modules\Payments\Models\CreditNote;
@@ -65,9 +66,9 @@ class PaymentController extends Controller
         ]);
     }
 
-    public function store(StoreSalePaymentRequest $request, BankReconciliationService $banks, SaleInventoryService $inventory, SalesWorkflowPolicy $workflow): RedirectResponse
+    public function store(StoreSalePaymentRequest $request, BankReconciliationService $banks, SaleInventoryService $inventory, SalesWorkflowPolicy $workflow, FinancialLedgerService $ledger): RedirectResponse
     {
-        $payment = DB::transaction(function () use ($request, $banks, $inventory, $workflow) {
+        $payment = DB::transaction(function () use ($request, $banks, $inventory, $workflow, $ledger) {
             $sale = Sale::query()->lockForUpdate()->findOrFail($request->integer('sale_id'));
             $amount = round((float) $request->input('amount'), 2);
 
@@ -91,6 +92,7 @@ class PaymentController extends Controller
             ]);
 
             $banks->recordSalePayment($payment);
+            $ledger->bumpFinancialCaches();
 
             if ($workflow->shouldDiscountInventoryOnPayment()) {
                 $sale->loadMissing('items.product:id,inventory_tracking_mode');
@@ -105,11 +107,11 @@ class PaymentController extends Controller
             ->with('success', "Pago {$payment->id} registrado correctamente.");
     }
 
-    public function void(VoidSalePaymentRequest $request, SalePayment $payment, BankReconciliationService $banks): RedirectResponse
+    public function void(VoidSalePaymentRequest $request, SalePayment $payment, BankReconciliationService $banks, FinancialLedgerService $ledger): RedirectResponse
     {
         abort_unless(BranchAccess::canAccess($request->user(), (int) $payment->branch_id), 403);
 
-        DB::transaction(function () use ($request, $payment, $banks) {
+        DB::transaction(function () use ($request, $payment, $banks, $ledger) {
             $payment = SalePayment::query()->lockForUpdate()->findOrFail($payment->id);
             $sale = Sale::query()->lockForUpdate()->findOrFail($payment->sale_id);
             $voidReason = 'Anulado por '.$request->user()->name.': '.$request->string('reason')->toString();
@@ -133,6 +135,8 @@ class PaymentController extends Controller
                 'balance_due' => $newBalance,
                 'status' => $this->statusForBalance($newBalance, $totalToCollect),
             ]);
+
+            $ledger->bumpFinancialCaches();
         });
 
         return redirect()->back()->with('success', 'Pago anulado correctamente.');

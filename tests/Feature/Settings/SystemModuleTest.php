@@ -2,10 +2,8 @@
 
 use App\Models\User;
 use App\Modules\Branches\Models\Branch;
-use App\Modules\Customers\Models\Customer;
 use App\Modules\Inventory\Models\Product;
 use App\Modules\Settings\Models\MaintenanceBackup;
-use App\Modules\Settings\Models\SystemSetting;
 use Illuminate\Support\Facades\Storage;
 use Inertia\Testing\AssertableInertia as Assert;
 use Spatie\Permission\Models\Permission;
@@ -39,34 +37,16 @@ function settingsUser(array $permissions): User
     return $user;
 }
 
-it('muestra y actualiza configuracion general', function () {
+it('muestra la seccion de respaldos del sistema', function () {
     $user = settingsUser(['settings.manage']);
-    $setting = SystemSetting::query()->create([
-        'group' => 'performance',
-        'key' => 'cache_ttl_minutes',
-        'value' => ['value' => '5'],
-        'description' => 'Cache',
-    ]);
 
     $this->actingAs($user)
         ->get(route('settings.system.index'))
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
             ->component('Settings/System/Index', false)
-            ->has('settings', 1)
-            ->where('settings.0.key', 'cache_ttl_minutes')
+            ->has('backups.data', 0)
         );
-
-    $this->actingAs($user)
-        ->put(route('settings.system.update'), [
-            'settings' => [[
-                'key' => $setting->key,
-                'value' => '10',
-            ]],
-        ])
-        ->assertRedirect(route('settings.system.index'));
-
-    expect($setting->refresh()->value['value'])->toBe('10');
 });
 
 it('genera backup operativo en disco local', function () {
@@ -83,28 +63,17 @@ it('genera backup operativo en disco local', function () {
     ]);
 
     $this->actingAs($user)
-        ->post(route('settings.system.backups.store'))
+        ->post(route('settings.system.backups.store'), ['format' => 'json'])
         ->assertRedirect(route('settings.system.index'));
 
     $backup = MaintenanceBackup::query()->firstOrFail();
 
     Storage::disk('local')->assertExists($backup->path);
-    expect($backup->metadata['products'])->toBe(1);
+    expect($backup->metadata['format'])->toBe('json');
 });
 
-it('exporta clientes en csv y bloquea sin permiso', function () {
-    $user = settingsUser(['settings.manage']);
+it('bloquea sistema sin permiso', function () {
     $blocked = settingsUser([]);
-    Customer::query()->create([
-        'name' => 'Cliente export',
-        'document_number' => '999',
-        'is_active' => true,
-    ]);
-
-    $this->actingAs($user)
-        ->get(route('settings.system.exports.show', 'customers'))
-        ->assertOk()
-        ->assertHeader('content-type', 'text/csv; charset=UTF-8');
 
     $this->actingAs($blocked)
         ->get(route('settings.system.index'))

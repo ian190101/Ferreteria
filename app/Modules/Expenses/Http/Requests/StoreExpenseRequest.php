@@ -5,6 +5,8 @@ namespace App\Modules\Expenses\Http\Requests;
 use App\Modules\Expenses\Models\Expense;
 use App\Modules\Expenses\Models\ExpenseCategory;
 use App\Modules\HumanResources\Models\Worker;
+use App\Modules\Payments\Models\PaymentMethod;
+use App\Modules\Sales\Services\SalesDocumentPolicy;
 use App\Support\BranchAccess;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -39,6 +41,22 @@ class StoreExpenseRequest extends FormRequest
         $validator->after(function ($validator) {
             if ($message = BranchAccess::validate($this->user(), $this->integer('branch_id'))) {
                 $validator->errors()->add('branch_id', $message);
+            }
+
+            $method = $this->filled('payment_method_id')
+                ? PaymentMethod::query()->find($this->integer('payment_method_id'))
+                : null;
+
+            if ($method && ! $method->is_active) {
+                $validator->errors()->add('payment_method_id', 'El metodo de pago no esta activo.');
+            }
+
+            if ($method && ! app(SalesDocumentPolicy::class)->isPaymentMethodAllowed($method->code, 'expenses')) {
+                $validator->errors()->add('payment_method_id', 'El perfil de negocio actual no permite usar este metodo de pago en gastos.');
+            }
+
+            if ($method?->requires_reference && blank($this->input('reference'))) {
+                $validator->errors()->add('reference', 'La referencia es obligatoria para este metodo de pago.');
             }
 
             $category = ExpenseCategory::query()

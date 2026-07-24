@@ -47,7 +47,7 @@ class InventoryMovementController extends Controller
         return Inertia::render('Inventory/Movements/Index', [
             'movements' => $movements,
             'branches' => UiCatalogCache::activeBranchesForUser($request->user()),
-            'products' => Inertia::defer(fn () => UiCatalogCache::activeProducts(['id', 'name', 'sku']), 'kardex-catalogs'),
+            'products' => Inertia::defer(fn () => UiCatalogCache::activeProductsForUser($request->user(), ['id', 'name', 'sku']), 'kardex-catalogs'),
             'coils' => Inertia::defer(fn () => Cache::remember('kardex-coils:v2:'.SystemCacheInvalidator::operationalVersion().":{$request->user()->id}", now()->addSeconds(60), fn () => ProductCoil::query()
                 ->when(true, fn ($query) => BranchAccess::apply($query, $request->user()))
                 ->where('status', 'available')

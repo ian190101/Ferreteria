@@ -81,6 +81,16 @@ class User extends Authenticatable implements Auditable
         return AuthSessionCache::isSuperAdministrator($this);
     }
 
+    public function isClientSuperadmin(): bool
+    {
+        return AuthSessionCache::isClientSuperadmin($this);
+    }
+
+    public function isSystemSuperadmin(): bool
+    {
+        return AuthSessionCache::isSystemSuperadmin($this);
+    }
+
     /**
      * Devuelve la sucursal principal y las sucursales adicionales configuradas.
      *

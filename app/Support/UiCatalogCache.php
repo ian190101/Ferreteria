@@ -52,16 +52,38 @@ class UiCatalogCache
 
     public static function activeProducts(array $columns = ['id', 'name', 'sku', 'inventory_tracking_mode'])
     {
-        return self::remember('products:'.implode(',', $columns), fn () => Product::query()
+        return self::remember('products:'.SystemCacheInvalidator::operationalVersion().':'.implode(',', $columns), fn () => Product::query()
             ->with('branchStocks:id,product_id,branch_id,is_enabled')
             ->where('is_active', true)
             ->orderBy('name')
             ->get($columns));
     }
 
+    public static function activeProductsForUser(User $user, array $columns = ['id', 'name', 'sku', 'inventory_tracking_mode'])
+    {
+        if ($user->isSuperAdministrator()) {
+            return self::activeProducts($columns);
+        }
+
+        $branchIds = $user->accessibleBranchIds() ?: [-1];
+        $version = Cache::get('inertia-auth-version', 1);
+
+        return self::remember(
+            'products-user:'.SystemCacheInvalidator::operationalVersion().":{$user->id}:v{$version}:".implode(',', $branchIds).':'.implode(',', $columns),
+            fn () => Product::query()
+                ->with('branchStocks:id,product_id,branch_id,is_enabled')
+                ->where('is_active', true)
+                ->whereHas('branchStocks', fn ($query) => $query
+                    ->where('is_enabled', true)
+                    ->whereIn('branch_id', $branchIds))
+                ->orderBy('name')
+                ->get($columns)
+        );
+    }
+
     public static function activeProductsWithThickness()
     {
-        return self::remember('products-with-thickness', fn () => Product::query()
+        return self::remember('products-with-thickness:'.SystemCacheInvalidator::operationalVersion(), fn () => Product::query()
             ->with([
                 'thickness:id,name,kg_to_meter_factor,kg_per_meter',
                 'unit:id,name,symbol,kind',
@@ -73,12 +95,56 @@ class UiCatalogCache
             ->get(['id', 'thickness_id', 'product_category_id', 'product_unit_id', 'name', 'sku', 'barcode', 'inventory_tracking_mode', 'base_unit', 'allowed_units', 'attributes', 'custom_attributes', 'purchase_price', 'sale_price']));
     }
 
+    public static function activeProductsWithThicknessForUser(User $user)
+    {
+        if ($user->isSuperAdministrator()) {
+            return self::activeProductsWithThickness();
+        }
+
+        $branchIds = $user->accessibleBranchIds() ?: [-1];
+        $version = Cache::get('inertia-auth-version', 1);
+
+        return self::remember('products-with-thickness-user:'.SystemCacheInvalidator::operationalVersion().":{$user->id}:v{$version}:".implode(',', $branchIds), fn () => Product::query()
+            ->with([
+                'thickness:id,name,kg_to_meter_factor,kg_per_meter',
+                'unit:id,name,symbol,kind',
+                'unitConversions.unit:id,name,symbol,kind',
+                'branchStocks:id,product_id,branch_id,is_enabled',
+            ])
+            ->where('is_active', true)
+            ->whereHas('branchStocks', fn ($query) => $query
+                ->where('is_enabled', true)
+                ->whereIn('branch_id', $branchIds))
+            ->orderBy('name')
+            ->get(['id', 'thickness_id', 'product_category_id', 'product_unit_id', 'name', 'sku', 'barcode', 'inventory_tracking_mode', 'base_unit', 'allowed_units', 'attributes', 'custom_attributes', 'purchase_price', 'sale_price']));
+    }
+
     public static function activeCoilProducts()
     {
-        return self::remember('coil-products', fn () => Product::query()
+        return self::remember('coil-products:'.SystemCacheInvalidator::operationalVersion(), fn () => Product::query()
             ->with(['unit:id,name,symbol,kind', 'branchStocks:id,product_id,branch_id,is_enabled'])
             ->where('is_active', true)
             ->where('inventory_tracking_mode', Product::TRACKING_COIL)
+            ->orderBy('name')
+            ->get(['id', 'product_unit_id', 'name', 'sku', 'base_unit', 'allowed_units']));
+    }
+
+    public static function activeCoilProductsForUser(User $user)
+    {
+        if ($user->isSuperAdministrator()) {
+            return self::activeCoilProducts();
+        }
+
+        $branchIds = $user->accessibleBranchIds() ?: [-1];
+        $version = Cache::get('inertia-auth-version', 1);
+
+        return self::remember('coil-products-user:'.SystemCacheInvalidator::operationalVersion().":{$user->id}:v{$version}:".implode(',', $branchIds), fn () => Product::query()
+            ->with(['unit:id,name,symbol,kind', 'branchStocks:id,product_id,branch_id,is_enabled'])
+            ->where('is_active', true)
+            ->where('inventory_tracking_mode', Product::TRACKING_COIL)
+            ->whereHas('branchStocks', fn ($query) => $query
+                ->where('is_enabled', true)
+                ->whereIn('branch_id', $branchIds))
             ->orderBy('name')
             ->get(['id', 'product_unit_id', 'name', 'sku', 'base_unit', 'allowed_units']));
     }

@@ -91,7 +91,6 @@ const groupOrder = [
 
 const roleNames = {
     superadmin: 'Superadministrador',
-    sistemasuperadmin: 'Superadministrador del sistema',
 };
 
 export function roleLabel(roleName) {

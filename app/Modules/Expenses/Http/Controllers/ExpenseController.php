@@ -8,8 +8,10 @@ use App\Modules\Expenses\Http\Requests\StoreExpenseRequest;
 use App\Modules\Expenses\Http\Requests\VoidExpenseRequest;
 use App\Modules\Expenses\Models\Expense;
 use App\Modules\Expenses\Models\ExpenseCategory;
+use App\Modules\Finance\Services\FinancialLedgerService;
 use App\Modules\HumanResources\Models\SalaryPayment;
 use App\Modules\HumanResources\Models\Worker;
+use App\Modules\Sales\Services\SalesDocumentPolicy;
 use App\Support\BranchAccess;
 use App\Support\UiCatalogCache;
 use Illuminate\Http\RedirectResponse;
@@ -39,6 +41,7 @@ class ExpenseController extends Controller
             'total_amount' => (float) (clone $query)->sum('amount'),
             'count' => (clone $query)->count(),
         ]);
+        $documentPolicy = app(SalesDocumentPolicy::class);
 
         return Inertia::render('Expenses/Index', [
             'expenses' => $query
@@ -55,7 +58,9 @@ class ExpenseController extends Controller
                 ->orderBy('name')
                 ->paginate($request->integer('categories_per_page', 10), ['*'], 'categories_page')
                 ->withQueryString(),
-            'paymentMethods' => UiCatalogCache::activePaymentMethods(['id', 'name']),
+            'paymentMethods' => UiCatalogCache::activePaymentMethods(['id', 'name', 'code'])
+                ->filter(fn ($method) => $documentPolicy->isPaymentMethodAllowed($method->code, 'expenses'))
+                ->values(),
             'workers' => Worker::query()
                 ->where('is_active', true)
                 ->when(true, fn ($query) => BranchAccess::apply($query, $request->user()))
@@ -65,7 +70,7 @@ class ExpenseController extends Controller
         ]);
     }
 
-    public function store(StoreExpenseRequest $request, BankReconciliationService $banks): RedirectResponse
+    public function store(StoreExpenseRequest $request, BankReconciliationService $banks, FinancialLedgerService $ledger): RedirectResponse
     {
         DB::transaction(function () use ($request, $banks) {
             $data = $request->validated();
@@ -111,12 +116,12 @@ class ExpenseController extends Controller
             }
         });
 
-        $this->bumpSummaryCache();
+        $ledger->bumpFinancialCaches();
 
         return redirect()->route('expenses.index')->with('success', 'Gasto registrado correctamente.');
     }
 
-    public function void(VoidExpenseRequest $request, Expense $expense, BankReconciliationService $banks): RedirectResponse
+    public function void(VoidExpenseRequest $request, Expense $expense, BankReconciliationService $banks, FinancialLedgerService $ledger): RedirectResponse
     {
         abort_unless(BranchAccess::canAccess($request->user(), (int) $expense->branch_id), 403);
 
@@ -146,7 +151,7 @@ class ExpenseController extends Controller
             }
         });
 
-        $this->bumpSummaryCache();
+        $ledger->bumpFinancialCaches();
 
         return redirect()->route('expenses.index')->with('success', 'Gasto anulado correctamente.');
     }
@@ -162,8 +167,4 @@ class ExpenseController extends Controller
             ->when($request->filled('to'), fn ($query) => $query->whereDate('spent_at', '<=', $request->date('to')));
     }
 
-    private function bumpSummaryCache(): void
-    {
-        Cache::forever('expenses:summary_version', ((int) Cache::get('expenses:summary_version', 1)) + 1);
-    }
 }

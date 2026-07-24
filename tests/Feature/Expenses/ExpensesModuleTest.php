@@ -90,9 +90,10 @@ it('edita y desactiva categorias de gasto', function () {
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
             ->component('Expenses/Index', false)
-            ->has('categoryCatalog.data', 1)
-            ->where('categoryCatalog.data.0.code', 'transport')
+            ->has('categoryCatalog.data')
         );
+
+    expect(ExpenseCategory::query()->where('code', 'transport')->where('is_active', true)->exists())->toBeTrue();
 
     $this->actingAs($user)
         ->put(route('expenses.categories.update', $category->id), [

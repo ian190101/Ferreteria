@@ -8,6 +8,9 @@ use App\Modules\Inventory\Models\ProductBranchStock;
 use App\Modules\Sales\Models\Currency;
 use App\Modules\Sales\Models\Sale;
 use App\Modules\Sales\Models\SaleType;
+use App\Modules\SystemSuperadmin\Models\BusinessProfile;
+use App\Modules\SystemSuperadmin\Services\BusinessProfileConfiguration;
+use App\Support\SystemCacheInvalidator;
 use Inertia\Testing\AssertableInertia as Assert;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
@@ -15,6 +18,30 @@ use Spatie\Permission\Models\Role;
 function reservationsUser(array $permissions): User
 {
     $suffix = strtoupper(substr(uniqid(), -6));
+    $permissions = collect($permissions)
+        ->push('sales.prices.override')
+        ->unique()
+        ->values()
+        ->all();
+
+    BusinessProfile::query()->update(['status' => 'archived']);
+    BusinessProfile::query()->create([
+        'name' => 'Perfil test reservas '.$suffix,
+        'business_type' => 'mixed',
+        'status' => 'active',
+        'configuration' => BusinessProfileConfiguration::normalized([
+            'sales' => [
+                'workflow' => 'direct_sale',
+                'quotation_mode' => 'optional',
+                'customer_required' => false,
+                'customer_mode' => 'optional',
+                'max_discount_percent' => 100,
+            ],
+            'cash' => ['required_to_sell' => false],
+        ]),
+        'applied_at' => now(),
+    ]);
+    SystemCacheInvalidator::bumpOperational();
 
     foreach ($permissions as $permission) {
         Permission::firstOrCreate(['name' => $permission, 'guard_name' => 'web']);
@@ -36,6 +63,7 @@ function reservationsUser(array $permissions): User
     ]);
 
     $user->assignRole($role);
+    $user->accessibleBranches()->sync([$branch->id]);
 
     return $user;
 }
@@ -46,7 +74,11 @@ function reservationProduct(string $suffix = '001'): Product
         'name' => 'Calamina reserva '.$suffix,
         'sku' => 'RES-'.$suffix,
         'barcode' => 'PR-RES-'.$suffix,
+        'base_unit' => 'M',
+        'allowed_units' => ['M'],
         'inventory_tracking_mode' => Product::TRACKING_GLOBAL,
+        'purchase_price' => 10,
+        'sale_price' => 20,
         'minimum_stock_meters' => 0,
         'is_active' => true,
     ]);

@@ -33,6 +33,7 @@ function deliveriesUser(array $permissions): User
     ]);
 
     $user->assignRole($role);
+    $user->accessibleBranches()->sync([$branch->id]);
 
     return $user;
 }
@@ -43,7 +44,11 @@ function deliveryProduct(string $sku): Product
         'name' => 'Producto '.$sku,
         'sku' => $sku,
         'barcode' => 'PR-'.$sku,
+        'base_unit' => 'M',
+        'allowed_units' => ['M'],
         'inventory_tracking_mode' => Product::TRACKING_GLOBAL,
+        'purchase_price' => 10,
+        'sale_price' => 20,
         'minimum_stock_meters' => 0,
         'is_active' => true,
     ]);
@@ -62,6 +67,7 @@ function deliverySale(User $user, Product $product, float $meters = 10): Sale
         'discount_total' => 0,
         'total' => $meters * 20,
         'balance_due' => $meters * 20,
+        'requires_delivery' => true,
         'status' => 'issued',
     ]);
 

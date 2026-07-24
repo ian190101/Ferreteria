@@ -3,8 +3,10 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import FormField from '../../../../Shared/Resources/Components/FormField';
 import ModuleHeader from '../../../../Shared/Resources/Components/ModuleHeader';
 import SelectField from '../../../../Shared/Resources/Components/SelectField';
+import ContextHelp from '../../../../Shared/Resources/Components/ContextHelp';
 import { Head, Link, useForm, usePage } from '@inertiajs/react';
 import { decimalStep, useDecimalFormatter } from '@/Utils/formatters';
+import { infoAction } from '@/Utils/alerts';
 import { useState } from 'react';
 
 const DEFAULT_ITEM = {
@@ -75,6 +77,7 @@ export default function Form({
     const sourceQuotationRequired = documentType === 'sale_note' && workflow?.requiresSourceQuotationForSaleNote;
     const customerHidden = workflow?.customerHidden;
     const customerModeLabel = customerHidden ? 'oculto' : (workflow?.customerRequired ? 'obligatorio' : 'opcional');
+    const itemMergePolicy = documentPolicy?.itemMerge ?? {};
 
     const updateAdvanceMode = (mode) => {
         setData({
@@ -88,7 +91,7 @@ export default function Form({
     const updateItem = (index, field, value) => {
         const items = data.items.map((item, itemIndex) => (itemIndex === index ? { ...item, [field]: value } : item));
 
-        setData('items', field === 'display_unit_label' ? mergeDuplicateItems(items, index, products) : items);
+        setItemsWithMergeNotice(field === 'display_unit_label' ? mergeDuplicateItems(items, index, products, itemMergePolicy) : { items, merged: false });
     };
 
     const selectProduct = (index, value) => {
@@ -110,7 +113,7 @@ export default function Form({
             unit_price: productSalePrice(product),
         } : item));
 
-        setData('items', mergeDuplicateItems(items, index, products));
+        setItemsWithMergeNotice(mergeDuplicateItems(items, index, products, itemMergePolicy));
     };
     const selectItemCategory = (index, value) => {
         setData('items', data.items.map((item, itemIndex) => (itemIndex === index ? {
@@ -195,9 +198,23 @@ export default function Form({
             return;
         }
 
-        setData('items', addOrIncrementSaleProductItem(data.items, product));
+        setItemsWithMergeNotice(addOrIncrementSaleProductItem(data.items, product, itemMergePolicy));
         setBarcodeQuery('');
         setBarcodeMessage(`${product.name} agregado al documento.`);
+    };
+
+    const setItemsWithMergeNotice = (result) => {
+        const payload = Array.isArray(result) ? { items: result, merged: false } : result;
+
+        setData('items', payload.items);
+
+        if (payload.merged) {
+            infoAction({
+                title: 'Item fusionado',
+                html: itemMergeAlertHtml(itemMergePolicy),
+                confirmButtonText: 'Entendido',
+            });
+        }
     };
 
     const submit = (event) => {
@@ -337,7 +354,13 @@ export default function Form({
 
                     <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
                         <div className="mb-4 flex items-center justify-between">
-                            <h3 className="text-base font-semibold text-slate-900 dark:text-white">Items</h3>
+                            <h3 className="inline-flex items-center gap-2 text-base font-semibold text-slate-900 dark:text-white">
+                                Items
+                                <ContextHelp title="Fusion de items">
+                                    <p>{itemMergeHelpText(itemMergePolicy)}</p>
+                                    <p className="mt-2">Ejemplo: puedes registrar Calamina roja como 5 hojas de 20 m, 10 hojas de 15 m y 28 hojas de 5 m en lineas separadas cuando la medida sea diferente.</p>
+                                </ContextHelp>
+                            </h3>
                             <button type="button" onClick={addItem} className="rounded-md border border-brand-primary px-3 py-2 text-sm text-brand-primary">Agregar item</button>
                         </div>
                         <div className="space-y-4">
@@ -515,19 +538,23 @@ function saleItemFromQuotation(item, products, canOverridePrices) {
     };
 }
 
-function addOrIncrementSaleProductItem(items, product) {
+function addOrIncrementSaleProductItem(items, product, itemMergePolicy = {}) {
     const unit = productUnitSymbol(product);
     const duplicateIndex = items.findIndex((item) => (
         String(item.product_id) === String(product.id)
         && String(item.display_unit_label || unit) === String(unit)
         && (item.quantity_mode ?? 'direct') === 'direct'
         && !item.product_coil_id
+        && canMergeChangedItem(item, { product_id: product.id, display_unit_label: unit, quantity_mode: 'direct', meters: '' }, product, product, itemMergePolicy)
     ));
 
     if (duplicateIndex >= 0) {
-        return items.map((item, index) => index === duplicateIndex
-            ? { ...item, display_quantity: String(Number(item.display_quantity || 0) + 1) }
-            : item);
+        return {
+            items: items.map((item, index) => index === duplicateIndex
+                ? { ...item, display_quantity: String(Number(item.display_quantity || 0) + 1) }
+                : item),
+            merged: true,
+        };
     }
 
     const nextItem = {
@@ -555,10 +582,10 @@ function addOrIncrementSaleProductItem(items, product) {
     ));
 
     if (emptyIndex >= 0) {
-        return items.map((item, index) => (index === emptyIndex ? nextItem : item));
+        return { items: items.map((item, index) => (index === emptyIndex ? nextItem : item)), merged: false };
     }
 
-    return [...items, nextItem];
+    return { items: [...items, nextItem], merged: false };
 }
 
 function saleItemSummary(item, product) {
@@ -737,11 +764,11 @@ function attributeUnit(attribute) {
     return typeof attribute.unit === 'string' ? attribute.unit : attribute.unit?.symbol ?? '';
 }
 
-function mergeDuplicateItems(items, changedIndex, products) {
+function mergeDuplicateItems(items, changedIndex, products, itemMergePolicy = {}) {
     const changed = items[changedIndex];
 
     if (!changed?.product_id) {
-        return items;
+        return { items, merged: false };
     }
 
     const changedProduct = selectedProduct(products, changed);
@@ -752,18 +779,69 @@ function mergeDuplicateItems(items, changedIndex, products) {
         const product = selectedProduct(products, item);
 
         return String(item.product_id) === String(changed.product_id)
-            && String(item.display_unit_label || productUnitSymbol(product)) === String(changedUnit);
+            && String(item.display_unit_label || productUnitSymbol(product)) === String(changedUnit)
+            && canMergeChangedItem(item, changed, product, changedProduct, itemMergePolicy);
     });
 
     if (duplicateIndex < 0) {
-        return items;
+        return { items, merged: false };
     }
 
-    return items
-        .map((item, index) => index === duplicateIndex
-            ? { ...item, display_quantity: String(Number(item.display_quantity || 0) + Number(changed.display_quantity || 0)) }
-            : item)
-        .filter((_, index) => index !== changedIndex);
+    return {
+        items: items
+            .map((item, index) => index === duplicateIndex
+                ? { ...item, display_quantity: String(Number(item.display_quantity || 0) + Number(changed.display_quantity || 0)) }
+                : item)
+            .filter((_, index) => index !== changedIndex),
+        merged: true,
+    };
+}
+
+function canMergeChangedItem(existing, changed, existingProduct, changedProduct, itemMergePolicy = {}) {
+    const rule = itemMergePolicy.rule ?? 'same_product_unit_and_measure';
+
+    if (rule === 'never') {
+        return false;
+    }
+
+    if (!itemMergePolicy.allowSameProductDifferentMeasure || rule === 'same_product_and_unit') {
+        return true;
+    }
+
+    return String(existing.quantity_mode ?? 'direct') === String(changed.quantity_mode ?? 'direct')
+        && normalizedMeasureKey(existing, existingProduct) === normalizedMeasureKey(changed, changedProduct)
+        && normalizedAttributeKey(existing) === normalizedAttributeKey(changed)
+        && String(existing.product_coil_id ?? '') === String(changed.product_coil_id ?? '');
+}
+
+function normalizedMeasureKey(item, product) {
+    const mode = String(item.quantity_mode ?? 'direct');
+    const unit = String(item.display_unit_label || productUnitSymbol(product));
+    const length = mode === 'length' ? Number(item.meters || 0).toFixed(6) : '';
+
+    return `${mode}|${unit}|${length}`;
+}
+
+function normalizedAttributeKey(item) {
+    return JSON.stringify([...(item.item_attributes ?? [])]
+        .map((attribute) => [attribute.code, String(attribute.value ?? '')])
+        .sort((a, b) => String(a[0]).localeCompare(String(b[0]))));
+}
+
+function itemMergeHelpText(policy = {}) {
+    if (policy.rule === 'never') {
+        return 'La configuracion actual no fusiona items automaticamente. Cada linea se mantiene separada.';
+    }
+
+    if (!policy.allowSameProductDifferentMeasure || policy.rule === 'same_product_and_unit') {
+        return 'Si agregas el mismo producto con la misma unidad, el sistema suma la cantidad en la linea existente.';
+    }
+
+    return 'El sistema solo fusiona items cuando producto, unidad, calculo, largo/medida, lote y caracteristicas son iguales. Si cambia el largo o una caracteristica, se mantiene otra linea.';
+}
+
+function itemMergeAlertHtml(policy = {}) {
+    return `<p>${itemMergeHelpText(policy)}</p><p style="margin-top:8px">Si necesitas registrar el mismo producto con otro largo o medida, cambia el campo de largo/medida antes de agregarlo o usa una linea nueva.</p>`;
 }
 
 function precisionKind(kind) {

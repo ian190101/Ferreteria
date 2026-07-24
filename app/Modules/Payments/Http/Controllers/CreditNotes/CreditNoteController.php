@@ -3,6 +3,7 @@
 namespace App\Modules\Payments\Http\Controllers\CreditNotes;
 
 use App\Http\Controllers\Controller;
+use App\Modules\Finance\Services\FinancialLedgerService;
 use App\Modules\Payments\Http\Requests\CreditNotes\StoreCreditNoteRequest;
 use App\Modules\Payments\Http\Requests\CreditNotes\VoidCreditNoteRequest;
 use App\Modules\Payments\Models\CreditNote;
@@ -57,9 +58,9 @@ class CreditNoteController extends Controller
         ]);
     }
 
-    public function store(StoreCreditNoteRequest $request): RedirectResponse
+    public function store(StoreCreditNoteRequest $request, FinancialLedgerService $ledger): RedirectResponse
     {
-        DB::transaction(function () use ($request) {
+        DB::transaction(function () use ($request, $ledger) {
             $sale = Sale::query()
                 ->where('document_type', 'sale_note')
                 ->where('status', '!=', 'void')
@@ -100,16 +101,18 @@ class CreditNoteController extends Controller
                     "Nota de credito {$creditNote->credit_number}: {$creditNote->reason}",
                 ]))),
             ]);
+
+            $ledger->bumpFinancialCaches();
         });
 
         return redirect()->route('payments.credit-notes.index')->with('success', 'Nota de credito registrada correctamente.');
     }
 
-    public function void(VoidCreditNoteRequest $request, CreditNote $creditNote): RedirectResponse
+    public function void(VoidCreditNoteRequest $request, CreditNote $creditNote, FinancialLedgerService $ledger): RedirectResponse
     {
         abort_unless(BranchAccess::canAccess($request->user(), (int) $creditNote->branch_id), 403);
 
-        DB::transaction(function () use ($request, $creditNote) {
+        DB::transaction(function () use ($request, $creditNote, $ledger) {
             $creditNote = CreditNote::query()->lockForUpdate()->findOrFail($creditNote->id);
             $sale = Sale::query()->lockForUpdate()->findOrFail($creditNote->sale_id);
             $notes = trim(implode("\n", array_filter([
@@ -127,6 +130,8 @@ class CreditNoteController extends Controller
                 'balance_due' => $newBalance,
                 'status' => $this->statusForBalance($newBalance, $totalToCollect),
             ]);
+
+            $ledger->bumpFinancialCaches();
         });
 
         return redirect()->route('payments.credit-notes.index')->with('success', 'Nota de credito anulada correctamente.');

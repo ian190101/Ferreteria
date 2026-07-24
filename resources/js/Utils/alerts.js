@@ -64,3 +64,22 @@ export async function promptAction({
 
     return result.isConfirmed ? (result.value ?? '').trim() : null;
 }
+
+export async function infoAction({
+    title = 'Informacion',
+    html = '',
+    text = '',
+    confirmButtonText = 'Entendido',
+    icon = 'info',
+} = {}) {
+    await Swal.fire({
+        title,
+        html,
+        text,
+        icon,
+        confirmButtonText,
+        background: isDarkMode() ? '#0f172a' : '#ffffff',
+        color: isDarkMode() ? '#e2e8f0' : '#0f172a',
+        confirmButtonColor: brandColor(),
+    });
+}

@@ -8,6 +8,7 @@ use App\Modules\Inventory\Models\InventoryReservation;
 use App\Modules\Inventory\Models\Product;
 use App\Modules\Inventory\Models\ProductBranchStock;
 use App\Modules\Inventory\Models\ProductCoil;
+use App\Modules\Inventory\Services\InventoryQuantityService;
 use App\Modules\Sales\Models\DeliveryNoteItem;
 use App\Modules\Sales\Models\Sale;
 use App\Modules\Sales\Models\SaleItem;
@@ -16,7 +17,10 @@ use Illuminate\Validation\ValidationException;
 
 class SaleInventoryService
 {
-    public function __construct(private readonly SalesWorkflowPolicy $workflow)
+    public function __construct(
+        private readonly SalesWorkflowPolicy $workflow,
+        private readonly InventoryQuantityService $quantities,
+    )
     {
     }
 
@@ -111,9 +115,7 @@ class SaleInventoryService
                     ->first();
 
                 if ($stock) {
-                    $stock->update([
-                        'reserved_meters' => max(round((float) $stock->reserved_meters - (float) $reservation->meters, 3), 0),
-                    ]);
+                    $this->quantities->release($stock, (float) $reservation->meters);
                 }
             }
 
@@ -152,9 +154,9 @@ class SaleInventoryService
             $stock = ProductBranchStock::query()->whereKey($stock->id)->lockForUpdate()->firstOrFail();
         }
 
-        $before = (float) $stock->available_meters;
+        $before = $this->quantities->available($stock);
+        $reserved = $this->quantities->reserved($stock);
         $after = round($before - (float) $item->meters, 3);
-        $reserved = (float) $stock->reserved_meters;
 
         if (! $allowsNegativeStock && ($after < 0 || $after < $reserved)) {
             throw ValidationException::withMessages([
@@ -162,7 +164,7 @@ class SaleInventoryService
             ]);
         }
 
-        $stock->update(['available_meters' => $after]);
+        $this->quantities->decrease($stock, (float) $item->meters);
         $this->movement($sale, $item, $userId, $movementType, -((float) $item->meters), $before, $after, null, $sourceType, $sourceId);
     }
 
@@ -246,7 +248,7 @@ class SaleInventoryService
 
     private function returnMovement(InventoryMovement $movement, Sale $sale, int $userId): void
     {
-        $quantity = abs((float) $movement->meters_delta);
+        $quantity = abs($this->quantities->movementQuantity($movement));
 
         if ($quantity <= 0) {
             return;
@@ -276,10 +278,7 @@ class SaleInventoryService
             'is_enabled' => true,
         ]);
         $stock = ProductBranchStock::query()->whereKey($stock->id)->lockForUpdate()->firstOrFail();
-        $before = (float) $stock->available_meters;
-        $after = round($before + $quantity, 3);
-
-        $stock->update(['available_meters' => $after]);
+        [$before, $after] = $this->quantities->increase($stock, $quantity);
         $this->returnMovementRecord($movement, $sale, $userId, $quantity, $before, $after, null);
     }
 

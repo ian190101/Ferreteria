@@ -34,6 +34,7 @@ function transferUser(array $permissions): User
     ]);
 
     $user->assignRole($role);
+    $user->accessibleBranches()->sync([$branch->id]);
 
     return $user;
 }
@@ -66,6 +67,7 @@ it('transfiere stock global entre sucursales y registra movimientos de salida y 
     $user = transferUser(['inventory.transfers.view', 'inventory.transfers.manage']);
     $origin = transferBranch('Origen');
     $destination = transferBranch('Destino');
+    $user->accessibleBranches()->syncWithoutDetaching([$origin->id, $destination->id]);
     $product = transferProduct('TR-GLOBAL-'.uniqid());
 
     ProductBranchStock::query()->create([
@@ -102,6 +104,7 @@ it('bloquea transferencias globales sin stock suficiente', function () {
     $user = transferUser(['inventory.transfers.view', 'inventory.transfers.manage']);
     $origin = transferBranch('Origen');
     $destination = transferBranch('Destino');
+    $user->accessibleBranches()->syncWithoutDetaching([$origin->id, $destination->id]);
     $product = transferProduct('TR-BLOCK-'.uniqid());
 
     ProductBranchStock::query()->create([
@@ -130,6 +133,7 @@ it('transfiere una bobina completa entre sucursales', function () {
     $user = transferUser(['inventory.transfers.view', 'inventory.transfers.manage']);
     $origin = transferBranch('Origen');
     $destination = transferBranch('Destino');
+    $user->accessibleBranches()->syncWithoutDetaching([$origin->id, $destination->id]);
     $product = transferProduct('TR-COIL-'.uniqid(), Product::TRACKING_COIL);
     $coil = ProductCoil::query()->create([
         'branch_id' => $origin->id,

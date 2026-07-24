@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\User;
+use App\Modules\Banks\Models\BankAccount;
 use App\Modules\Branches\Models\Branch;
 use App\Modules\Payments\Models\PaymentMethod;
 use App\Modules\Payments\Models\PurchasePayment;
@@ -8,12 +9,37 @@ use App\Modules\Payments\Models\SalePayment;
 use App\Modules\Purchases\Models\Purchase;
 use App\Modules\Purchases\Models\Supplier;
 use App\Modules\Sales\Models\Sale;
+use App\Modules\SystemSuperadmin\Models\BusinessProfile;
+use App\Modules\SystemSuperadmin\Services\BusinessProfileConfiguration;
+use App\Support\SystemCacheInvalidator;
 use Inertia\Testing\AssertableInertia as Assert;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 
 function paymentsUser(array $permissions): User
 {
+    BusinessProfile::query()->update(['status' => 'archived']);
+    BusinessProfile::query()->create([
+        'name' => 'Perfil test pagos',
+        'business_type' => 'mixed',
+        'status' => 'active',
+        'configuration' => BusinessProfileConfiguration::normalized([
+            'sales' => [
+                'workflow' => 'direct_sale',
+                'quotation_mode' => 'optional',
+                'allowed_payment_methods' => ['cash', 'qr', 'transfer'],
+                'payment_methods_by_flow' => [
+                    'sales' => ['cash', 'qr', 'transfer'],
+                    'pos' => ['cash', 'qr', 'transfer'],
+                    'collections' => ['cash', 'qr', 'transfer', 'cash-provider', 'transfer-provider', 'cash-provider-void'],
+                ],
+            ],
+            'cash' => ['required_to_sell' => false],
+        ]),
+        'applied_at' => now(),
+    ]);
+    SystemCacheInvalidator::bumpOperational();
+
     foreach ($permissions as $permission) {
         Permission::firstOrCreate(['name' => $permission, 'guard_name' => 'web']);
     }
@@ -34,6 +60,17 @@ function paymentsUser(array $permissions): User
     ]);
 
     $user->assignRole($role);
+    $user->accessibleBranches()->sync([$branch->id]);
+    BankAccount::query()->create([
+        'branch_id' => $branch->id,
+        'name' => 'Cuenta test pagos',
+        'bank_name' => 'Banco test',
+        'account_number' => 'CTA-'.$branch->id,
+        'currency_code' => 'BOB',
+        'opening_balance' => 0,
+        'current_balance' => 0,
+        'is_active' => true,
+    ]);
 
     return $user;
 }

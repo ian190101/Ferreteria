@@ -44,7 +44,7 @@ class ProductCoilController extends Controller
     {
         return Inertia::render('Inventory/Coils/Form', [
             'branches' => UiCatalogCache::activeBranchesForUser(request()->user()),
-            'products' => UiCatalogCache::activeCoilProducts(),
+            'products' => UiCatalogCache::activeCoilProductsForUser(request()->user()),
         ]);
     }
 

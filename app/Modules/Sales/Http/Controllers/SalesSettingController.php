@@ -9,6 +9,8 @@ use App\Modules\Sales\Models\AdvanceOption;
 use App\Modules\Sales\Models\Currency;
 use App\Modules\Sales\Models\DocumentSequence;
 use App\Modules\Sales\Models\SaleType;
+use App\Modules\Sales\Services\DocumentItemMergePolicy;
+use App\Modules\Sales\Services\SalesDocumentPolicy;
 use App\Modules\Settings\Models\SystemSetting;
 use App\Support\BranchAccess;
 use App\Support\DecimalPrecision;
@@ -36,6 +38,8 @@ class SalesSettingController extends Controller
                 ->paginate(15, ['*'], 'document_sequences_page'),
             'branches' => UiCatalogCache::activeBranchesForUser($request->user()),
             'decimalPrecision' => DecimalPrecision::config(),
+            'documentPolicy' => app(SalesDocumentPolicy::class)->summary(),
+            'itemMergeSetting' => app(DocumentItemMergePolicy::class)->setting(),
         ]);
     }
 
@@ -96,6 +100,29 @@ class SalesSettingController extends Controller
         DecimalPrecision::forget();
 
         return redirect()->route('sales.settings.index')->with('success', 'Decimales actualizados correctamente.');
+    }
+
+    public function updateItemMerge(Request $request, DocumentItemMergePolicy $policy): RedirectResponse
+    {
+        abort_unless($policy->controlEnabled(), 403, 'La configuracion empresarial actual no permite modificar la fusion de items.');
+
+        $validated = $request->validate([
+            'sales_item_merge' => ['required', 'array'],
+            'sales_item_merge.allow_same_product_different_measure' => ['boolean'],
+        ]);
+
+        SystemSetting::query()->updateOrCreate(
+            ['key' => DocumentItemMergePolicy::SETTING_KEY],
+            [
+                'group' => 'ventas',
+                'value' => DocumentItemMergePolicy::normalize($validated['sales_item_merge']),
+                'description' => 'Regla de fusion automatica de items en ventas y compras',
+                'is_public' => true,
+            ],
+        );
+        DocumentItemMergePolicy::forget();
+
+        return redirect()->route('sales.settings.index')->with('success', 'Regla de items actualizada correctamente.');
     }
 
     private function storeSaleType(array $data): void

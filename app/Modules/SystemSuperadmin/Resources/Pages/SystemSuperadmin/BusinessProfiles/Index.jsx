@@ -229,7 +229,11 @@ export default function Index({ activeProfile, drafts, versions, presets = [], o
                                     <SelectField label="Descontar inventario" name="inventory_discount_timing" value={form.data.configuration.sales.inventory_discount_timing} onChange={(event) => setConfig('sales', 'inventory_discount_timing', event.target.value)}>
                                         {Object.entries(options.inventoryTimings).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
                                     </SelectField>
+                                    <SelectField label="Fusion automatica de items" name="item_merge_rule" value={form.data.configuration.sales.item_merge_rule ?? 'same_product_unit_and_measure'} onChange={(event) => setConfig('sales', 'item_merge_rule', event.target.value)} helpTooltip="Define la regla base para unir items repetidos. Para ferreteria conviene fusionar solo cuando producto, unidad y medida sean iguales.">
+                                        {Object.entries(options.itemMergeRules ?? {}).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                                    </SelectField>
                                     <Toggle label="Cliente ocasional permitido" checked={form.data.configuration.sales.allow_occasional_customer} onChange={(value) => setConfig('sales', 'allow_occasional_customer', value)} />
+                                    <Toggle label="Permitir que superadmin configure reglas de items" checked={form.data.configuration.sales.item_merge_control_enabled ?? true} onChange={(value) => setConfig('sales', 'item_merge_control_enabled', value)} helpTooltip="Si esta activo, el superadmin del cliente vera el ajuste en Catalogos de ventas. Si esta apagado, solo sistemasuperadmin define esta regla desde aqui." />
                                 </Section> : null}
 
                                 {activeConfigStep === 'sales' ? <Section title="Configuracion avanzada de venta">
@@ -1581,6 +1585,8 @@ function buildComparison(current, next, options) {
         ['Ventas', 'Documento principal', options.documents[current.sales.document_main], options.documents[next.sales.document_main]],
         ['Ventas', 'Clientes en venta', options.entityModes[current.sales.customer_mode], options.entityModes[next.sales.customer_mode]],
         ['Ventas', 'Descuento de inventario', options.inventoryTimings[current.sales.inventory_discount_timing], options.inventoryTimings[next.sales.inventory_discount_timing]],
+        ['Ventas', 'Fusion de items', options.itemMergeRules?.[current.sales.item_merge_rule], options.itemMergeRules?.[next.sales.item_merge_rule]],
+        ['Ventas', 'Superadmin configura fusion', current.sales.item_merge_control_enabled ? 'Si' : 'No', next.sales.item_merge_control_enabled ? 'Si' : 'No'],
         ['Facturacion', 'Modulo SIAT', booleanLabels[String(Boolean(current.modules.billing))], booleanLabels[String(Boolean(next.modules.billing))]],
         ['Facturacion', 'Flujo fiscal', options.billingFlows[current.billing?.invoice_flow], options.billingFlows[next.billing?.invoice_flow]],
         ['Facturacion', 'Momento de emision', options.billingIssueTimings[current.billing?.issue_timing], options.billingIssueTimings[next.billing?.issue_timing]],

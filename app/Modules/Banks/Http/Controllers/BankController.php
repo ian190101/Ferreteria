@@ -11,6 +11,7 @@ use App\Modules\Banks\Http\Requests\VoidBankTransactionRequest;
 use App\Modules\Banks\Models\BankAccount;
 use App\Modules\Banks\Models\BankTransaction;
 use App\Modules\Cash\Models\CashRegisterSession;
+use App\Modules\Finance\Services\FinancialLedgerService;
 use App\Support\BranchAccess;
 use App\Support\UiCatalogCache;
 use Illuminate\Http\RedirectResponse;
@@ -105,7 +106,7 @@ class BankController extends Controller
         ]);
     }
 
-    public function storeAccount(StoreBankAccountRequest $request): RedirectResponse
+    public function storeAccount(StoreBankAccountRequest $request, FinancialLedgerService $ledger): RedirectResponse
     {
         $openingBalance = round((float) $request->input('opening_balance'), 2);
 
@@ -114,26 +115,24 @@ class BankController extends Controller
             'current_balance' => $openingBalance,
         ]);
 
-        $this->bumpSummaryCache();
-        UiCatalogCache::forgetFinancialCatalogs();
+        $ledger->bumpFinancialCaches();
 
         return redirect()->route('banks.index')->with('success', 'Cuenta bancaria creada correctamente.');
     }
 
-    public function updateAccount(UpdateBankAccountRequest $request, BankAccount $account): RedirectResponse
+    public function updateAccount(UpdateBankAccountRequest $request, BankAccount $account, FinancialLedgerService $ledger): RedirectResponse
     {
         abort_unless(BranchAccess::canAccess($request->user(), (int) $account->branch_id), 403);
 
         $account->update($request->validated());
-        $this->bumpSummaryCache();
-        UiCatalogCache::forgetFinancialCatalogs();
+        $ledger->bumpFinancialCaches();
 
         return redirect()->route('banks.index')->with('success', 'Cuenta bancaria actualizada correctamente.');
     }
 
-    public function storeTransaction(StoreBankTransactionRequest $request): RedirectResponse
+    public function storeTransaction(StoreBankTransactionRequest $request, FinancialLedgerService $ledger): RedirectResponse
     {
-        DB::transaction(function () use ($request) {
+        DB::transaction(function () use ($request, $ledger) {
             $account = BankAccount::query()
                 ->whereKey($request->integer('bank_account_id'))
                 ->lockForUpdate()
@@ -144,7 +143,7 @@ class BankController extends Controller
             }
 
             $amount = round((float) $request->input('amount'), 2);
-            $delta = $this->signedAmount($request->string('type')->toString(), $amount);
+            $delta = $ledger->signedBankAmount($request->string('type')->toString(), $amount);
 
             $transaction = BankTransaction::query()->create([
                 ...$request->validated(),
@@ -158,13 +157,12 @@ class BankController extends Controller
             $account->increment('current_balance', $delta);
         });
 
-        $this->bumpSummaryCache();
-        UiCatalogCache::forgetFinancialCatalogs();
+        $ledger->bumpFinancialCaches();
 
         return redirect()->route('banks.index')->with('success', 'Movimiento bancario registrado correctamente.');
     }
 
-    public function reconcile(Request $request, BankTransaction $transaction): RedirectResponse
+    public function reconcile(Request $request, BankTransaction $transaction, FinancialLedgerService $ledger): RedirectResponse
     {
         abort_unless($request->user()?->can('banks.manage'), 403);
         abort_unless(BranchAccess::canAccess($request->user(), (int) $transaction->branch_id), 403);
@@ -174,42 +172,26 @@ class BankController extends Controller
         }
 
         $transaction->update(['reconciled_at' => now()]);
-        $this->bumpSummaryCache();
-        UiCatalogCache::forgetFinancialCatalogs();
+        $ledger->bumpFinancialCaches();
 
         return redirect()->route('banks.index')->with('success', 'Movimiento conciliado correctamente.');
     }
 
-    public function void(VoidBankTransactionRequest $request, BankTransaction $transaction): RedirectResponse
+    public function void(VoidBankTransactionRequest $request, BankTransaction $transaction, FinancialLedgerService $ledger): RedirectResponse
     {
         abort_unless(BranchAccess::canAccess($request->user(), (int) $transaction->branch_id), 403);
 
-        DB::transaction(function () use ($request, $transaction) {
+        DB::transaction(function () use ($request, $transaction, $ledger) {
             $transaction = BankTransaction::query()->whereKey($transaction->id)->lockForUpdate()->firstOrFail();
 
             if ($transaction->status === BankTransaction::STATUS_VOID) {
                 throw ValidationException::withMessages(['transaction' => 'El movimiento ya fue anulado.']);
             }
 
-            $account = BankAccount::query()->whereKey($transaction->bank_account_id)->lockForUpdate()->firstOrFail();
-            $account->decrement('current_balance', $this->signedAmount($transaction->type, (float) $transaction->amount));
-
-            $transaction->update([
-                'status' => BankTransaction::STATUS_VOID,
-                'voided_at' => now(),
-                'void_reason' => $request->string('reason')->toString(),
-            ]);
+            $ledger->voidBankTransaction($transaction, $request->string('reason')->toString());
         });
 
-        $this->bumpSummaryCache();
-        UiCatalogCache::forgetFinancialCatalogs();
-
         return redirect()->route('banks.index')->with('success', 'Movimiento bancario anulado correctamente.');
-    }
-
-    private function signedAmount(string $type, float $amount): float
-    {
-        return in_array($type, [BankTransaction::TYPE_WITHDRAWAL], true) ? -$amount : $amount;
     }
 
     private function summaryKey(Request $request): string
@@ -251,8 +233,4 @@ class BankController extends Controller
             ->first();
     }
 
-    private function bumpSummaryCache(): void
-    {
-        Cache::forever('banks:summary_version', ((int) Cache::get('banks:summary_version', 1)) + 1);
-    }
 }

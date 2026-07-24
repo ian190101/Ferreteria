@@ -8,6 +8,7 @@ use App\Modules\Inventory\Models\InventoryMovement;
 use App\Modules\Inventory\Models\Product;
 use App\Modules\Inventory\Models\ProductBranchStock;
 use App\Modules\Inventory\Models\ProductCoil;
+use App\Modules\Inventory\Services\InventoryQuantityService;
 use App\Modules\Purchases\Http\Requests\StorePurchaseOrderReceiptRequest;
 use App\Modules\Purchases\Http\Requests\StorePurchaseOrderRequest;
 use App\Modules\Purchases\Models\Purchase;
@@ -52,12 +53,12 @@ class PurchaseOrderController extends Controller
         ]);
     }
 
-    public function create(): Response
+    public function create(Request $request): Response
     {
         return Inertia::render('Purchases/Orders/Form', [
             'branches' => UiCatalogCache::activeBranchesForUser(request()->user()),
             'suppliers' => UiCatalogCache::activeSuppliers(),
-            'products' => UiCatalogCache::activeProductsWithThickness(),
+            'products' => UiCatalogCache::activeProductsWithThicknessForUser($request->user()),
         ]);
     }
 
@@ -152,7 +153,7 @@ class PurchaseOrderController extends Controller
         ]);
     }
 
-    public function storeReceipt(StorePurchaseOrderReceiptRequest $request, PurchaseOrder $order): RedirectResponse
+    public function storeReceipt(StorePurchaseOrderReceiptRequest $request, PurchaseOrder $order, InventoryQuantityService $quantities): RedirectResponse
     {
         abort_unless(BranchAccess::canAccess($request->user(), (int) $order->branch_id), 403);
 
@@ -160,12 +161,12 @@ class PurchaseOrderController extends Controller
             throw ValidationException::withMessages(['order' => 'Solo las ordenes aprobadas o parcialmente recibidas pueden recibir mercaderia.']);
         }
 
-        $purchase = DB::transaction(fn () => $this->createReceipt($order, $request->validated(), $request->user()));
+        $purchase = DB::transaction(fn () => $this->createReceipt($order, $request->validated(), $request->user(), $quantities));
 
         return redirect()->route('purchases.show', $purchase)->with('success', 'Recepcion registrada y compra creada correctamente.');
     }
 
-    public function convert(Request $request, PurchaseOrder $order): RedirectResponse
+    public function convert(Request $request, PurchaseOrder $order, InventoryQuantityService $quantities): RedirectResponse
     {
         abort_unless($request->user()?->can('purchases.manage'), 403);
         abort_unless(BranchAccess::canAccess($request->user(), (int) $order->branch_id), 403);
@@ -189,12 +190,12 @@ class PurchaseOrderController extends Controller
             throw ValidationException::withMessages(['order' => 'La orden no tiene saldo pendiente por recibir.']);
         }
 
-        $purchase = DB::transaction(fn () => $this->createReceipt($order, $payload, $request->user()));
+        $purchase = DB::transaction(fn () => $this->createReceipt($order, $payload, $request->user(), $quantities));
 
         return redirect()->route('purchases.show', $purchase)->with('success', 'Orden convertida en compra recibida correctamente.');
     }
 
-    private function createReceipt(PurchaseOrder $order, array $payload, User $user): Purchase
+    private function createReceipt(PurchaseOrder $order, array $payload, User $user, InventoryQuantityService $quantities): Purchase
     {
         $order = PurchaseOrder::query()->with('items.product')->lockForUpdate()->findOrFail($order->id);
         $payloadItems = collect($payload['items'] ?? [])
@@ -291,9 +292,7 @@ class PurchaseOrderController extends Controller
                 ]);
 
                 $stock = ProductBranchStock::query()->whereKey($stock->id)->lockForUpdate()->firstOrFail();
-                $before = (float) $stock->available_meters;
-                $after = round($before + (float) $item['meters'], 3);
-                $stock->update(['available_meters' => $after]);
+                [$before, $after] = $quantities->increase($stock, (float) $item['meters']);
                 $this->movement($purchase, $orderItem->product_id, null, $user->id, $item['meters'], $before, $after, 'purchase_order_receipt_global');
             }
 

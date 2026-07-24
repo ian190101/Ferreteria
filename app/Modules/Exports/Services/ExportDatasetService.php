@@ -1113,7 +1113,6 @@ class ExportDatasetService
     private function roleLabel(string $role): string
     {
         return [
-            'sistemasuperadmin' => 'Sistema superadmin',
             'superadmin' => 'Superadministrador',
             'admin' => 'Administrador',
             'manager' => 'Encargado',

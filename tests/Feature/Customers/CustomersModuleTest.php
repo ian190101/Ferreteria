@@ -14,12 +14,34 @@ use App\Modules\Payments\Models\SalePayment;
 use App\Modules\Sales\Models\Currency;
 use App\Modules\Sales\Models\Sale;
 use App\Modules\Sales\Models\SaleType;
+use App\Modules\SystemSuperadmin\Models\BusinessProfile;
+use App\Modules\SystemSuperadmin\Services\BusinessProfileConfiguration;
+use App\Support\SystemCacheInvalidator;
 use Inertia\Testing\AssertableInertia as Assert;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 
 function customersUser(array $permissions): User
 {
+    BusinessProfile::query()->update(['status' => 'archived']);
+    BusinessProfile::query()->create([
+        'name' => 'Perfil test clientes',
+        'business_type' => 'mixed',
+        'status' => 'active',
+        'configuration' => BusinessProfileConfiguration::normalized([
+            'sales' => [
+                'workflow' => 'direct_sale',
+                'quotation_mode' => 'optional',
+                'customer_required' => false,
+                'customer_mode' => 'optional',
+                'max_discount_percent' => 100,
+            ],
+            'cash' => ['required_to_sell' => false],
+        ]),
+        'applied_at' => now(),
+    ]);
+    SystemCacheInvalidator::bumpOperational();
+
     foreach ($permissions as $permission) {
         Permission::firstOrCreate(['name' => $permission, 'guard_name' => 'web']);
     }
@@ -40,6 +62,7 @@ function customersUser(array $permissions): User
     ]);
 
     $user->assignRole($role);
+    $user->accessibleBranches()->sync([$branch->id]);
 
     return $user;
 }
@@ -130,7 +153,7 @@ it('bloquea tipos de cliente duplicados', function () {
 });
 
 it('usa cliente registrado como snapshot en la nota de venta', function () {
-    $user = customersUser(['sales.view', 'sales.manage', 'customers.view']);
+    $user = customersUser(['sales.view', 'sales.manage', 'sales.prices.override', 'customers.view']);
     $customer = Customer::query()->create([
         'name' => 'Camacho Ruben',
         'document_number' => '85911',
@@ -150,6 +173,7 @@ it('usa cliente registrado como snapshot en la nota de venta', function () {
         'name' => 'Calamina cliente',
         'sku' => 'CLI-001',
         'barcode' => 'PR-CLI-001',
+        'base_unit' => 'M',
         'inventory_tracking_mode' => Product::TRACKING_GLOBAL,
         'minimum_stock_meters' => 0,
         'is_active' => true,

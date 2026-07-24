@@ -10,11 +10,13 @@ use App\Modules\Inventory\Models\ProductBranchStock;
 use App\Modules\Inventory\Models\ProductCategory;
 use App\Modules\Inventory\Models\ProductCoil;
 use App\Modules\Inventory\Models\ProductUnit;
+use App\Modules\Inventory\Services\InventoryQuantityService;
 use App\Modules\Inventory\Services\ProductWorkflowPolicy;
 use App\Modules\Inventory\Support\ProductCodeGenerator;
 use App\Modules\Purchases\Http\Requests\StorePurchaseRequest;
 use App\Modules\Purchases\Models\Purchase;
 use App\Modules\Purchases\Services\PurchaseWorkflowPolicy;
+use App\Modules\Sales\Services\SalesDocumentPolicy;
 use App\Support\BranchAccess;
 use App\Support\UiCatalogCache;
 use Illuminate\Http\RedirectResponse;
@@ -27,6 +29,10 @@ use Inertia\Response;
 
 class PurchaseController extends Controller
 {
+    public function __construct(private readonly InventoryQuantityService $quantities)
+    {
+    }
+
     public function index(Request $request): Response
     {
         $purchases = Purchase::query()
@@ -66,13 +72,14 @@ class PurchaseController extends Controller
 
         return Inertia::render('Purchases/Form', [
             'workflow' => $workflow->summary(),
+            'documentPolicy' => app(SalesDocumentPolicy::class)->summary(),
             'branches' => UiCatalogCache::activeBranchesForUser($request->user()),
             'units' => UiCatalogCache::productUnits(),
             'categories' => UiCatalogCache::productCategories(),
             'thicknesses' => UiCatalogCache::activeThicknesses(),
             'attributeDefinitions' => UiCatalogCache::productAttributeDefinitions(),
             'suppliers' => Inertia::defer(fn () => $workflow->supplierHidden() ? [] : UiCatalogCache::activeSuppliers(), 'purchase-form-catalogs'),
-            'products' => Inertia::defer(fn () => UiCatalogCache::activeProductsWithThickness(), 'purchase-form-catalogs'),
+            'products' => Inertia::defer(fn () => UiCatalogCache::activeProductsWithThicknessForUser($request->user()), 'purchase-form-catalogs'),
         ]);
     }
 
@@ -161,9 +168,7 @@ class PurchaseController extends Controller
                         ]);
 
                         $stock = ProductBranchStock::query()->whereKey($stock->id)->lockForUpdate()->firstOrFail();
-                        $before = (float) $stock->available_meters;
-                        $after = round($before + (float) $item['meters'], 3);
-                        $stock->update(['available_meters' => $after]);
+                        [$before, $after] = $this->quantities->increase($stock, (float) $item['meters']);
 
                         $this->movement($purchase, $product->id, null, $request->user()->id, $item['meters'], $before, $after, 'purchase_entry_global');
                     }

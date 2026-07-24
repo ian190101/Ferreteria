@@ -7,6 +7,7 @@ use App\Modules\Inventory\Models\InventoryMovement;
 use App\Modules\Inventory\Models\Product;
 use App\Modules\Inventory\Models\ProductBranchStock;
 use App\Modules\Inventory\Models\ProductCoil;
+use App\Modules\Inventory\Services\InventoryQuantityService;
 use App\Modules\Production\Http\Requests\StoreProductionOrderRequest;
 use App\Modules\Production\Models\ProductionOrder;
 use App\Support\BranchAccess;
@@ -33,7 +34,7 @@ class ProductionOrderController extends Controller
         return Inertia::render('Production/Index', [
             'orders' => $orders,
             'branches' => UiCatalogCache::activeBranchesForUser($request->user()),
-            'products' => UiCatalogCache::activeProducts(),
+            'products' => UiCatalogCache::activeProductsForUser($request->user()),
             'coils' => ProductCoil::query()
                 ->when(true, fn ($query) => BranchAccess::apply($query, $request->user()))
                 ->where('status', 'available')
@@ -44,9 +45,9 @@ class ProductionOrderController extends Controller
         ]);
     }
 
-    public function store(StoreProductionOrderRequest $request): RedirectResponse
+    public function store(StoreProductionOrderRequest $request, InventoryQuantityService $quantities): RedirectResponse
     {
-        DB::transaction(function () use ($request) {
+        DB::transaction(function () use ($request, $quantities) {
             $inputProduct = Product::query()->findOrFail($request->integer('input_product_id'));
             $outputProduct = Product::query()->findOrFail($request->integer('output_product_id'));
             $inputMeters = round((float) $request->input('input_meters'), 3);
@@ -61,7 +62,7 @@ class ProductionOrderController extends Controller
                 'status' => ProductionOrder::STATUS_COMPLETED,
             ]);
 
-            $this->consumeInput($order, $inputProduct, $request->integer('input_product_coil_id') ?: null, $inputMeters, $request->user()->id);
+            $this->consumeInput($order, $inputProduct, $request->integer('input_product_coil_id') ?: null, $inputMeters, $request->user()->id, $quantities);
 
             if ($outputProduct->inventory_tracking_mode === Product::TRACKING_COIL) {
                 $outputCoil = ProductCoil::query()->create([
@@ -86,9 +87,7 @@ class ProductionOrderController extends Controller
                 ]);
 
                 $stock = ProductBranchStock::query()->whereKey($stock->id)->lockForUpdate()->firstOrFail();
-                $before = (float) $stock->available_meters;
-                $after = round($before + $outputMeters, 3);
-                $stock->update(['available_meters' => $after]);
+                [$before, $after] = $quantities->increase($stock, $outputMeters);
 
                 $this->movement($order, $outputProduct->id, null, $request->user()->id, $outputMeters, $before, $after, 'production_output_global');
             }
@@ -97,7 +96,7 @@ class ProductionOrderController extends Controller
         return redirect()->route('production.index')->with('success', 'Orden de produccion registrada correctamente.');
     }
 
-    private function consumeInput(ProductionOrder $order, Product $product, ?int $coilId, float $meters, int $userId): void
+    private function consumeInput(ProductionOrder $order, Product $product, ?int $coilId, float $meters, int $userId, InventoryQuantityService $quantities): void
     {
         if ($product->inventory_tracking_mode === Product::TRACKING_COIL) {
             $coil = ProductCoil::query()->lockForUpdate()->findOrFail($coilId);
@@ -120,9 +119,7 @@ class ProductionOrderController extends Controller
             ->lockForUpdate()
             ->firstOrFail();
 
-        $before = (float) $stock->available_meters;
-        $after = round($before - $meters, 3);
-        $stock->update(['available_meters' => $after]);
+        [$before, $after] = $quantities->decrease($stock, $meters);
 
         $this->movement($order, $product->id, null, $userId, -$meters, $before, $after, 'production_input_global');
     }

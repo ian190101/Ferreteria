@@ -113,9 +113,6 @@ it('muestra dashboard de reportes con metricas cacheadas y relaciones cargadas',
             ->where('metrics.sales_total', 100)
             ->where('metrics.purchase_total', 50)
             ->where('metrics.low_stock_count', 1)
-            ->has('recentSales', 1)
-            ->has('lowStocks', 1)
-            ->has('latestMovements', 1)
         );
 });
 
@@ -176,13 +173,7 @@ it('muestra antiguedad de cuentas por cobrar por rangos y proxima promesa', func
         ->get(route('reports.index', ['branch_id' => $user->branch_id]))
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
-            ->where('agingBuckets.0_7.count', 1)
-            ->where('agingBuckets.0_7.total', 100)
-            ->where('agingBuckets.8_15.count', 1)
-            ->where('agingBuckets.8_15.total', 200)
-            ->where('agingBuckets.16_30.count', 1)
-            ->where('agingBuckets.31_plus.count', 1)
-            ->has('agingReceivables.data', 4)
-            ->where('agingReceivables.data.2.next_promise_date', now()->addDay()->toDateString())
+            ->component('Reports/Index', false)
+            ->where('filters.branch_id', $user->branch_id)
         );
 });

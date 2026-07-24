@@ -6,14 +6,16 @@ use App\Http\Controllers\Controller;
 use App\Modules\Banks\Services\BankReconciliationService;
 use App\Modules\Expenses\Models\Expense;
 use App\Modules\Expenses\Models\ExpenseCategory;
+use App\Modules\Finance\Services\FinancialLedgerService;
 use App\Modules\HumanResources\Models\SalaryPayment;
 use App\Modules\HumanResources\Models\Worker;
+use App\Modules\Payments\Models\PaymentMethod;
+use App\Modules\Sales\Services\SalesDocumentPolicy;
 use App\Modules\SystemSuperadmin\Services\ActiveBusinessProfile;
 use App\Support\BranchAccess;
 use App\Support\UiCatalogCache;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
@@ -23,6 +25,8 @@ class SalaryPaymentController extends Controller
 {
     public function index(Request $request): Response
     {
+        $documentPolicy = app(SalesDocumentPolicy::class);
+
         return Inertia::render('HumanResources/Payroll/Index', [
             'payments' => SalaryPayment::query()
                 ->with(['worker:id,name,position', 'branch:id,name', 'paymentMethod:id,name', 'user:id,name'])
@@ -36,12 +40,14 @@ class SalaryPaymentController extends Controller
                 ->orderBy('name')
                 ->get(['id', 'branch_id', 'name', 'position', 'salary_amount']),
             'branches' => UiCatalogCache::activeBranchesForUser($request->user(), ['id', 'name']),
-            'paymentMethods' => UiCatalogCache::activePaymentMethods(['id', 'name', 'code']),
+            'paymentMethods' => UiCatalogCache::activePaymentMethods(['id', 'name', 'code'])
+                ->filter(fn ($method) => $documentPolicy->isPaymentMethodAllowed($method->code, 'payroll'))
+                ->values(),
             'filters' => $request->only(['per_page']),
         ]);
     }
 
-    public function store(Request $request, BankReconciliationService $banks): RedirectResponse
+    public function store(Request $request, BankReconciliationService $banks, FinancialLedgerService $ledger): RedirectResponse
     {
         $data = $request->validate([
             'worker_id' => ['required', 'integer', 'exists:workers,id'],
@@ -55,6 +61,21 @@ class SalaryPaymentController extends Controller
         ]);
 
         abort_unless(BranchAccess::canAccess($request->user(), (int) $data['branch_id']), 403);
+        $method = filled($data['payment_method_id'] ?? null)
+            ? PaymentMethod::query()->find($data['payment_method_id'])
+            : null;
+
+        if ($method && ! $method->is_active) {
+            throw ValidationException::withMessages(['payment_method_id' => 'El metodo de pago no esta activo.']);
+        }
+
+        if ($method && ! app(SalesDocumentPolicy::class)->isPaymentMethodAllowed($method->code, 'payroll')) {
+            throw ValidationException::withMessages(['payment_method_id' => 'El perfil de negocio actual no permite usar este metodo de pago en pago de sueldos.']);
+        }
+
+        if ($method?->requires_reference && blank($data['reference'] ?? null)) {
+            throw ValidationException::withMessages(['reference' => 'La referencia es obligatoria para este metodo de pago.']);
+        }
 
         DB::transaction(function () use ($data, $request, $banks) {
             $worker = Worker::query()->findOrFail($data['worker_id']);
@@ -99,12 +120,12 @@ class SalaryPaymentController extends Controller
             ]);
         });
 
-        $this->bumpCaches();
+        $ledger->bumpFinancialCaches();
 
         return back()->with('success', 'Pago de sueldo registrado correctamente.');
     }
 
-    public function void(Request $request, SalaryPayment $payment, BankReconciliationService $banks): RedirectResponse
+    public function void(Request $request, SalaryPayment $payment, BankReconciliationService $banks, FinancialLedgerService $ledger): RedirectResponse
     {
         $data = $request->validate([
             'reason' => ['nullable', 'string', 'max:500'],
@@ -140,7 +161,7 @@ class SalaryPaymentController extends Controller
             ]);
         });
 
-        $this->bumpCaches();
+        $ledger->bumpFinancialCaches();
 
         return back()->with('success', 'Pago de sueldo anulado correctamente.');
     }
@@ -150,9 +171,4 @@ class SalaryPaymentController extends Controller
         return (bool) (ActiveBusinessProfile::payload()['human_resources']['salary_expense_integration'] ?? true);
     }
 
-    private function bumpCaches(): void
-    {
-        Cache::forever('expenses:summary_version', ((int) Cache::get('expenses:summary_version', 1)) + 1);
-        Cache::forever('banks:summary_version', ((int) Cache::get('banks:summary_version', 1)) + 1);
-    }
 }

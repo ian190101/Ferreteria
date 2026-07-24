@@ -70,10 +70,50 @@ class SiatSoapClient
             'service' => $service,
             'operation' => $method,
             'status' => $status,
-            'request_payload' => $request,
-            'response_payload' => $response,
+            'request_payload' => $this->maskPayload($request),
+            'response_payload' => $response ? $this->maskPayload($response) : null,
             'message' => $message,
             'duration_ms' => (int) round((microtime(true) - $startedAt) * 1000),
         ]);
+    }
+
+    private function maskPayload(array $payload): array
+    {
+        $sensitiveKeys = [
+            'archivo',
+            'cuf',
+            'cufd',
+            'cuis',
+            'hashArchivo',
+            'nit',
+            'numeroDocumento',
+            'codigoCliente',
+            'codigoRecepcion',
+        ];
+
+        return collect($payload)
+            ->map(function ($value, string|int $key) use ($sensitiveKeys) {
+                if (in_array((string) $key, $sensitiveKeys, true)) {
+                    return $this->maskedValue($value);
+                }
+
+                if (is_array($value)) {
+                    return $this->maskPayload($value);
+                }
+
+                return $value;
+            })
+            ->all();
+    }
+
+    private function maskedValue(mixed $value): string
+    {
+        $text = is_scalar($value) ? (string) $value : '[dato protegido]';
+
+        if (strlen($text) <= 8) {
+            return '***';
+        }
+
+        return substr($text, 0, 4).'***'.substr($text, -4);
     }
 }

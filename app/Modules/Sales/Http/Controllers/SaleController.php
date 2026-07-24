@@ -101,7 +101,7 @@ class SaleController extends Controller
             'paymentMethods' => Inertia::defer(fn () => $this->allowedPaymentMethods(), 'sales-form-catalogs'),
             'units' => UiCatalogCache::productUnits(),
             'categories' => UiCatalogCache::productCategories(),
-            'products' => Inertia::defer(fn () => UiCatalogCache::activeProductsWithThickness(), 'sales-form-catalogs'),
+            'products' => Inertia::defer(fn () => UiCatalogCache::activeProductsWithThicknessForUser($request->user()), 'sales-form-catalogs'),
             'coils' => Inertia::defer(fn () => $this->availableCoils($request), 'sales-form-catalogs'),
             'customers' => Inertia::defer(fn () => $workflow->customerHidden() ? [] : UiCatalogCache::recentCustomers(), 'sales-form-catalogs'),
             'sequencePreviews' => Inertia::defer(fn () => $this->sequencePreviews($request), 'sales-form-catalogs'),

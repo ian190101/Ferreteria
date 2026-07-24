@@ -86,11 +86,16 @@ class SalesDocumentPolicy
 
     public function isPaymentMethodAllowed(?string $code, string $flow = 'sales'): bool
     {
-        return in_array(strtolower((string) $code), $this->allowedPaymentMethodCodes($flow), true);
+        $code = strtolower((string) $code);
+
+        return collect($this->allowedPaymentMethodCodes($flow))
+            ->contains(fn (string $allowed) => $code === $allowed || str_starts_with($code, $allowed.'-'));
     }
 
     public function summary(): array
     {
+        $itemMerge = app(DocumentItemMergePolicy::class);
+
         return [
             'quotationLabel' => $this->quotationLabel(),
             'saleNoteLabel' => $this->saleNoteLabel(),
@@ -101,6 +106,7 @@ class SalesDocumentPolicy
             'visibleTemplateColumns' => $this->visibleTemplateColumns(),
             'allowedPaymentMethodCodes' => $this->allowedPaymentMethodCodes(),
             'paymentMethodsByFlow' => ActiveBusinessProfile::payload()['sales']['payment_methods_by_flow'] ?? [],
+            'itemMerge' => $itemMerge->summary(),
         ];
     }
 

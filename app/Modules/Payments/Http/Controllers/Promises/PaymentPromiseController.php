@@ -3,6 +3,7 @@
 namespace App\Modules\Payments\Http\Controllers\Promises;
 
 use App\Http\Controllers\Controller;
+use App\Modules\Finance\Services\FinancialLedgerService;
 use App\Modules\Payments\Http\Requests\Promises\ResolvePaymentPromiseRequest;
 use App\Modules\Payments\Http\Requests\Promises\StorePaymentPromiseRequest;
 use App\Modules\Payments\Models\PaymentPromise;
@@ -61,9 +62,9 @@ class PaymentPromiseController extends Controller
         ]);
     }
 
-    public function store(StorePaymentPromiseRequest $request): RedirectResponse
+    public function store(StorePaymentPromiseRequest $request, FinancialLedgerService $ledger): RedirectResponse
     {
-        DB::transaction(function () use ($request) {
+        DB::transaction(function () use ($request, $ledger) {
             $sale = Sale::query()
                 ->where('document_type', 'sale_note')
                 ->where('status', '!=', 'void')
@@ -93,14 +94,16 @@ class PaymentPromiseController extends Controller
                 'status' => PaymentPromise::STATUS_PENDING,
                 'notes' => $request->validated('notes'),
             ]);
+
+            $ledger->bumpFinancialCaches();
         });
 
         return redirect()->route('payments.promises.index')->with('success', 'Promesa de pago registrada correctamente.');
     }
 
-    public function resolve(ResolvePaymentPromiseRequest $request, PaymentPromise $promise): RedirectResponse
+    public function resolve(ResolvePaymentPromiseRequest $request, PaymentPromise $promise, FinancialLedgerService $ledger): RedirectResponse
     {
-        DB::transaction(function () use ($request, $promise) {
+        DB::transaction(function () use ($request, $promise, $ledger) {
             $promise = PaymentPromise::query()->lockForUpdate()->findOrFail($promise->id);
 
             abort_unless(BranchAccess::canAccess($request->user(), $promise->branch_id), 403);
@@ -119,6 +122,8 @@ class PaymentPromiseController extends Controller
                     $request->validated('notes'),
                 ]))),
             ]);
+
+            $ledger->bumpFinancialCaches();
         });
 
         return redirect()->route('payments.promises.index')->with('success', 'Promesa actualizada correctamente.');

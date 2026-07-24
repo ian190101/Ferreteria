@@ -9,6 +9,7 @@ class BusinessProfileConfiguration
         return [
             'modules' => [
                 'quotes' => true,
+                'dashboard' => true,
                 'alerts' => true,
                 'sales_notes' => true,
                 'pos' => false,
@@ -62,12 +63,17 @@ class BusinessProfileConfiguration
                 'credit_limit_policy' => 'disabled',
                 'default_credit_limit' => 0,
                 'inventory_discount_timing' => 'sale_note',
+                'item_merge_control_enabled' => true,
+                'item_merge_rule' => 'same_product_unit_and_measure',
                 'visible_columns' => ['description', 'model', 'quantity', 'unit', 'base', 'price', 'subtotal'],
                 'allowed_payment_methods' => ['cash', 'qr', 'transfer'],
                 'payment_methods_by_flow' => [
                     'sales' => ['cash', 'qr', 'transfer'],
                     'pos' => ['cash', 'qr'],
                     'collections' => ['cash', 'qr', 'transfer'],
+                    'purchases' => ['cash', 'qr', 'transfer'],
+                    'expenses' => ['cash', 'qr', 'transfer'],
+                    'payroll' => ['cash', 'qr', 'transfer'],
                 ],
             ],
             'purchases' => [
@@ -226,6 +232,11 @@ class BusinessProfileConfiguration
                 'transfer' => 'Transferencia',
                 'card' => 'Tarjeta',
                 'credit' => 'Credito',
+            ],
+            'itemMergeRules' => [
+                'same_product_unit_and_measure' => 'Fusionar solo si producto, unidad y medida son iguales',
+                'same_product_and_unit' => 'Fusionar si producto y unidad son iguales',
+                'never' => 'Nunca fusionar items automaticamente',
             ],
             'negativeStockPolicies' => [
                 'never' => 'Nunca permitir stock negativo',

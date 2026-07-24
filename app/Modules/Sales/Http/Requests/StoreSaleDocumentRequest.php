@@ -34,15 +34,30 @@ class StoreSaleDocumentRequest extends FormRequest
 
         $items = collect($this->input('items', []))
             ->map(function (array $item) use ($products): array {
-                if (($item['calculation_mode'] ?? null) === 'weight' && (blank($item['display_quantity'] ?? null) || (float) $item['display_quantity'] <= 0)) {
-                    $item['display_quantity'] = filled($item['meters'] ?? null) && (float) $item['meters'] > 0
-                        ? $item['meters']
-                        : 1;
+                $mode = $item['calculation_mode'] ?? 'direct';
+                $product = $products->get($item['product_id'] ?? null);
+
+                if ($mode === 'weight' && blank($item['meters'] ?? null)) {
+                    $item['meters'] = $this->positiveNumber($item['base_quantity'] ?? null)
+                        ?? $this->positiveNumber($item['display_quantity'] ?? null);
                 }
 
-                if (($item['calculation_mode'] ?? 'direct') === 'direct' && filled($item['display_quantity'] ?? null)) {
-                    $product = $products->get($item['product_id'] ?? null);
+                if ($mode === 'length' && blank($item['meters'] ?? null)) {
+                    $quantity = $this->positiveNumber($item['display_quantity'] ?? null);
+                    $length = $this->positiveNumber($item['base_quantity'] ?? null)
+                        ?? $this->positiveNumber($item['length'] ?? null);
+
+                    if ($quantity && $length) {
+                        $item['meters'] = round($quantity * $length, 3);
+                    }
+                }
+
+                if ($mode === 'direct' && filled($item['display_quantity'] ?? null)) {
                     $item['meters'] = round((float) $item['display_quantity'] * $this->unitFactorToBase($product, $item['display_unit_label'] ?? $item['unit_label'] ?? null), 3);
+                }
+
+                if (blank($item['display_quantity'] ?? null) && filled($item['meters'] ?? null)) {
+                    $item['display_quantity'] = $item['meters'];
                 }
 
                 return $item;
@@ -62,6 +77,15 @@ class StoreSaleDocumentRequest extends FormRequest
             ->first(fn ($row) => $row->is_active && $row->unit?->symbol === $unitSymbol);
 
         return $conversion ? (float) $conversion->factor_to_base : 1;
+    }
+
+    private function positiveNumber(mixed $value): ?float
+    {
+        if (blank($value) || ! is_numeric($value) || (float) $value <= 0) {
+            return null;
+        }
+
+        return (float) $value;
     }
 
     public function rules(): array

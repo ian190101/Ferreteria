@@ -8,6 +8,7 @@ use App\Modules\Inventory\Models\InventoryReservation;
 use App\Modules\Inventory\Models\Product;
 use App\Modules\Inventory\Models\ProductBranchStock;
 use App\Modules\Inventory\Models\ProductCoil;
+use App\Modules\Inventory\Services\InventoryQuantityService;
 use App\Modules\Sales\Models\Sale;
 use App\Support\BranchAccess;
 use App\Support\UiCatalogCache;
@@ -35,7 +36,7 @@ class InventoryReservationController extends Controller
         return Inertia::render('Inventory/Reservations/Index', [
             'reservations' => $reservations,
             'branches' => UiCatalogCache::activeBranchesForUser($request->user()),
-            'products' => UiCatalogCache::activeProducts(),
+            'products' => UiCatalogCache::activeProductsForUser($request->user()),
             'coils' => ProductCoil::query()
                 ->when(true, fn ($query) => BranchAccess::apply($query, $request->user()))
                 ->where('status', 'available')
@@ -58,9 +59,9 @@ class InventoryReservationController extends Controller
         ]);
     }
 
-    public function store(StoreInventoryReservationRequest $request): RedirectResponse
+    public function store(StoreInventoryReservationRequest $request, InventoryQuantityService $quantities): RedirectResponse
     {
-        DB::transaction(function () use ($request) {
+        DB::transaction(function () use ($request, $quantities) {
             $product = Product::query()->lockForUpdate()->findOrFail($request->integer('product_id'));
             $meters = round((float) $request->input('meters'), 3);
             $coilId = $request->filled('product_coil_id') ? $request->integer('product_coil_id') : null;
@@ -72,13 +73,13 @@ class InventoryReservationController extends Controller
                     ->lockForUpdate()
                     ->firstOrFail();
 
-                $freeMeters = (float) $stock->available_meters - (float) $stock->reserved_meters;
+                $freeMeters = $quantities->free($stock);
 
                 if ($freeMeters < $meters) {
                     throw ValidationException::withMessages(['meters' => 'El stock global libre no alcanza para reservar ese metraje.']);
                 }
 
-                $stock->update(['reserved_meters' => round((float) $stock->reserved_meters + $meters, 3)]);
+                $quantities->reserve($stock, $meters);
             } else {
                 $coil = ProductCoil::query()
                     ->where('branch_id', $request->integer('branch_id'))
@@ -114,19 +115,19 @@ class InventoryReservationController extends Controller
         return redirect()->route('inventory.reservations.index')->with('success', 'Reserva registrada correctamente.');
     }
 
-    public function release(Request $request, InventoryReservation $reservation): RedirectResponse
+    public function release(Request $request, InventoryReservation $reservation, InventoryQuantityService $quantities): RedirectResponse
     {
         abort_unless($request->user()?->can('inventory.reservations.manage'), 403);
         abort_unless(BranchAccess::canAccess($request->user(), (int) $reservation->branch_id), 403);
 
-        DB::transaction(function () use ($reservation) {
+        DB::transaction(function () use ($reservation, $quantities) {
             $reservation = InventoryReservation::query()->lockForUpdate()->findOrFail($reservation->id);
 
             if ($reservation->status !== InventoryReservation::STATUS_ACTIVE) {
                 throw ValidationException::withMessages(['reservation' => 'Solo se pueden liberar reservas activas.']);
             }
 
-            $this->releaseGlobalMetersIfNeeded($reservation);
+            $this->releaseGlobalMetersIfNeeded($reservation, $quantities);
 
             $reservation->update([
                 'status' => InventoryReservation::STATUS_RELEASED,
@@ -137,7 +138,7 @@ class InventoryReservationController extends Controller
         return redirect()->route('inventory.reservations.index')->with('success', 'Reserva liberada correctamente.');
     }
 
-    private function releaseGlobalMetersIfNeeded(InventoryReservation $reservation): void
+    private function releaseGlobalMetersIfNeeded(InventoryReservation $reservation, InventoryQuantityService $quantities): void
     {
         if ($reservation->product_coil_id) {
             return;
@@ -153,8 +154,6 @@ class InventoryReservationController extends Controller
             return;
         }
 
-        $stock->update([
-            'reserved_meters' => max(round((float) $stock->reserved_meters - (float) $reservation->meters, 3), 0),
-        ]);
+        $quantities->release($stock, (float) $reservation->meters);
     }
 }

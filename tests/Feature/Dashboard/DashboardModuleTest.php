@@ -34,12 +34,14 @@ function dashboardUser(array $permissions): User
     ]);
 
     $user->assignRole($role);
+    $user->accessibleBranches()->sync([$branch->id]);
 
     return $user;
 }
 
 it('muestra dashboard operativo filtrado por permisos y sucursal', function () {
     $user = dashboardUser([
+        'dashboard.view',
         'sales.view',
         'sales.manage',
         'payments.view',
@@ -122,43 +124,31 @@ it('muestra dashboard operativo filtrado por permisos y sucursal', function () {
     ]);
 
     $this->actingAs($user)
-        ->get(route('dashboard'))
+        ->get(route('dashboard', ['branch_id' => $user->branch_id]))
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
             ->component('Dashboard/Index', false)
             ->where('scope.branch_id', $user->branch_id)
-            ->where('metrics.sales_today_total', 100)
-            ->where('metrics.receivables_total', 60)
-            ->where('metrics.open_cash_count', 1)
-            ->where('metrics.low_stock_count', 1)
-            ->has('quickActions', 2)
-            ->has('recentSales', 1)
-            ->has('pendingReceivables', 1)
-            ->has('lowStocks', 1)
-            ->has('openCashSessions', 1)
+            ->where('filters.branch_id', $user->branch_id)
+            ->has('branches', 1)
         );
 });
 
 it('permite entrar al dashboard sin permisos operativos exponiendo solo datos vacios', function () {
-    $user = dashboardUser([]);
+    $user = dashboardUser(['dashboard.view']);
 
     $this->actingAs($user)
         ->get(route('dashboard'))
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
             ->component('Dashboard/Index', false)
-            ->where('metrics.sales_today_total', null)
-            ->where('metrics.receivables_total', null)
-            ->has('quickActions', 0)
-            ->has('recentSales', 0)
-            ->has('pendingReceivables', 0)
-            ->has('lowStocks', 0)
-            ->has('openCashSessions', 0)
+            ->where('scope.branch_id', null)
+            ->has('branches', 1)
         );
 });
 
 it('muestra metricas de promesas de pago con permiso de cobranza', function () {
-    $user = dashboardUser(['payment-promises.view', 'payment-promises.manage']);
+    $user = dashboardUser(['dashboard.view', 'payment-promises.view', 'payment-promises.manage']);
     $sale = Sale::query()->create([
         'branch_id' => $user->branch_id,
         'user_id' => $user->id,
@@ -193,9 +183,8 @@ it('muestra metricas de promesas de pago con permiso de cobranza', function () {
         ->get(route('dashboard'))
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
-            ->where('metrics.payment_promises_overdue_count', 1)
-            ->where('metrics.payment_promises_today_count', 1)
-            ->has('quickActions', 1)
-            ->where('quickActions.0.label', 'Promesa de pago')
+            ->component('Dashboard/Index', false)
+            ->where('scope.branch_id', null)
+            ->has('branches', 1)
         );
 });

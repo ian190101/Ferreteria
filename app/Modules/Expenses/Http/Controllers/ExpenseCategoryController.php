@@ -6,21 +6,21 @@ use App\Http\Controllers\Controller;
 use App\Modules\Expenses\Http\Requests\StoreExpenseCategoryRequest;
 use App\Modules\Expenses\Http\Requests\UpdateExpenseCategoryRequest;
 use App\Modules\Expenses\Models\ExpenseCategory;
-use App\Support\UiCatalogCache;
+use App\Modules\Finance\Services\FinancialLedgerService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Validation\ValidationException;
 
 class ExpenseCategoryController extends Controller
 {
-    public function store(StoreExpenseCategoryRequest $request): RedirectResponse
+    public function store(StoreExpenseCategoryRequest $request, FinancialLedgerService $ledger): RedirectResponse
     {
         ExpenseCategory::query()->create($request->validated());
-        UiCatalogCache::forgetFinancialCatalogs();
+        $ledger->bumpFinancialCaches();
 
         return redirect()->route('expenses.index')->with('success', 'Categoria de gasto creada correctamente.');
     }
 
-    public function update(UpdateExpenseCategoryRequest $request, ExpenseCategory $category): RedirectResponse
+    public function update(UpdateExpenseCategoryRequest $request, ExpenseCategory $category, FinancialLedgerService $ledger): RedirectResponse
     {
         if ($category->code === ExpenseCategory::SALARY_PAYROLL_CODE && $request->string('code')->toString() !== ExpenseCategory::SALARY_PAYROLL_CODE) {
             throw ValidationException::withMessages([
@@ -35,12 +35,12 @@ class ExpenseCategoryController extends Controller
         }
 
         $category->update($request->validated());
-        UiCatalogCache::forgetFinancialCatalogs();
+        $ledger->bumpFinancialCaches();
 
         return redirect()->route('expenses.index')->with('success', 'Categoria de gasto actualizada correctamente.');
     }
 
-    public function destroy(ExpenseCategory $category): RedirectResponse
+    public function destroy(ExpenseCategory $category, FinancialLedgerService $ledger): RedirectResponse
     {
         if ($category->code === ExpenseCategory::SALARY_PAYROLL_CODE) {
             throw ValidationException::withMessages([
@@ -50,7 +50,7 @@ class ExpenseCategoryController extends Controller
 
         $category->update(['is_active' => false]);
         $category->delete();
-        UiCatalogCache::forgetFinancialCatalogs();
+        $ledger->bumpFinancialCaches();
 
         return redirect()->route('expenses.index')->with('success', 'Categoria de gasto desactivada correctamente.');
     }

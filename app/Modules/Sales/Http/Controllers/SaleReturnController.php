@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Modules\Inventory\Models\InventoryMovement;
 use App\Modules\Inventory\Models\ProductBranchStock;
 use App\Modules\Inventory\Models\ProductCoil;
+use App\Modules\Inventory\Services\InventoryQuantityService;
 use App\Modules\Sales\Http\Requests\StoreSaleReturnRequest;
 use App\Modules\Sales\Models\Sale;
 use App\Modules\Sales\Models\SaleItem;
@@ -69,9 +70,9 @@ class SaleReturnController extends Controller
         ]);
     }
 
-    public function store(StoreSaleReturnRequest $request): RedirectResponse
+    public function store(StoreSaleReturnRequest $request, InventoryQuantityService $quantities): RedirectResponse
     {
-        DB::transaction(function () use ($request) {
+        DB::transaction(function () use ($request, $quantities) {
             $sale = Sale::query()
                 ->where('document_type', 'sale_note')
                 ->where('status', '!=', 'void')
@@ -131,7 +132,7 @@ class SaleReturnController extends Controller
                     'total' => $total,
                 ]);
 
-                $this->restoreInventory($sale, $saleReturn, $saleItem, $saleReturnItem, $request->user()->id);
+                $this->restoreInventory($sale, $saleReturn, $saleItem, $saleReturnItem, $request->user()->id, $quantities);
                 $totalAmount += $total;
             }
 
@@ -196,7 +197,7 @@ class SaleReturnController extends Controller
         return round(((float) $saleItem->discount_amount / (float) $saleItem->meters) * $meters, 2);
     }
 
-    private function restoreInventory(Sale $sale, SaleReturn $saleReturn, SaleItem $saleItem, SaleReturnItem $returnItem, int $userId): void
+    private function restoreInventory(Sale $sale, SaleReturn $saleReturn, SaleItem $saleItem, SaleReturnItem $returnItem, int $userId, InventoryQuantityService $quantities): void
     {
         if ($saleItem->product_coil_id) {
             $coil = ProductCoil::query()->lockForUpdate()->findOrFail($saleItem->product_coil_id);
@@ -221,10 +222,7 @@ class SaleReturnController extends Controller
             'reserved_meters' => 0,
         ]);
         $stock = ProductBranchStock::query()->whereKey($stock->id)->lockForUpdate()->firstOrFail();
-        $before = (float) $stock->available_meters;
-        $after = round($before + (float) $returnItem->meters, 3);
-
-        $stock->update(['available_meters' => $after]);
+        [$before, $after] = $quantities->increase($stock, (float) $returnItem->meters);
         $this->movement($sale, $saleReturn, $returnItem, $userId, $before, $after, null);
     }
 

@@ -685,7 +685,16 @@ class DashboardController extends Controller
 
     private function sectionCacheKey(string $section, int $userId, ?int $branchId, Carbon $from, Carbon $to): string
     {
-        return sprintf('dashboard:%s:v7:%s:%s:%s:%s:%s:%s', $section, SystemCacheInvalidator::operationalVersion(), AuthSessionCache::version(), $userId, $branchId ?? 'all', $from->toDateString(), $to->toDateString());
+        return sprintf('dashboard:%s:v8:%s:%s:%s:%s:%s:%s:%s', $section, SystemCacheInvalidator::operationalVersion(), $this->financialVersion(), AuthSessionCache::version(), $userId, $branchId ?? 'all', $from->toDateString(), $to->toDateString());
+    }
+
+    private function financialVersion(): string
+    {
+        return implode('-', [
+            Cache::get('banks:summary_version', 1),
+            Cache::get('expenses:summary_version', 1),
+            Cache::get('cash:summary_version', 1),
+        ]);
     }
 
     private function can(array $permissions, string $permission): bool

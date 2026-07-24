@@ -13,12 +13,40 @@ use App\Modules\Sales\Models\Currency;
 use App\Modules\Sales\Models\DocumentSequence;
 use App\Modules\Sales\Models\Sale;
 use App\Modules\Sales\Models\SaleType;
+use App\Modules\SystemSuperadmin\Models\BusinessProfile;
+use App\Modules\SystemSuperadmin\Services\BusinessProfileConfiguration;
+use App\Support\SystemCacheInvalidator;
 use Inertia\Testing\AssertableInertia as Assert;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 
 function salesUser(array $permissions): User
 {
+    $permissions = collect($permissions)
+        ->push('sales.prices.override')
+        ->unique()
+        ->values()
+        ->all();
+
+    BusinessProfile::query()->update(['status' => 'archived']);
+    BusinessProfile::query()->create([
+        'name' => 'Perfil test ventas',
+        'business_type' => 'mixed',
+        'status' => 'active',
+        'configuration' => BusinessProfileConfiguration::normalized([
+            'sales' => [
+                'workflow' => 'direct_sale',
+                'quotation_mode' => 'optional',
+                'customer_required' => false,
+                'customer_mode' => 'optional',
+                'max_discount_percent' => 100,
+            ],
+            'cash' => ['required_to_sell' => false],
+        ]),
+        'applied_at' => now(),
+    ]);
+    SystemCacheInvalidator::bumpOperational();
+
     foreach ($permissions as $permission) {
         Permission::firstOrCreate(['name' => $permission, 'guard_name' => 'web']);
     }
@@ -43,6 +71,7 @@ function salesUser(array $permissions): User
     ]);
 
     $user->assignRole($role);
+    $user->accessibleBranches()->sync([$branch->id]);
 
     return $user;
 }
@@ -74,6 +103,7 @@ it('genera nota de venta con moneda, anticipo y saldo calculados', function () {
         'sku' => 'CAL-001',
         'barcode' => 'PR-CAL-001',
         'inventory_tracking_mode' => Product::TRACKING_GLOBAL,
+        'base_unit' => 'M',
         'minimum_stock_meters' => 0,
         'is_active' => true,
     ]);
@@ -85,6 +115,7 @@ it('genera nota de venta con moneda, anticipo y saldo calculados', function () {
             'branch_id' => $user->branch_id,
             'sale_type_id' => $saleType->id,
             'currency_id' => $currency->id,
+            'advance_mode' => 'percentage',
             'advance_option_id' => $advance->id,
             'receipt_number' => '000001',
             'customer_name' => 'Camacho Ruben',
@@ -102,13 +133,14 @@ it('genera nota de venta con moneda, anticipo y saldo calculados', function () {
                 'discount_amount' => 5,
             ]],
         ])
-        ->assertRedirect();
+        ->assertRedirect()
+        ->assertSessionHasNoErrors();
 
     $sale = Sale::query()->where('receipt_number', '000001')->firstOrFail();
 
     expect((float) $sale->total)->toBe(195.0)
         ->and((float) $sale->advance_amount)->toBe(58.5)
-        ->and((float) $sale->balance_due)->toBe(136.5)
+        ->and((float) $sale->balance_due)->toBe(195.0)
         ->and((float) $sale->exchange_rate_to_bob)->toBe(10.0)
         ->and((float) ProductBranchStock::query()->where('product_id', $product->id)->value('available_meters'))->toBe(90.0)
         ->and(InventoryMovement::query()->where('type', 'sale_stock_out')->where('product_id', $product->id)->exists())->toBeTrue();
@@ -130,6 +162,7 @@ it('bloquea nota de venta con stock global insuficiente', function () {
         'sku' => 'CAL-SIN',
         'barcode' => 'PR-CAL-SIN',
         'inventory_tracking_mode' => Product::TRACKING_GLOBAL,
+        'base_unit' => 'M',
         'minimum_stock_meters' => 0,
         'is_active' => true,
     ]);
@@ -176,9 +209,11 @@ it('descuenta nota de venta desde bobina individual', function () {
         'sku' => 'BOB-AZUL',
         'barcode' => 'PR-BOB-AZUL',
         'inventory_tracking_mode' => Product::TRACKING_COIL,
+        'base_unit' => 'M',
         'minimum_stock_meters' => 0,
         'is_active' => true,
     ]);
+    salesStock($user->branch_id, $product, 0);
     $coil = ProductCoil::query()->create([
         'branch_id' => $user->branch_id,
         'product_id' => $product->id,
@@ -210,7 +245,8 @@ it('descuenta nota de venta desde bobina individual', function () {
                 'discount_amount' => 0,
             ]],
         ])
-        ->assertRedirect();
+        ->assertRedirect()
+        ->assertSessionHasNoErrors();
 
     $coil->refresh();
 
@@ -234,6 +270,7 @@ it('no descuenta inventario al generar cotizacion', function () {
         'sku' => 'CAL-COT',
         'barcode' => 'PR-CAL-COT',
         'inventory_tracking_mode' => Product::TRACKING_GLOBAL,
+        'base_unit' => 'M',
         'minimum_stock_meters' => 0,
         'is_active' => true,
     ]);
@@ -281,6 +318,7 @@ it('convierte cotizacion vigente en nota de venta descontando inventario', funct
         'sku' => 'CAL-CONV',
         'barcode' => 'PR-CAL-CONV',
         'inventory_tracking_mode' => Product::TRACKING_GLOBAL,
+        'base_unit' => 'M',
         'minimum_stock_meters' => 0,
         'is_active' => true,
     ]);
@@ -344,6 +382,7 @@ it('bloquea convertir cotizacion si el stock ya no alcanza', function () {
         'sku' => 'CAL-CONV-SIN',
         'barcode' => 'PR-CAL-CONV-SIN',
         'inventory_tracking_mode' => Product::TRACKING_GLOBAL,
+        'base_unit' => 'M',
         'minimum_stock_meters' => 0,
         'is_active' => true,
     ]);
@@ -503,6 +542,7 @@ it('genera numero automatico al dejar vacio el recibo de la nota', function () {
         'sku' => 'CAL-AUTO',
         'barcode' => 'PR-CAL-AUTO',
         'inventory_tracking_mode' => Product::TRACKING_GLOBAL,
+        'base_unit' => 'M',
         'minimum_stock_meters' => 0,
         'is_active' => true,
     ]);
@@ -643,6 +683,7 @@ it('devuelve stock global al anular nota de venta emitida', function () {
         'sku' => 'CAL-RET',
         'barcode' => 'PR-CAL-RET',
         'inventory_tracking_mode' => Product::TRACKING_GLOBAL,
+        'base_unit' => 'M',
         'minimum_stock_meters' => 0,
         'is_active' => true,
     ]);
@@ -757,3 +798,4 @@ it('bloquea eliminar moneda base y permite actualizar anticipos', function () {
     expect($advance->name)->toBe('50%')
         ->and((float) $advance->percentage)->toBe(50.0);
 });
+

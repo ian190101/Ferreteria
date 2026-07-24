@@ -43,9 +43,11 @@ use App\Modules\Sales\Models\ReceiptTemplate;
 use App\Modules\Sales\Models\Sale;
 use App\Modules\Sales\Models\SaleReturn;
 use App\Modules\Sales\Models\SaleType;
+use App\Modules\Settings\Models\SystemSetting;
 use App\Modules\Sales\Events\SaleNoteIssued;
 use App\Modules\Sales\Listeners\ProcessSaleNoteIssued;
 use App\Support\AuthSessionCache;
+use App\Support\DecimalPrecision;
 use App\Support\SystemCacheInvalidator;
 use App\Support\UiCatalogCache;
 use Illuminate\Support\Facades\Event;
@@ -93,16 +95,46 @@ class AppServiceProvider extends ServiceProvider
 
     private function registerCacheInvalidationHooks(): void
     {
-        $models = [
-            BankAccount::class,
-            BankTransaction::class,
+        $models = collect([
+            ...$this->inventoryCacheModels(),
+            ...$this->financialCacheModels(),
+            ...$this->salesCacheModels(),
             Branch::class,
             BranchSetting::class,
-            CashRegisterSession::class,
-            Customer::class,
-            CustomerType::class,
-            Expense::class,
-            ExpenseCategory::class,
+            Supplier::class,
+            SystemSetting::class,
+        ])->unique()->values()->all();
+
+        foreach ($models as $model) {
+            $model::saved(fn () => $this->invalidateRuntimeCaches($model));
+            $model::deleted(fn () => $this->invalidateRuntimeCaches($model));
+        }
+    }
+
+    private function invalidateRuntimeCaches(string $model): void
+    {
+        SystemCacheInvalidator::bumpOperational();
+
+        if (in_array($model, $this->inventoryCacheModels(), true)) {
+            UiCatalogCache::forgetProductCatalogs();
+        }
+
+        if (in_array($model, $this->financialCacheModels(), true)) {
+            UiCatalogCache::forgetFinancialCatalogs();
+        }
+
+        if (in_array($model, $this->salesCacheModels(), true)) {
+            UiCatalogCache::forgetSalesCatalogs();
+        }
+
+        if ($model === SystemSetting::class) {
+            DecimalPrecision::forget();
+        }
+    }
+
+    private function inventoryCacheModels(): array
+    {
+        return [
             InventoryAdjustment::class,
             InventoryMovement::class,
             InventoryReservation::class,
@@ -114,39 +146,46 @@ class AppServiceProvider extends ServiceProvider
             ProductCoil::class,
             ProductUnit::class,
             Thickness::class,
-            CreditNote::class,
-            PaymentMethod::class,
-            PaymentPromise::class,
-            PurchasePayment::class,
-            SalePayment::class,
             ProductionOrder::class,
             Purchase::class,
             PurchaseOrder::class,
             PurchaseOrderReceipt::class,
-            Supplier::class,
+            Sale::class,
+            SaleReturn::class,
+        ];
+    }
+
+    private function financialCacheModels(): array
+    {
+        return [
+            BankAccount::class,
+            BankTransaction::class,
+            CashRegisterSession::class,
+            CreditNote::class,
+            Expense::class,
+            ExpenseCategory::class,
+            PaymentMethod::class,
+            PurchasePayment::class,
+            SalePayment::class,
+        ];
+    }
+
+    private function salesCacheModels(): array
+    {
+        return [
             AdvanceOption::class,
             Currency::class,
+            Customer::class,
+            CustomerType::class,
             DeliveryDriver::class,
             DeliveryNote::class,
             DeliveryTruck::class,
             DocumentSequence::class,
+            PaymentPromise::class,
             ReceiptTemplate::class,
             Sale::class,
             SaleReturn::class,
             SaleType::class,
         ];
-
-        foreach ($models as $model) {
-            $model::saved(fn () => $this->invalidateRuntimeCaches());
-            $model::deleted(fn () => $this->invalidateRuntimeCaches());
-        }
-    }
-
-    private function invalidateRuntimeCaches(): void
-    {
-        SystemCacheInvalidator::bumpOperational();
-        UiCatalogCache::forgetProductCatalogs();
-        UiCatalogCache::forgetFinancialCatalogs();
-        UiCatalogCache::forgetSalesCatalogs();
     }
 }

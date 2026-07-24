@@ -4,10 +4,12 @@ namespace App\Modules\Payments\Http\Controllers;
 
 use App\Http\Controllers\Controller;
 use App\Modules\Banks\Services\BankReconciliationService;
+use App\Modules\Finance\Services\FinancialLedgerService;
 use App\Modules\Payments\Http\Requests\StorePurchasePaymentRequest;
 use App\Modules\Payments\Http\Requests\VoidPurchasePaymentRequest;
 use App\Modules\Payments\Models\PurchasePayment;
 use App\Modules\Purchases\Models\Purchase;
+use App\Modules\Sales\Services\SalesDocumentPolicy;
 use App\Support\BranchAccess;
 use App\Support\UiCatalogCache;
 use Illuminate\Http\RedirectResponse;
@@ -20,6 +22,11 @@ class PurchasePaymentController extends Controller
 {
     public function index(Request $request): Response
     {
+        $documentPolicy = app(SalesDocumentPolicy::class);
+        $allowedMethods = UiCatalogCache::activePaymentMethods()
+            ->filter(fn ($method) => $documentPolicy->isPaymentMethodAllowed($method->code, 'purchases'))
+            ->values();
+
         $payments = PurchasePayment::query()
             ->with(['purchase:id,branch_id,supplier_id,document_number,total_amount,paid_amount,balance_due,payment_status', 'purchase.supplier:id,name', 'branch:id,name', 'user:id,name', 'method:id,name'])
             ->when(true, fn ($query) => BranchAccess::apply($query, $request->user()))
@@ -43,14 +50,14 @@ class PurchasePaymentController extends Controller
             'payments' => $payments,
             'payables' => $payables,
             'branches' => UiCatalogCache::activeBranchesForUser($request->user()),
-            'methods' => UiCatalogCache::activePaymentMethods(),
+            'methods' => $allowedMethods,
             'filters' => $request->only(['branch_id', 'payment_method_id', 'from', 'to', 'per_page']),
         ]);
     }
 
-    public function store(StorePurchasePaymentRequest $request, BankReconciliationService $banks): RedirectResponse
+    public function store(StorePurchasePaymentRequest $request, BankReconciliationService $banks, FinancialLedgerService $ledger): RedirectResponse
     {
-        $payment = DB::transaction(function () use ($request, $banks) {
+        $payment = DB::transaction(function () use ($request, $banks, $ledger) {
             $purchase = Purchase::query()->lockForUpdate()->findOrFail($request->integer('purchase_id'));
             $amount = round((float) $request->input('amount'), 2);
 
@@ -74,6 +81,7 @@ class PurchasePaymentController extends Controller
             ]);
 
             $banks->recordPurchasePayment($payment);
+            $ledger->bumpFinancialCaches();
 
             return $payment;
         });
@@ -83,11 +91,11 @@ class PurchasePaymentController extends Controller
             ->with('success', "Pago de compra {$payment->id} registrado correctamente.");
     }
 
-    public function void(VoidPurchasePaymentRequest $request, PurchasePayment $payment, BankReconciliationService $banks): RedirectResponse
+    public function void(VoidPurchasePaymentRequest $request, PurchasePayment $payment, BankReconciliationService $banks, FinancialLedgerService $ledger): RedirectResponse
     {
         abort_unless(BranchAccess::canAccess($request->user(), (int) $payment->branch_id), 403);
 
-        DB::transaction(function () use ($request, $payment, $banks) {
+        DB::transaction(function () use ($request, $payment, $banks, $ledger) {
             $payment = PurchasePayment::query()->lockForUpdate()->findOrFail($payment->id);
             $purchase = Purchase::query()->lockForUpdate()->findOrFail($payment->purchase_id);
             $voidReason = 'Anulado por '.$request->user()->name.': '.$request->string('reason')->toString();
@@ -108,6 +116,8 @@ class PurchasePaymentController extends Controller
                 'balance_due' => $newBalance,
                 'payment_status' => $this->statusForBalance($newBalance, (float) $purchase->total_amount),
             ]);
+
+            $ledger->bumpFinancialCaches();
         });
 
         return redirect()->back()->with('success', 'Pago de compra anulado correctamente.');

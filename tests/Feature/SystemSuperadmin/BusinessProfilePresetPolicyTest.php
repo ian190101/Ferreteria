@@ -59,6 +59,9 @@ it('aplica el preset ferreteria con cotizacion y nota', function () {
             'sales' => ['cash', 'qr'],
             'pos' => ['cash'],
             'collections' => ['cash', 'qr'],
+            'purchases' => ['cash', 'qr', 'transfer'],
+            'expenses' => ['cash', 'qr', 'transfer'],
+            'payroll' => ['cash', 'qr', 'transfer'],
         ]);
 });
 

@@ -9,6 +9,7 @@ use App\Modules\Inventory\Models\InventoryTransfer;
 use App\Modules\Inventory\Models\Product;
 use App\Modules\Inventory\Models\ProductBranchStock;
 use App\Modules\Inventory\Models\ProductCoil;
+use App\Modules\Inventory\Services\InventoryQuantityService;
 use App\Support\BranchAccess;
 use App\Support\UiCatalogCache;
 use Illuminate\Http\RedirectResponse;
@@ -38,7 +39,7 @@ class InventoryTransferController extends Controller
         return Inertia::render('Inventory/Transfers/Index', [
             'transfers' => $transfers,
             'branches' => UiCatalogCache::activeBranchesForUser($request->user()),
-            'products' => UiCatalogCache::activeProducts(['id', 'name', 'sku', 'inventory_tracking_mode', 'base_unit', 'product_unit_id']),
+            'products' => UiCatalogCache::activeProductsForUser($request->user(), ['id', 'name', 'sku', 'inventory_tracking_mode', 'base_unit', 'product_unit_id']),
             'coils' => ProductCoil::query()
                 ->when(true, fn ($query) => BranchAccess::apply($query, $request->user()))
                 ->where('status', 'available')
@@ -49,9 +50,9 @@ class InventoryTransferController extends Controller
         ]);
     }
 
-    public function store(StoreInventoryTransferRequest $request): RedirectResponse
+    public function store(StoreInventoryTransferRequest $request, InventoryQuantityService $quantities): RedirectResponse
     {
-        DB::transaction(function () use ($request) {
+        DB::transaction(function () use ($request, $quantities) {
             $product = Product::query()->findOrFail($request->integer('product_id'));
             $meters = round((float) $request->input('meters'), 3);
 
@@ -76,13 +77,13 @@ class InventoryTransferController extends Controller
                 return;
             }
 
-            $this->transferGlobalStock($transfer, $request->user()->id);
+            $this->transferGlobalStock($transfer, $request->user()->id, $quantities);
         });
 
         return redirect()->route('inventory.transfers.index')->with('success', 'Transferencia de inventario registrada correctamente.');
     }
 
-    private function transferGlobalStock(InventoryTransfer $transfer, int $userId): void
+    private function transferGlobalStock(InventoryTransfer $transfer, int $userId, InventoryQuantityService $quantities): void
     {
         $meters = (float) $transfer->meters;
         $sourceStock = ProductBranchStock::query()
@@ -91,7 +92,7 @@ class InventoryTransferController extends Controller
             ->lockForUpdate()
             ->firstOrFail();
 
-        $sourceBefore = (float) $sourceStock->available_meters;
+        $sourceBefore = $quantities->available($sourceStock);
         $sourceAfter = round($sourceBefore - $meters, 3);
 
         if ($sourceAfter < 0) {
@@ -100,7 +101,7 @@ class InventoryTransferController extends Controller
             ]);
         }
 
-        $sourceStock->update(['available_meters' => $sourceAfter]);
+        [, $sourceAfter] = $quantities->decrease($sourceStock, $meters);
 
         $destinationStock = ProductBranchStock::query()->firstOrCreate([
             'branch_id' => $transfer->to_branch_id,
@@ -111,9 +112,7 @@ class InventoryTransferController extends Controller
         ]);
 
         $destinationStock = ProductBranchStock::query()->whereKey($destinationStock->id)->lockForUpdate()->firstOrFail();
-        $destinationBefore = (float) $destinationStock->available_meters;
-        $destinationAfter = round($destinationBefore + $meters, 3);
-        $destinationStock->update(['available_meters' => $destinationAfter]);
+        [$destinationBefore, $destinationAfter] = $quantities->increase($destinationStock, $meters);
 
         $this->createMovement($transfer, $userId, $transfer->from_branch_id, 'transfer_out_global', -$meters, $sourceBefore, $sourceAfter, null);
         $this->createMovement($transfer, $userId, $transfer->to_branch_id, 'transfer_in_global', $meters, $destinationBefore, $destinationAfter, null);

@@ -9,6 +9,7 @@ use App\Modules\Inventory\Models\InventoryMovement;
 use App\Modules\Inventory\Models\Product;
 use App\Modules\Inventory\Models\ProductBranchStock;
 use App\Modules\Inventory\Models\ProductCoil;
+use App\Modules\Inventory\Services\InventoryQuantityService;
 use App\Support\BranchAccess;
 use App\Support\UiCatalogCache;
 use Illuminate\Http\RedirectResponse;
@@ -34,7 +35,7 @@ class InventoryAdjustmentController extends Controller
         return Inertia::render('Inventory/Adjustments/Index', [
             'adjustments' => $adjustments,
             'branches' => UiCatalogCache::activeBranchesForUser($request->user()),
-            'products' => UiCatalogCache::activeProducts(),
+            'products' => UiCatalogCache::activeProductsForUser($request->user()),
             'coils' => ProductCoil::query()
                 ->when(true, fn ($query) => BranchAccess::apply($query, $request->user()))
                 ->where('status', 'available')
@@ -45,16 +46,16 @@ class InventoryAdjustmentController extends Controller
         ]);
     }
 
-    public function store(StoreInventoryAdjustmentRequest $request): RedirectResponse
+    public function store(StoreInventoryAdjustmentRequest $request, InventoryQuantityService $quantities): RedirectResponse
     {
-        DB::transaction(function () use ($request) {
+        DB::transaction(function () use ($request, $quantities) {
             $product = Product::query()->findOrFail($request->integer('product_id'));
             $meters = round((float) $request->input('meters'), 3);
             $delta = $request->input('type') === InventoryAdjustment::TYPE_DECREASE ? -$meters : $meters;
 
             [$before, $after, $coilId] = $product->inventory_tracking_mode === Product::TRACKING_COIL
                 ? $this->adjustCoil($request->integer('product_coil_id'), $delta)
-                : $this->adjustGlobal($request->integer('branch_id'), $product->id, $delta);
+                : $this->adjustGlobal($request->integer('branch_id'), $product->id, $delta, $quantities);
 
             $adjustment = InventoryAdjustment::query()->create([
                 'branch_id' => $request->integer('branch_id'),
@@ -104,7 +105,7 @@ class InventoryAdjustmentController extends Controller
         return [$before, $after, $coil->id];
     }
 
-    private function adjustGlobal(int $branchId, int $productId, float $delta): array
+    private function adjustGlobal(int $branchId, int $productId, float $delta, InventoryQuantityService $quantities): array
     {
         $stock = ProductBranchStock::query()->firstOrCreate([
             'branch_id' => $branchId,
@@ -115,9 +116,9 @@ class InventoryAdjustmentController extends Controller
         ]);
 
         $stock = ProductBranchStock::query()->whereKey($stock->id)->lockForUpdate()->firstOrFail();
-        $before = (float) $stock->available_meters;
-        $after = round($before + $delta, 3);
-        $stock->update(['available_meters' => $after]);
+        [$before, $after] = $delta >= 0
+            ? $quantities->increase($stock, $delta)
+            : $quantities->decrease($stock, abs($delta));
 
         return [$before, $after, null];
     }

@@ -37,14 +37,24 @@ const catalogs = {
         description: 'Formato numerico global y por modulo.',
         columns: [],
     },
+    item_merge: {
+        title: 'Reglas de items',
+        description: 'Define si el mismo producto puede repetirse en documentos cuando cambia su largo, medida o caracteristicas.',
+        columns: [],
+    },
 };
 
-export default function Settings({ saleTypes, currencies, advanceOptions, documentSequences, branches, decimalPrecision }) {
+export default function Settings({ saleTypes, currencies, advanceOptions, documentSequences, branches, decimalPrecision, documentPolicy = {}, itemMergeSetting = {} }) {
     const [editing, setEditing] = useState(null);
     const decimalFormat = useDecimalFormatter('sales');
     const { data, setData, post, put, processing, errors, reset, clearErrors } = useForm(emptyForm());
     const decimalForm = useForm({
         decimal_precision: decimalDefaults(decimalPrecision),
+    });
+    const itemMergeForm = useForm({
+        sales_item_merge: {
+            allow_same_product_different_measure: itemMergeSetting.allow_same_product_different_measure ?? true,
+        },
     });
     const currentCatalog = catalogs[data.kind];
     const rowsByKind = useMemo(() => ({
@@ -59,6 +69,12 @@ export default function Settings({ saleTypes, currencies, advanceOptions, docume
 
         if (data.kind === 'decimals') {
             decimalForm.put(route('sales.settings.decimals.update'), { preserveScroll: true });
+
+            return;
+        }
+
+        if (data.kind === 'item_merge') {
+            itemMergeForm.put(route('sales.settings.item-merge.update'), { preserveScroll: true });
 
             return;
         }
@@ -141,6 +157,7 @@ export default function Settings({ saleTypes, currencies, advanceOptions, docume
                         <option value="advance_option">Anticipo</option>
                         <option value="document_sequence">Secuencia</option>
                         <option value="decimals">Decimales</option>
+                        {documentPolicy.itemMerge?.controlEnabled ? <option value="item_merge">Reglas de items</option> : null}
                     </SelectField>
                     {data.kind === 'decimals' ? (
                         <div className="sm:col-span-3">
@@ -150,6 +167,35 @@ export default function Settings({ saleTypes, currencies, advanceOptions, docume
                             />
                             <div className="mt-4">
                                 <PrimaryButton disabled={decimalForm.processing}>Guardar decimales</PrimaryButton>
+                            </div>
+                        </div>
+                    ) : data.kind === 'item_merge' ? (
+                        <div className="sm:col-span-3">
+                            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-white/5">
+                                <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                                    <div>
+                                        <h3 className="text-sm font-semibold text-slate-950 dark:text-white">Permitir mismo producto con diferente medida</h3>
+                                        <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-600 dark:text-slate-300">
+                                            Activo: el sistema solo fusiona items cuando producto, unidad, calculo, largo/medida y caracteristicas son iguales. Sirve para vender la misma calamina en 20 m, 15 m y 5 m como lineas separadas.
+                                            Desactivado: si el producto y la unidad son iguales, se suma la cantidad en una sola linea.
+                                        </p>
+                                    </div>
+                                    <label className="inline-flex shrink-0 cursor-pointer items-center gap-3 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200">
+                                        <input
+                                            type="checkbox"
+                                            checked={itemMergeForm.data.sales_item_merge.allow_same_product_different_measure}
+                                            onChange={(event) => itemMergeForm.setData('sales_item_merge', {
+                                                ...itemMergeForm.data.sales_item_merge,
+                                                allow_same_product_different_measure: event.target.checked,
+                                            })}
+                                            className="h-4 w-4 rounded border-slate-300 text-brand-primary focus:ring-brand-primary"
+                                        />
+                                        {itemMergeForm.data.sales_item_merge.allow_same_product_different_measure ? 'Permitir medidas distintas' : 'Fusionar por producto/unidad'}
+                                    </label>
+                                </div>
+                            </div>
+                            <div className="mt-4">
+                                <PrimaryButton disabled={itemMergeForm.processing}>Guardar reglas de items</PrimaryButton>
                             </div>
                         </div>
                     ) : (
