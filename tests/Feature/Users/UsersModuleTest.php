@@ -2,6 +2,7 @@
 
 use App\Models\User;
 use App\Modules\Branches\Models\Branch;
+use App\Support\SystemRoles;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 
@@ -78,4 +79,24 @@ it('crea usuarios con sucursal principal, multiples sucursales y rol', function 
     expect($user->branch_id)->toBe($branch->id)
         ->and($user->accessibleBranches()->pluck('branches.id')->all())->toEqualCanonicalizing([$branch->id, $secondaryBranch->id])
         ->and($user->hasRole('operador-test'))->toBeTrue();
+});
+
+it('oculta el usuario interno sistemasuperadmin en gestion de usuarios', function () {
+    $admin = usersAdmin(['users.view', 'users.manage']);
+    $systemRole = Role::firstOrCreate(['name' => SystemRoles::SYSTEM_SUPERADMIN, 'guard_name' => 'web']);
+    $master = User::factory()->create([
+        'name' => 'Mr. Robot Bolivia',
+        'email' => 'mrrobotbolivia@gmail.com',
+        'branch_id' => $admin->branch_id,
+    ]);
+    $master->assignRole($systemRole);
+
+    $this->actingAs($admin)
+        ->get(route('users.index'))
+        ->assertOk()
+        ->assertDontSee('mrrobotbolivia@gmail.com');
+
+    $this->actingAs($admin)
+        ->get(route('users.edit', $master))
+        ->assertNotFound();
 });

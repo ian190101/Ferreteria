@@ -28,6 +28,7 @@ use App\Modules\SystemSuperadmin\Services\ActiveBusinessProfile;
 use App\Support\BranchAccess;
 use App\Models\Audit;
 use App\Models\User;
+use App\Support\SystemRoles;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -1015,6 +1016,7 @@ class ExportDatasetService
     {
         return User::query()
             ->with(['branch:id,name', 'accessibleBranches:id,name', 'roles:id,name'])
+            ->withoutSystemSuperadmins()
             ->when(! $request->user()->isSuperAdministrator(), fn ($query) => $query->whereKey($request->user()->id))
             ->when($branchId, fn ($query) => $query->where(function ($nested) use ($branchId) {
                 $nested->where('branch_id', $branchId)
@@ -1040,6 +1042,7 @@ class ExportDatasetService
     {
         return Audit::query()
             ->with('user:id,name,email')
+            ->where(fn ($query) => $this->withoutSystemUserAudits($query))
             ->when(! $request->user()->isSuperAdministrator(), fn ($query) => $query->where('user_id', $request->user()->id))
             ->whereBetween('created_at', [$from, $to])
             ->latest('id')
@@ -1055,6 +1058,22 @@ class ExportDatasetService
                 'ip' => $audit->ip_address ?? '-',
             ])
             ->all();
+    }
+
+    private function withoutSystemUserAudits($query)
+    {
+        $reservedUserIds = User::query()
+            ->whereHas('roles', fn ($roleQuery) => $roleQuery->whereIn('name', SystemRoles::reserved()))
+            ->select('id');
+
+        return $query
+            ->where(fn ($nested) => $nested
+                ->whereNull('user_id')
+                ->orWhereNotIn('user_id', clone $reservedUserIds))
+            ->where(fn ($nested) => $nested
+                ->where('auditable_type', '!=', User::class)
+                ->orWhereNull('auditable_type')
+                ->orWhereNotIn('auditable_id', clone $reservedUserIds));
     }
 
     private function salaryFrequency(?string $frequency): string

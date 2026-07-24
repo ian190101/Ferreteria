@@ -22,7 +22,7 @@ class UserController extends Controller
     {
         $users = User::query()
             ->with(['branch:id,name', 'accessibleBranches:id,name', 'roles:id,name'])
-            ->whereDoesntHave('roles', fn ($query) => $query->whereIn('name', SystemRoles::reserved()))
+            ->withoutSystemSuperadmins()
             ->when($request->string('search')->isNotEmpty(), function ($query) use ($request) {
                 $search = $request->string('search')->toString();
 

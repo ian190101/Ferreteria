@@ -5,6 +5,7 @@ namespace App\Modules\Audit\Http\Controllers;
 use App\Http\Controllers\Controller;
 use App\Models\Audit;
 use App\Models\User;
+use App\Support\SystemRoles;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -17,6 +18,7 @@ class AuditLogController extends Controller
 
         $audits = Audit::query()
             ->with('user:id,name,email')
+            ->where(fn ($query) => $this->withoutSystemUserAudits($query))
             ->when(! $user->isSuperAdministrator(), fn ($query) => $query->where('user_id', $user->id))
             ->when($request->string('event')->isNotEmpty(), fn ($query) => $query->where('event', $request->string('event')->toString()))
             ->when($user->isSuperAdministrator() && $request->integer('user_id'), fn ($query, $userId) => $query->where('user_id', $userId))
@@ -46,6 +48,7 @@ class AuditLogController extends Controller
             'audits' => $audits,
             'filters' => $request->only(['event', 'user_id', 'auditable_type', 'ip_address', 'from', 'to', 'per_page']),
             'users' => User::query()
+                ->withoutSystemSuperadmins()
                 ->when(! $user->isSuperAdministrator(), fn ($query) => $query->whereKey($user->id))
                 ->orderBy('name')
                 ->get(['id', 'name', 'email']),
@@ -55,6 +58,7 @@ class AuditLogController extends Controller
                 ->orderBy('event')
                 ->pluck('event'),
             'auditableTypes' => Audit::query()
+                ->where(fn ($query) => $this->withoutSystemUserAudits($query))
                 ->when(! $user->isSuperAdministrator(), fn ($query) => $query->where('user_id', $user->id))
                 ->select('auditable_type')
                 ->distinct()
@@ -64,6 +68,22 @@ class AuditLogController extends Controller
                 ->values(),
             'canViewGlobal' => $user->isSuperAdministrator(),
         ]);
+    }
+
+    private function withoutSystemUserAudits($query)
+    {
+        $reservedUserIds = User::query()
+            ->whereHas('roles', fn ($roleQuery) => $roleQuery->whereIn('name', SystemRoles::reserved()))
+            ->select('id');
+
+        return $query
+            ->where(fn ($nested) => $nested
+                ->whereNull('user_id')
+                ->orWhereNotIn('user_id', clone $reservedUserIds))
+            ->where(fn ($nested) => $nested
+                ->where('auditable_type', '!=', User::class)
+                ->orWhereNull('auditable_type')
+                ->orWhereNotIn('auditable_id', clone $reservedUserIds));
     }
 
     private function eventLabel(?string $event): string

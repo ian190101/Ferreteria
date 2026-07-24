@@ -5,8 +5,10 @@ namespace App\Models;
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
 use App\Modules\Branches\Models\Branch;
 use App\Support\AuthSessionCache;
+use App\Support\SystemRoles;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
@@ -87,5 +89,11 @@ class User extends Authenticatable implements Auditable
     public function accessibleBranchIds(): array
     {
         return AuthSessionCache::accessibleBranchIdsFor($this);
+    }
+
+    public function scopeWithoutSystemSuperadmins(Builder $query): Builder
+    {
+        return $query->whereDoesntHave('roles', fn (Builder $roleQuery) => $roleQuery
+            ->whereIn('name', SystemRoles::reserved()));
     }
 }

@@ -93,6 +93,7 @@ class BankController extends Controller
                 ->limit(80)
                 ->get(['id', 'branch_id', 'opened_by', 'opened_at', 'closed_at', 'status']),
             'users' => User::query()
+                ->withoutSystemSuperadmins()
                 ->whereIn('id', BankTransaction::query()
                     ->when(true, fn ($query) => BranchAccess::apply($query, $user))
                     ->when(! $isSuperAdministrator, fn ($query) => $query->where('user_id', $user->id))
