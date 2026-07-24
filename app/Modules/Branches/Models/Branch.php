@@ -3,6 +3,7 @@
 namespace App\Modules\Branches\Models;
 
 use App\Models\User;
+use App\Modules\Billing\Models\SiatBranchSetting;
 use App\Modules\Shared\Models\AuditableModel;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
@@ -30,6 +31,11 @@ class Branch extends AuditableModel
     public function setting(): HasOne
     {
         return $this->hasOne(BranchSetting::class);
+    }
+
+    public function siatSetting(): HasOne
+    {
+        return $this->hasOne(SiatBranchSetting::class);
     }
 
     public function users(): HasMany

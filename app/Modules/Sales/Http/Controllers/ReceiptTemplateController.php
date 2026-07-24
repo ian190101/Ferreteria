@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Modules\Sales\Http\Requests\StoreReceiptTemplateRequest;
 use App\Modules\Sales\Http\Requests\UpdateReceiptTemplateRequest;
 use App\Modules\Sales\Models\ReceiptTemplate;
+use App\Modules\Sales\Services\SalesDocumentPolicy;
 use App\Support\BranchAccess;
 use App\Support\UiCatalogCache;
 use Illuminate\Http\RedirectResponse;
@@ -25,6 +26,7 @@ class ReceiptTemplateController extends Controller
                 ->when(! $request->user()->isSuperAdministrator(), fn ($query) => $query->whereIn('branch_id', $request->user()->accessibleBranchIds() ?: [-1]))
                 ->latest('id')
                 ->paginate(15),
+            'documentPolicy' => app(SalesDocumentPolicy::class)->summary(),
         ]);
     }
 
@@ -35,6 +37,7 @@ class ReceiptTemplateController extends Controller
             'branches' => $this->branches($request),
             'defaultLayout' => $this->layoutWithCatalogFields(ReceiptTemplate::defaultLayout()),
             'attributeFields' => $this->attributeFields(),
+            'documentPolicy' => app(SalesDocumentPolicy::class)->summary(),
         ]);
     }
 
@@ -72,6 +75,7 @@ class ReceiptTemplateController extends Controller
             'branches' => $this->branches($request),
             'defaultLayout' => $this->layoutWithCatalogFields(ReceiptTemplate::defaultLayout()),
             'attributeFields' => $this->attributeFields(),
+            'documentPolicy' => app(SalesDocumentPolicy::class)->summary(),
         ]);
     }
 

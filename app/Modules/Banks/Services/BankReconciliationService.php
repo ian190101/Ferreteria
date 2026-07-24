@@ -9,6 +9,7 @@ use App\Modules\Expenses\Models\Expense;
 use App\Modules\Payments\Models\PaymentMethod;
 use App\Modules\Payments\Models\PurchasePayment;
 use App\Modules\Payments\Models\SalePayment;
+use App\Modules\SystemSuperadmin\Services\ActiveBusinessProfile;
 use App\Support\UiCatalogCache;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Cache;
@@ -131,6 +132,13 @@ class BankReconciliationService
             return;
         }
 
+        $bankRules = ActiveBusinessProfile::payload()['banks'] ?? [];
+        $reconciliationMode = (string) ($bankRules['reconciliation_mode'] ?? 'automatic');
+
+        if ($reconciliationMode === 'disabled') {
+            return;
+        }
+
         $account = $this->activeAccountForBranch($branchId);
         $amount = round($amount, 2);
 
@@ -145,7 +153,7 @@ class BankReconciliationService
             'reference' => $this->limit($reference, 120),
             'description' => $this->limit($description, 255),
             'status' => BankTransaction::STATUS_REGISTERED,
-            'reconciled_at' => now(),
+            'reconciled_at' => $reconciliationMode === 'automatic' ? now() : null,
             'source_type' => get_class($source),
             'source_id' => $source->getKey(),
         ]);
@@ -165,6 +173,9 @@ class BankReconciliationService
 
     private function activeAccountForBranch(int $branchId): BankAccount
     {
+        $bankRules = ActiveBusinessProfile::payload()['banks'] ?? [];
+        $requireBranchAccount = (bool) ($bankRules['require_branch_account'] ?? true);
+
         $account = BankAccount::query()
             ->where('branch_id', $branchId)
             ->where('is_active', true)
@@ -173,12 +184,23 @@ class BankReconciliationService
             ->lockForUpdate()
             ->first();
 
-        $account ??= BankAccount::query()
-            ->where('branch_id', $branchId)
-            ->where('is_active', true)
-            ->orderBy('id')
-            ->lockForUpdate()
-            ->first();
+        if (! $account) {
+            $account = BankAccount::query()
+                ->where('branch_id', $branchId)
+                ->where('is_active', true)
+                ->orderBy('id')
+                ->lockForUpdate()
+                ->first();
+        }
+
+        if (! $account && ! $requireBranchAccount) {
+            $account = BankAccount::query()
+                ->where('is_active', true)
+                ->where('currency_code', 'BOB')
+                ->orderBy('id')
+                ->lockForUpdate()
+                ->first();
+        }
 
         if (! $account) {
             throw ValidationException::withMessages([

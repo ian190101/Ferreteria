@@ -14,6 +14,7 @@ export default function Index({ products, branches = [], filters = {} }) {
     const permissions = usePage().props.auth.permissions;
     const decimalFormat = useDecimalFormatter('inventory');
     const canManage = permissions.includes('inventory.products.manage');
+    const canPrintBarcode = permissions.includes('barcode-labels.view');
     const [query, setQuery] = useState({
         search: filters.search ?? '',
         branch_id: filters.branch_id ?? '',
@@ -133,6 +134,7 @@ export default function Index({ products, branches = [], filters = {} }) {
                                         <td className="px-4 py-3">
                                             <div className="flex items-center gap-2">
                                                 <IconButton href={route('inventory.products.edit', product.id)} icon="edit" label="Editar" />
+                                                {canPrintBarcode ? <IconButton href={route('inventory.products.barcode-label.show', product.id)} icon="barcode" label="Imprimir barcode" /> : null}
                                                 <IconButton
                                                 icon="power"
                                                 label="Desactivar"

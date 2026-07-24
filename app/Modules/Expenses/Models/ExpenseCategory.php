@@ -10,6 +10,10 @@ class ExpenseCategory extends AuditableModel
 {
     use SoftDeletes;
 
+    public const SALARY_PAYROLL_CODE = 'salary-payroll';
+
+    public const SALARY_PAYROLL_NAME = 'Pago de sueldos';
+
     protected $fillable = [
         'name',
         'code',

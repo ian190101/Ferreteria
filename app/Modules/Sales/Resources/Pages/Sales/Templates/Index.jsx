@@ -6,7 +6,7 @@ import ModuleHeader from '../../../../../Shared/Resources/Components/ModuleHeade
 import Pagination from '../../../../../Shared/Resources/Components/Pagination';
 import { Head, router } from '@inertiajs/react';
 
-export default function Index({ templates }) {
+export default function Index({ templates, documentPolicy = {} }) {
     return (
         <AuthenticatedLayout header={<h2 className="text-xl font-semibold leading-tight text-gray-800 dark:text-gray-200">Ventas</h2>}>
             <Head title="Plantillas de comprobantes" />
@@ -34,7 +34,7 @@ export default function Index({ templates }) {
                                 <tr key={template.id}>
                                     <td className="px-4 py-3">{template.name}</td>
                                     <td className="px-4 py-3">{template.branch?.name ?? 'Global'}</td>
-                                    <td className="px-4 py-3">{labelDocument(template.document_type)}</td>
+                                    <td className="px-4 py-3">{labelDocument(template.document_type, documentPolicy)}</td>
                                     <td className="px-4 py-3">{labelPaper(template.paper_type, template.thermal_width_mm)}</td>
                                     <td className="px-4 py-3">{template.is_active ? 'Activa' : 'Inactiva'}{template.is_default ? ' / Predeterminada' : ''}</td>
                                     <td className="px-4 py-3">
@@ -66,8 +66,12 @@ export default function Index({ templates }) {
     );
 }
 
-function labelDocument(type) {
-    return { both: 'Ambos', quotation: 'Cotizacion', sale_note: 'Nota de venta' }[type] ?? type;
+function labelDocument(type, policy) {
+    return {
+        both: 'Ambos',
+        quotation: policy?.quotationLabel ?? 'Cotizacion',
+        sale_note: policy?.saleNoteLabel ?? 'Nota de venta',
+    }[type] ?? type;
 }
 
 function labelPaper(type, width) {

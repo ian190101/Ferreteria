@@ -3,7 +3,7 @@
 use App\Modules\Banks\Http\Controllers\BankController;
 use Illuminate\Support\Facades\Route;
 
-Route::middleware(['auth', 'verified'])
+Route::middleware(['auth', 'verified', 'business_feature:banks'])
     ->prefix('banks')
     ->name('banks.')
     ->group(function () {

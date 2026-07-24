@@ -4,6 +4,7 @@ use App\Modules\Inventory\Http\Controllers\Adjustments\InventoryAdjustmentContro
 use App\Modules\Inventory\Http\Controllers\Movements\InventoryMovementController;
 use App\Modules\Inventory\Http\Controllers\ProductCoilController;
 use App\Modules\Inventory\Http\Controllers\ProductCatalogController;
+use App\Modules\Inventory\Http\Controllers\ProductBarcodeLabelController;
 use App\Modules\Inventory\Http\Controllers\ProductController;
 use App\Modules\Inventory\Http\Controllers\Reservations\InventoryReservationController;
 use App\Modules\Inventory\Http\Controllers\StockOverviewController;
@@ -11,13 +12,16 @@ use App\Modules\Inventory\Http\Controllers\ThicknessController;
 use App\Modules\Inventory\Http\Controllers\Transfers\InventoryTransferController;
 use Illuminate\Support\Facades\Route;
 
-Route::middleware(['auth', 'verified'])
+Route::middleware(['auth', 'verified', 'business_feature:inventory'])
     ->prefix('inventory')
     ->name('inventory.')
     ->group(function () {
         Route::middleware('permission:inventory.products.view')->group(function () {
             Route::get('/stock', StockOverviewController::class)->name('stock.index');
             Route::get('/products', [ProductController::class, 'index'])->name('products.index');
+            Route::get('/products/{product}/barcode-label', [ProductBarcodeLabelController::class, 'show'])
+                ->middleware(['business_feature:barcode_labels', 'permission:barcode-labels.view'])
+                ->name('products.barcode-label.show');
             Route::get('/thicknesses', [ThicknessController::class, 'index'])->name('thicknesses.index');
         });
 
@@ -27,6 +31,9 @@ Route::middleware(['auth', 'verified'])
             Route::get('/products/{product}/edit', [ProductController::class, 'edit'])->name('products.edit');
             Route::put('/products/{product}', [ProductController::class, 'update'])->name('products.update');
             Route::delete('/products/{product}', [ProductController::class, 'destroy'])->name('products.destroy');
+            Route::put('/barcode-label-templates/{template}', [ProductBarcodeLabelController::class, 'updateTemplate'])
+                ->middleware(['business_feature:barcode_labels', 'permission:barcode-labels.manage'])
+                ->name('barcode-label-templates.update');
             Route::get('/products/catalogs', [ProductCatalogController::class, 'index'])->name('products.catalogs.index');
             Route::post('/products/catalogs/units', [ProductCatalogController::class, 'storeUnit'])->name('products.catalogs.units.store');
             Route::put('/products/catalogs/units/{unit}', [ProductCatalogController::class, 'updateUnit'])->name('products.catalogs.units.update');
@@ -61,22 +68,22 @@ Route::middleware(['auth', 'verified'])
             ->name('movements.index');
 
         Route::get('/transfers', [InventoryTransferController::class, 'index'])
-            ->middleware('permission:inventory.transfers.view')
+            ->middleware(['business_feature:transfers', 'permission:inventory.transfers.view'])
             ->name('transfers.index');
 
         Route::post('/transfers', [InventoryTransferController::class, 'store'])
-            ->middleware('permission:inventory.transfers.manage')
+            ->middleware(['business_feature:transfers', 'permission:inventory.transfers.manage'])
             ->name('transfers.store');
 
         Route::get('/reservations', [InventoryReservationController::class, 'index'])
-            ->middleware('permission:inventory.reservations.view')
+            ->middleware(['business_feature:reservations', 'permission:inventory.reservations.view'])
             ->name('reservations.index');
 
         Route::post('/reservations', [InventoryReservationController::class, 'store'])
-            ->middleware('permission:inventory.reservations.manage')
+            ->middleware(['business_feature:reservations', 'permission:inventory.reservations.manage'])
             ->name('reservations.store');
 
         Route::patch('/reservations/{reservation}/release', [InventoryReservationController::class, 'release'])
-            ->middleware('permission:inventory.reservations.manage')
+            ->middleware(['business_feature:reservations', 'permission:inventory.reservations.manage'])
             ->name('reservations.release');
     });

@@ -41,7 +41,7 @@ export function buildProductFormData({ product = null, categories = [], units = 
     };
 }
 
-export default function ProductFormFields({ data, setData, errors = {}, thicknesses = [], categories = [], units = [], branches = [], attributeDefinitions = [], decimalFormat, compact = false }) {
+export default function ProductFormFields({ data, setData, errors = {}, thicknesses = [], categories = [], units = [], branches = [], attributeDefinitions = [], decimalFormat, compact = false, productPolicy = {} }) {
     const selectedCategory = categories.find((category) => Number(category.id) === Number(data.product_category_id));
     const selectedUnit = units.find((unit) => Number(unit.id) === Number(data.product_unit_id));
     const profit = Math.max(Number(data.sale_price || 0) - Number(data.purchase_price || 0), 0);
@@ -170,7 +170,7 @@ export default function ProductFormFields({ data, setData, errors = {}, thicknes
                 ))}
             </SelectField>
             <GeneratedField label="SKU" name="sku" value={data.sku} onChange={(event) => setData('sku', event.target.value)} error={errors.sku} onGenerate={generateSku} />
-            <GeneratedField label="Barcode" name="barcode" value={data.barcode} onChange={(event) => setData('barcode', event.target.value)} error={errors.barcode} onGenerate={generateBarcode} />
+            <GeneratedField label={productPolicy.barcodeRequired ? 'Barcode *' : 'Barcode'} name="barcode" value={data.barcode} onChange={(event) => setData('barcode', event.target.value)} error={errors.barcode} onGenerate={generateBarcode} />
             <SelectField label="Espesor" name="thickness_id" value={data.thickness_id} onChange={(event) => setData('thickness_id', event.target.value)} error={errors.thickness_id}>
                 <option value="">{selectedCategory?.requires_thickness ? 'Seleccione espesor' : 'Sin espesor'}</option>
                 {thicknesses.map((thickness) => (
@@ -188,8 +188,16 @@ export default function ProductFormFields({ data, setData, errors = {}, thicknes
                     </option>
                 ))}
             </SelectField>
-            <AllowedUnits data={data} units={units} selectedUnit={selectedUnit} errors={errors} toggleAllowedUnit={toggleAllowedUnit} />
-            <UnitConversions data={data} units={units} selectedUnit={selectedUnit} errors={errors} addUnitConversion={addUnitConversion} updateUnitConversion={updateUnitConversion} removeUnitConversion={removeUnitConversion} />
+            {productPolicy.unitEquivalencesEnabled === false ? (
+                <div className="sm:col-span-2 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-100">
+                    Las equivalencias de unidades estan desactivadas para este perfil de negocio. El producto se comprara y vendera solo en su unidad base.
+                </div>
+            ) : (
+                <>
+                    <AllowedUnits data={data} units={units} selectedUnit={selectedUnit} errors={errors} toggleAllowedUnit={toggleAllowedUnit} />
+                    <UnitConversions data={data} units={units} selectedUnit={selectedUnit} errors={errors} addUnitConversion={addUnitConversion} updateUnitConversion={updateUnitConversion} removeUnitConversion={removeUnitConversion} />
+                </>
+            )}
             <FormField label="Precio compra" name="purchase_price" type="number" step={decimalStep(decimalFormat.decimalsFor('cost'))} min="0" value={data.purchase_price} onChange={(event) => setData('purchase_price', event.target.value)} error={errors.purchase_price} helpTitle="Precio de compra" helpTooltip="Es el costo referencial del producto en la unidad base. Sirve para calcular ganancia estimada y reportes." required />
             <FormField label="Precio venta" name="sale_price" type="number" step={decimalStep(decimalFormat.decimalsFor('money'))} min="0" value={data.sale_price} onChange={(event) => setData('sale_price', event.target.value)} error={errors.sale_price} helpTitle="Precio de venta" helpTooltip="Es el precio sugerido para ventas y cotizaciones. Solo usuarios con permiso pueden cambiarlo manualmente durante la venta." required />
             <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-100">

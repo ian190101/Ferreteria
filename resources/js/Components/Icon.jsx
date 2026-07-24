@@ -12,6 +12,7 @@ const paths = {
     moon: 'M20 15.3A8.5 8.5 0 0 1 8.7 4a7 7 0 1 0 11.3 11.3Z',
     sun: 'M11 2h2v3h-2V2Zm0 17h2v3h-2v-3ZM4.2 3.8l2.1 2.1-1.4 1.4-2.1-2.1 1.4-1.4Zm15 15-1.4 1.4-2.1-2.1 1.4-1.4 2.1 2.1ZM2 11h3v2H2v-2Zm17 0h3v2h-3v-2ZM4.9 16.7l1.4 1.4-2.1 2.1-1.4-1.4 2.1-2.1ZM19.2 5.2l-2.1 2.1-1.4-1.4 2.1-2.1 1.4 1.4ZM12 7a5 5 0 1 1 0 10 5 5 0 0 1 0-10Z',
     menu: 'M4 6h16v2H4V6Zm0 5h16v2H4v-2Zm0 5h16v2H4v-2Z',
+    barcode: 'M3 5h2v14H3V5Zm3 0h1v14H6V5Zm3 0h2v14H9V5Zm3 0h1v14h-1V5Zm3 0h3v14h-3V5Zm4 0h1v14h-1V5Z',
 };
 
 export default function Icon({ name, className = 'h-4 w-4' }) {

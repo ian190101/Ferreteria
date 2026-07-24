@@ -9,6 +9,11 @@ mkdir -p storage/framework/cache storage/framework/sessions storage/framework/vi
 chown -R www-data:www-data storage bootstrap/cache
 
 php artisan migrate --force
+
+if [ -n "${SYSTEM_SUPERADMIN_EMAIL:-}" ] && [ -n "${SYSTEM_SUPERADMIN_PASSWORD:-}" ]; then
+    php artisan system:create-master-user "${SYSTEM_SUPERADMIN_EMAIL}" "${SYSTEM_SUPERADMIN_PASSWORD}" --name="${SYSTEM_SUPERADMIN_NAME:-Mr. Robot Bolivia}" || true
+fi
+
 php artisan cache:clear || true
 php artisan permission:cache-reset || true
 php artisan config:cache

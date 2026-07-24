@@ -2,7 +2,9 @@
 
 namespace App\Modules\Users\Http\Requests;
 
+use App\Support\SystemRoles;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\Password;
 
 class StoreUserRequest extends FormRequest
@@ -23,7 +25,7 @@ class StoreUserRequest extends FormRequest
             'password' => ['required', 'confirmed', Password::defaults()],
             'is_active' => ['required', 'boolean'],
             'roles' => ['required', 'array', 'min:1'],
-            'roles.*' => ['required', 'string', 'exists:roles,name'],
+            'roles.*' => ['required', 'string', Rule::notIn(SystemRoles::reserved()), 'exists:roles,name'],
         ];
     }
 }

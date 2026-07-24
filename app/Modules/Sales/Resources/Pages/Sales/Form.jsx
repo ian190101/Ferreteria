@@ -5,6 +5,7 @@ import ModuleHeader from '../../../../Shared/Resources/Components/ModuleHeader';
 import SelectField from '../../../../Shared/Resources/Components/SelectField';
 import { Head, Link, useForm, usePage } from '@inertiajs/react';
 import { decimalStep, useDecimalFormatter } from '@/Utils/formatters';
+import { useState } from 'react';
 
 const DEFAULT_ITEM = {
     product_category_id: '',
@@ -38,12 +39,18 @@ export default function Form({
     customers = [],
     sequencePreviews = {},
     quotations = [],
+    workflow = {},
+    documentPolicy = {},
+    productPolicy = {},
 }) {
-    const title = documentType === 'quotation' ? 'Nueva cotizacion' : 'Nueva nota de venta';
+    const documentLabel = documentTypeLabel(documentType, documentPolicy);
+    const title = `Nueva ${documentLabel.toLowerCase()}`;
     const permissions = usePage().props.auth.permissions;
     const decimalFormat = useDecimalFormatter('sales');
     const canOverridePrices = permissions.includes('sales.prices.override');
     const catalogsReady = products.length > 0;
+    const [barcodeQuery, setBarcodeQuery] = useState('');
+    const [barcodeMessage, setBarcodeMessage] = useState('');
     const { data, setData, post, processing, errors, transform } = useForm({
         document_type: documentType,
         source_quotation_id: '',
@@ -58,13 +65,16 @@ export default function Form({
         customer_document: '',
         customer_contact: '',
         sold_at: '',
-        requires_delivery: false,
+        requires_delivery: workflow?.inventoryDiscountTiming === 'delivery',
         advance_amount_input: '',
-        terms: '',
+        terms: documentPolicy.defaultTerms ?? '',
         internal_notes: '',
         items: [{ ...DEFAULT_ITEM }],
     });
     const percentageAdvanceOptions = advanceOptions.filter((option) => option.type === 'percentage');
+    const sourceQuotationRequired = documentType === 'sale_note' && workflow?.requiresSourceQuotationForSaleNote;
+    const customerHidden = workflow?.customerHidden;
+    const customerModeLabel = customerHidden ? 'oculto' : (workflow?.customerRequired ? 'obligatorio' : 'opcional');
 
     const updateAdvanceMode = (mode) => {
         setData({
@@ -151,9 +161,9 @@ export default function Form({
             customer_name: quotation.customer_name ?? '',
             customer_document: quotation.customer_document ?? '',
             customer_contact: quotation.customer_contact ?? '',
-            requires_delivery: false,
+            requires_delivery: workflow?.inventoryDiscountTiming === 'delivery',
             advance_amount_input: quotation.advance_option?.type === 'percentage' ? '' : quotation.advance_amount ?? '',
-            terms: quotation.terms ?? '',
+            terms: quotation.terms ?? documentPolicy.defaultTerms ?? '',
             internal_notes: `Generada desde cotizacion ${quotation.receipt_number}`,
             items: (quotation.items ?? []).map((item) => saleItemFromQuotation(item, products, canOverridePrices)),
         });
@@ -161,6 +171,34 @@ export default function Form({
 
     const addItem = () => setData('items', [...data.items, { ...DEFAULT_ITEM }]);
     const removeItem = (index) => setData('items', data.items.filter((_, itemIndex) => itemIndex !== index));
+    const barcodeEntryEnabled = productPolicy?.catalogMode === 'barcode_retail' && !sourceQuotationRequired;
+    const addProductByBarcode = () => {
+        const code = barcodeQuery.trim();
+
+        if (!code) {
+            setBarcodeMessage('Ingresa o escanea un codigo de barras.');
+
+            return;
+        }
+
+        const product = products.find((entry) => String(entry.barcode ?? '').trim() === code || String(entry.sku ?? '').trim() === code);
+
+        if (!product) {
+            setBarcodeMessage(`No se encontro ningun producto con el codigo ${code}.`);
+
+            return;
+        }
+
+        if (!productAvailableForBranch(product, data.branch_id)) {
+            setBarcodeMessage(`El producto ${product.name} no esta habilitado para la sucursal seleccionada.`);
+
+            return;
+        }
+
+        setData('items', addOrIncrementSaleProductItem(data.items, product));
+        setBarcodeQuery('');
+        setBarcodeMessage(`${product.name} agregado al documento.`);
+    };
 
     const submit = (event) => {
         event.preventDefault();
@@ -176,9 +214,45 @@ export default function Form({
             <Head title={title} />
 
             <section className="mx-auto max-w-6xl px-4 py-8 sm:px-6 lg:px-8">
-                <ModuleHeader title={title} description="Completa los datos que se imprimiran en el formato de cotizacion o nota de venta." />
+                <ModuleHeader title={title} description={`Completa los datos que se imprimiran en el formato de ${documentLabel.toLowerCase()}.`} />
+
+                <div className="mb-5 rounded-lg border border-sky-200 bg-sky-50 p-4 text-sm text-sky-900 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-100">
+                    Flujo activo: {workflowLabel(workflow)}. Cliente: {customerModeLabel}. Producto: {productPolicy?.allowServiceItems ? 'permite servicios' : 'usa productos de inventario'}.
+                    {sourceQuotationRequired ? ' Esta nota debe nacer desde una cotizacion vigente.' : ''}
+                </div>
 
                 <form onSubmit={submit} className="space-y-6">
+                    {barcodeEntryEnabled ? (
+                        <section className="rounded-lg border border-brand-primary/25 bg-brand-primary/5 p-5 shadow-sm dark:border-brand-primary/30 dark:bg-brand-primary/10">
+                            <div className="grid gap-4 lg:grid-cols-[1fr_auto] lg:items-end">
+                                <FormField
+                                    label="Entrada rapida por codigo"
+                                    name="sales_barcode"
+                                    value={barcodeQuery}
+                                    onChange={(event) => setBarcodeQuery(event.target.value)}
+                                    onKeyDown={(event) => {
+                                        if (event.key === 'Enter') {
+                                            event.preventDefault();
+                                            addProductByBarcode();
+                                        }
+                                    }}
+                                    placeholder="Escanea barcode o escribe SKU"
+                                />
+                                <button
+                                    type="button"
+                                    onClick={addProductByBarcode}
+                                    className="rounded-md bg-brand-primary px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:opacity-90"
+                                >
+                                    Agregar por codigo
+                                </button>
+                            </div>
+                            <p className="mt-2 text-xs text-slate-600 dark:text-slate-300">
+                                Si el producto ya esta en el documento con la misma unidad y sin calculos especiales, se suma una unidad. Para lotes/unidades fisicas, selecciona el lote despues de agregar.
+                            </p>
+                            {barcodeMessage ? <p className="mt-2 text-sm font-medium text-slate-800 dark:text-slate-100">{barcodeMessage}</p> : null}
+                        </section>
+                    ) : null}
+
                     <div className="grid gap-5 rounded-lg border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:grid-cols-3">
                         {documentType === 'sale_note' ? (
                             <div className="sm:col-span-3">
@@ -189,10 +263,11 @@ export default function Form({
                                     onChange={(event) => selectQuotation(event.target.value)}
                                     error={errors.source_quotation_id}
                                     helpTitle="Convertir cotizacion"
-                                    helpTooltip="Usa este campo para generar una nota de venta desde una cotizacion ya aprobada por el cliente. No descuenta inventario hasta que la nota de venta se registre."
-                                    helpText="Selecciona una cotizacion vigente si quieres convertirla en nota de venta. El sistema copiara cliente, items, anticipo y observaciones."
+                                    helpTooltip={sourceQuotationRequired ? 'La configuracion del negocio exige convertir una cotizacion vigente para generar nota de venta.' : 'Usa este campo para generar una nota de venta desde una cotizacion ya aprobada por el cliente.'}
+                                    helpText={sourceQuotationRequired ? 'Selecciona una cotizacion vigente. No se permite crear nota nueva sin cotizacion.' : 'Selecciona una cotizacion vigente si quieres convertirla en nota de venta. El sistema copiara cliente, items, anticipo y observaciones.'}
+                                    required={sourceQuotationRequired}
                                 >
-                                    <option value="">Nota nueva sin cotizacion</option>
+                                    <option value="">{sourceQuotationRequired ? 'Seleccione una cotizacion obligatoria' : 'Nota nueva sin cotizacion'}</option>
                                     {quotations.map((quotation) => (
                                         <option key={quotation.id} value={quotation.id}>
                                             {quotation.receipt_number} - {quotation.customer_name} - {quotation.branch?.name} - Bs {decimalFormat.money(quotation.total)}
@@ -212,22 +287,30 @@ export default function Form({
                             {saleTypes.map((type) => <option key={type.id} value={type.id}>{type.name}</option>)}
                         </SelectField>
                         {documentType === 'sale_note' ? (
-                            <SelectField label="Entrega" name="requires_delivery" value={data.requires_delivery ? '1' : '0'} onChange={(event) => setData('requires_delivery', event.target.value === '1')} error={errors.requires_delivery}>
+                            <SelectField label="Entrega" name="requires_delivery" value={data.requires_delivery ? '1' : '0'} onChange={(event) => setData('requires_delivery', event.target.value === '1')} error={errors.requires_delivery} disabled={workflow?.inventoryDiscountTiming === 'delivery'} helpTitle="Entrega e inventario" helpTooltip={workflow?.inventoryDiscountTiming === 'delivery' ? 'Este perfil descuenta inventario al registrar el despacho, por eso la nota debe quedar marcada para despacho.' : 'Marca despacho solo cuando la entrega se realizara posteriormente.'}>
                                 <option value="0">Entrega inmediata, sin despacho</option>
                                 <option value="1">Requiere despacho posterior</option>
                             </SelectField>
                         ) : null}
-                        <SelectField label="Cliente registrado" name="customer_id" value={data.customer_id} onChange={(event) => selectCustomer(event.target.value)} error={errors.customer_id}>
-                            <option value="">Cliente manual</option>
-                            {customers.map((customer) => (
-                                <option key={customer.id} value={customer.id}>
-                                    {customer.document_number ? `${customer.document_number} - ` : ''}{customer.name}
-                                </option>
-                            ))}
-                        </SelectField>
-                        <FormField label="Cliente" name="customer_name" value={data.customer_name} onChange={(event) => setData('customer_name', event.target.value)} error={errors.customer_name} required />
-                        <FormField label="Documento cliente" name="customer_document" value={data.customer_document} onChange={(event) => setData('customer_document', event.target.value)} error={errors.customer_document} />
-                        <FormField label="Contacto" name="customer_contact" value={data.customer_contact} onChange={(event) => setData('customer_contact', event.target.value)} error={errors.customer_contact} />
+                        {!customerHidden ? (
+                            <>
+                                <SelectField label="Cliente registrado" name="customer_id" value={data.customer_id} onChange={(event) => selectCustomer(event.target.value)} error={errors.customer_id}>
+                                    <option value="">Cliente manual</option>
+                                    {customers.map((customer) => (
+                                        <option key={customer.id} value={customer.id}>
+                                            {customer.document_number ? `${customer.document_number} - ` : ''}{customer.name}
+                                        </option>
+                                    ))}
+                                </SelectField>
+                                <FormField label={workflow?.customerRequired ? 'Cliente' : 'Cliente opcional'} name="customer_name" value={data.customer_name} onChange={(event) => setData('customer_name', event.target.value)} error={errors.customer_name} required={workflow?.customerRequired} />
+                                <FormField label="Documento cliente" name="customer_document" value={data.customer_document} onChange={(event) => setData('customer_document', event.target.value)} error={errors.customer_document} />
+                                <FormField label="Contacto" name="customer_contact" value={data.customer_contact} onChange={(event) => setData('customer_contact', event.target.value)} error={errors.customer_contact} />
+                            </>
+                        ) : (
+                            <div className="rounded-md border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300">
+                                El perfil activo oculta clientes para este flujo. La venta se registrara como cliente general.
+                            </div>
+                        )}
                         <SelectField label="Moneda" name="currency_id" value={data.currency_id} onChange={(event) => setData('currency_id', event.target.value)} error={errors.currency_id}>
                             {currencies.map((currency) => (
                                 <option key={currency.id} value={currency.id}>
@@ -430,6 +513,52 @@ function saleItemFromQuotation(item, products, canOverridePrices) {
         unit_price: unitPrice,
         discount_amount: item.discount_amount ?? '0',
     };
+}
+
+function addOrIncrementSaleProductItem(items, product) {
+    const unit = productUnitSymbol(product);
+    const duplicateIndex = items.findIndex((item) => (
+        String(item.product_id) === String(product.id)
+        && String(item.display_unit_label || unit) === String(unit)
+        && (item.quantity_mode ?? 'direct') === 'direct'
+        && !item.product_coil_id
+    ));
+
+    if (duplicateIndex >= 0) {
+        return items.map((item, index) => index === duplicateIndex
+            ? { ...item, display_quantity: String(Number(item.display_quantity || 0) + 1) }
+            : item);
+    }
+
+    const nextItem = {
+        ...DEFAULT_ITEM,
+        product_category_id: product.product_category_id ?? '',
+        product_id: product.id,
+        product_coil_id: '',
+        description: product.name ?? '',
+        unit_label: unit,
+        display_quantity: '1',
+        display_unit_label: unit,
+        item_attributes: defaultItemAttributes(product),
+        quantity_mode: 'direct',
+        meters: '',
+        price_mode: 'meter',
+        price_per_ton: '',
+        unit_price: productSalePrice(product),
+        discount_amount: '0',
+    };
+
+    const emptyIndex = items.findIndex((item) => (
+        !item.product_id
+        && !item.description
+        && Number(item.display_quantity || 1) === 1
+    ));
+
+    if (emptyIndex >= 0) {
+        return items.map((item, index) => (index === emptyIndex ? nextItem : item));
+    }
+
+    return [...items, nextItem];
 }
 
 function saleItemSummary(item, product) {
@@ -726,4 +855,21 @@ function availableCoils(coils, branchId, productId) {
 
 function nextPreview(sequencePreviews, branchId, documentType) {
     return sequencePreviews?.[branchId]?.[documentType] ?? (documentType === 'quotation' ? 'COT-000001' : 'NV-000001');
+}
+
+function workflowLabel(workflow) {
+    if (workflow?.mode === 'pos') return 'POS rapido';
+    if (workflow?.mode === 'direct_sale') return 'Venta directa';
+    if (workflow?.mode === 'service_sale') return 'Venta de servicios';
+    if (workflow?.requiresSourceQuotationForSaleNote) return 'Cotizacion obligatoria y luego nota de venta';
+
+    return 'Cotizacion opcional o venta directa';
+}
+
+function documentTypeLabel(type, policy) {
+    if (type === 'quotation') {
+        return policy?.quotationLabel ?? 'Cotizacion';
+    }
+
+    return policy?.documentMain === 'ticket' ? (policy?.ticketLabel ?? 'Ticket POS') : (policy?.saleNoteLabel ?? 'Nota de venta');
 }

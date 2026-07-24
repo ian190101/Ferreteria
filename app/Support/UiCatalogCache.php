@@ -70,7 +70,7 @@ class UiCatalogCache
             ])
             ->where('is_active', true)
             ->orderBy('name')
-            ->get(['id', 'thickness_id', 'product_category_id', 'product_unit_id', 'name', 'sku', 'inventory_tracking_mode', 'base_unit', 'allowed_units', 'attributes', 'custom_attributes', 'purchase_price', 'sale_price']));
+            ->get(['id', 'thickness_id', 'product_category_id', 'product_unit_id', 'name', 'sku', 'barcode', 'inventory_tracking_mode', 'base_unit', 'allowed_units', 'attributes', 'custom_attributes', 'purchase_price', 'sale_price']));
     }
 
     public static function activeCoilProducts()
@@ -158,7 +158,7 @@ class UiCatalogCache
         return self::remember('expense-categories', fn () => ExpenseCategory::query()
             ->where('is_active', true)
             ->orderBy('name')
-            ->get(['id', 'name']));
+            ->get(['id', 'name', 'code']));
     }
 
     public static function activePaymentMethods(array $columns = ['id', 'name', 'requires_reference'])
@@ -224,7 +224,7 @@ class UiCatalogCache
 
     public static function forgetFinancialCatalogs(): void
     {
-        foreach (['bank-accounts', 'expense-categories', 'payment-methods:id,name', 'payment-methods:id,name,requires_reference'] as $key) {
+        foreach (['bank-accounts', 'expense-categories', 'payment-methods:id,name', 'payment-methods:id,name,code', 'payment-methods:id,name,requires_reference'] as $key) {
             Cache::forget("ui-catalog:{$key}");
         }
     }

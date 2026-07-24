@@ -8,6 +8,7 @@ use App\Modules\Branches\Models\Branch;
 use App\Modules\Users\Http\Requests\StoreUserRequest;
 use App\Modules\Users\Http\Requests\UpdateUserRequest;
 use App\Support\AuthSessionCache;
+use App\Support\SystemRoles;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
@@ -21,6 +22,7 @@ class UserController extends Controller
     {
         $users = User::query()
             ->with(['branch:id,name', 'accessibleBranches:id,name', 'roles:id,name'])
+            ->whereDoesntHave('roles', fn ($query) => $query->whereIn('name', SystemRoles::reserved()))
             ->when($request->string('search')->isNotEmpty(), function ($query) use ($request) {
                 $search = $request->string('search')->toString();
 
@@ -65,6 +67,8 @@ class UserController extends Controller
 
     public function edit(User $user): Response
     {
+        $this->abortIfReservedUser($user);
+
         return Inertia::render('Users/Form', [
             'userRecord' => $user->load(['branch:id,name', 'accessibleBranches:id,name', 'roles:id,name']),
             'branches' => $this->branches(),
@@ -74,6 +78,8 @@ class UserController extends Controller
 
     public function update(UpdateUserRequest $request, User $user): RedirectResponse
     {
+        $this->abortIfReservedUser($user);
+
         $data = $request->validated();
 
         if ($request->user()->is($user) && ! $data['is_active']) {
@@ -102,6 +108,7 @@ class UserController extends Controller
     public function destroy(Request $request, User $user): RedirectResponse
     {
         abort_unless($request->user()?->can('users.manage'), 403);
+        $this->abortIfReservedUser($user);
 
         if ($request->user()->is($user)) {
             return back()->withErrors(['user' => 'No puedes desactivar tu propio usuario.']);
@@ -124,6 +131,7 @@ class UserController extends Controller
     private function roles()
     {
         return Role::query()
+            ->whereNotIn('name', SystemRoles::reserved())
             ->orderBy('name')
             ->get(['id', 'name']);
     }
@@ -141,5 +149,10 @@ class UserController extends Controller
     private function bumpAuthCacheVersion(): void
     {
         AuthSessionCache::bump();
+    }
+
+    private function abortIfReservedUser(User $user): void
+    {
+        abort_if($user->roles()->whereIn('name', SystemRoles::reserved())->exists(), 404);
     }
 }

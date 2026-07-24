@@ -6,7 +6,7 @@ import ModuleHeader from '../../../../Shared/Resources/Components/ModuleHeader';
 import Pagination from '../../../../Shared/Resources/Components/Pagination';
 import { Head, Link, router, usePage } from '@inertiajs/react';
 
-export default function Index({ sales }) {
+export default function Index({ sales, workflow, documentPolicy = {} }) {
     const permissions = usePage().props.auth.permissions;
     const canManage = permissions.includes('sales.manage');
     const canManagePayments = permissions.includes('payments.manage');
@@ -20,12 +20,12 @@ export default function Index({ sales }) {
 
             <section className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
                 <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                    <ModuleHeader title="Ventas" description="Cotizaciones y notas de venta con formato imprimible segun el comprobante fisico." />
+                    <ModuleHeader title="Ventas" description={salesDescription(workflow)} />
                     <div className="flex flex-wrap gap-2">
                         {canManage ? (
                             <>
-                                <ActionLink href={route('sales.create', { type: 'quotation' })}>Nueva cotizacion</ActionLink>
-                                <ActionLink href={route('sales.create', { type: 'sale_note' })}>Nueva nota</ActionLink>
+                                {workflow?.canCreateQuotation ? <ActionLink href={route('sales.create', { type: 'quotation' })}>Nueva {documentLabel('quotation', documentPolicy).toLowerCase()}</ActionLink> : null}
+                                {workflow?.canCreateSaleNote ? <ActionLink href={route('sales.create', { type: 'sale_note' })}>{workflow?.requiresSourceQuotationForSaleNote ? `${documentLabel('sale_note', documentPolicy)} desde ${documentLabel('quotation', documentPolicy).toLowerCase()}` : `Nueva ${documentLabel('sale_note', documentPolicy).toLowerCase()}`}</ActionLink> : null}
                             </>
                         ) : null}
                         {canManageSettings ? (
@@ -35,6 +35,10 @@ export default function Index({ sales }) {
                             </>
                         ) : null}
                     </div>
+                </div>
+
+                <div className="my-5 rounded-lg border border-sky-200 bg-sky-50 p-4 text-sm text-sky-900 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-100">
+                    Flujo activo: {workflowLabel(workflow)}. Cliente: {workflow?.customerRequired ? 'obligatorio' : 'opcional'}. Inventario: {inventoryTimingLabel(workflow?.inventoryDiscountTiming)}.
                 </div>
 
                 <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
@@ -57,7 +61,7 @@ export default function Index({ sales }) {
                             {sales.data.map((sale) => (
                                 <tr key={sale.id}>
                                     <td className="px-4 py-3">{sale.receipt_number}</td>
-                                    <td className="px-4 py-3">{documentTypeLabel(sale.document_type)}</td>
+                                    <td className="px-4 py-3">{documentTypeLabel(sale.document_type, documentPolicy)}</td>
                                     <td className="px-4 py-3">{sale.branch?.name}</td>
                                     <td className="px-4 py-3">{sale.customer_name ?? 'Consumidor final'}</td>
                                     <td className="px-4 py-3">{sale.sold_at}</td>
@@ -95,8 +99,48 @@ export default function Index({ sales }) {
     );
 }
 
-function documentTypeLabel(type) {
-    return type === 'quotation' ? 'Cotizacion' : 'Nota de venta';
+function salesDescription(workflow) {
+    if (workflow?.mode === 'pos') {
+        return 'Venta directa tipo POS. Para venta por lector usa POS rapido; esta vista queda para documentos administrativos.';
+    }
+
+    if (workflow?.quotationMode === 'disabled') {
+        return 'Notas de venta directas sin cotizacion previa, segun la configuracion del negocio.';
+    }
+
+    if (workflow?.requiresSourceQuotationForSaleNote) {
+        return 'El negocio trabaja con cotizacion obligatoria y luego conversion a nota de venta.';
+    }
+
+    return 'Cotizaciones y notas de venta con formato imprimible segun el comprobante configurado.';
+}
+
+function workflowLabel(workflow) {
+    if (workflow?.mode === 'pos') return 'POS rapido';
+    if (workflow?.mode === 'direct_sale') return 'Venta directa';
+    if (workflow?.mode === 'service_sale') return 'Venta de servicios';
+    if (workflow?.requiresSourceQuotationForSaleNote) return 'Cotizacion obligatoria';
+
+    return 'Cotizacion opcional';
+}
+
+function inventoryTimingLabel(value) {
+    return {
+        sale_note: 'se descuenta al generar nota',
+        payment: 'se descuenta al cobrar',
+        delivery: 'se descuenta al despachar',
+        manual: 'movimiento manual',
+    }[value] ?? 'segun configuracion';
+}
+
+function documentLabel(type, policy) {
+    if (type === 'quotation') return policy?.quotationLabel ?? 'Cotizacion';
+
+    return policy?.documentMain === 'ticket' ? (policy?.ticketLabel ?? 'Ticket POS') : (policy?.saleNoteLabel ?? 'Nota de venta');
+}
+
+function documentTypeLabel(type, policy) {
+    return documentLabel(type, policy);
 }
 
 function statusLabel(status) {

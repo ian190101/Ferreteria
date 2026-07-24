@@ -6,7 +6,7 @@ import SelectField from '../../../../Shared/Resources/Components/SelectField';
 import ProductFormFields, { buildProductFormData } from '../../../../Inventory/Resources/Pages/Inventory/Products/ProductFormFields';
 import { Head, Link, useForm } from '@inertiajs/react';
 import { decimalStep, useDecimalFormatter } from '@/Utils/formatters';
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 
 const DEFAULT_ITEM = {
     product_mode: 'existing',
@@ -28,9 +28,14 @@ const DEFAULT_ITEM = {
     description: '',
 };
 
-export default function Form({ branches = [], suppliers = [], units = [], categories = [], thicknesses = [], products = [], attributeDefinitions = [] }) {
+export default function Form({ branches = [], suppliers = [], units = [], categories = [], thicknesses = [], products = [], attributeDefinitions = [], workflow = {} }) {
     const catalogsReady = categories.length > 0 && units.length > 0;
     const decimalFormat = useDecimalFormatter('purchases');
+    const [barcodeQuery, setBarcodeQuery] = useState('');
+    const [barcodeMessage, setBarcodeMessage] = useState('');
+    const supplierHidden = workflow?.supplierHidden;
+    const supplierRequired = workflow?.supplierRequired;
+    const supplierModeLabel = supplierHidden ? 'oculto' : (supplierRequired ? 'obligatorio' : 'opcional');
     const { data, setData, post, processing, errors, transform } = useForm({
         branch_id: branches[0]?.id ?? '',
         supplier_id: '',
@@ -76,6 +81,10 @@ export default function Form({ branches = [], suppliers = [], units = [], catego
         } : item)));
     };
     const setProductMode = (index, mode) => {
+        if (mode === 'new' && workflow?.allowCreateProduct === false) {
+            return;
+        }
+
         setData('items', data.items.map((item, itemIndex) => {
             if (itemIndex !== index) {
                 return item;
@@ -115,6 +124,33 @@ export default function Form({ branches = [], suppliers = [], units = [], catego
     };
     const addItem = () => setData('items', [...data.items, newDefaultItem(categories, units, branches)]);
     const removeItem = (index) => setData('items', data.items.filter((_, itemIndex) => itemIndex !== index));
+    const addProductByBarcode = () => {
+        const code = barcodeQuery.trim();
+
+        if (!code) {
+            setBarcodeMessage('Ingresa o escanea un codigo de barras.');
+
+            return;
+        }
+
+        const product = products.find((entry) => String(entry.barcode ?? '').trim() === code || String(entry.sku ?? '').trim() === code);
+
+        if (!product) {
+            setBarcodeMessage(`No se encontro ningun producto con el codigo ${code}.`);
+
+            return;
+        }
+
+        if (!productAvailableForBranch(product, data.branch_id)) {
+            setBarcodeMessage(`El producto ${product.name} no esta habilitado para la sucursal seleccionada.`);
+
+            return;
+        }
+
+        setData('items', addOrIncrementProductItem(data.items, product, units, categories, branches));
+        setBarcodeQuery('');
+        setBarcodeMessage(`${product.name} agregado a la compra.`);
+    };
     const convertedMeters = (item) => {
         const product = productMap.get(String(item.product_id));
         const kgPerMeter = Number(product?.thickness?.kg_per_meter ?? 0);
@@ -140,16 +176,57 @@ export default function Form({ branches = [], suppliers = [], units = [], catego
             <section className="mx-auto max-w-6xl px-4 py-8 sm:px-6 lg:px-8">
                 <ModuleHeader title="Nueva compra" description="Ingresa la cantidad en la unidad real del producto. Usa calculo por largo o peso solo cuando corresponda." />
 
+                <div className="mb-5 rounded-lg border border-sky-200 bg-sky-50 p-4 text-sm text-sky-900 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-100">
+                    Perfil activo de compras: {workflow.barcodeEntryEnabled ? 'entrada rapida por barcode habilitada' : 'compra tradicional'}; proveedor {supplierModeLabel}; {workflow.allowCreateProduct ? 'puedes crear productos desde compras' : 'solo productos ya registrados'}; {workflow.productPolicy?.unitEquivalencesEnabled === false ? 'sin equivalencias de unidades' : 'con equivalencias de unidades'}.
+                </div>
+
                 <form onSubmit={submit} className="space-y-6">
+                    {workflow.barcodeEntryEnabled ? (
+                        <section className="rounded-lg border border-brand-primary/25 bg-brand-primary/5 p-5 shadow-sm dark:border-brand-primary/30 dark:bg-brand-primary/10">
+                            <div className="grid gap-4 lg:grid-cols-[1fr_auto] lg:items-end">
+                                <FormField
+                                    label="Entrada rapida por codigo"
+                                    name="purchase_barcode"
+                                    value={barcodeQuery}
+                                    onChange={(event) => setBarcodeQuery(event.target.value)}
+                                    onKeyDown={(event) => {
+                                        if (event.key === 'Enter') {
+                                            event.preventDefault();
+                                            addProductByBarcode();
+                                        }
+                                    }}
+                                    placeholder="Escanea barcode o escribe SKU"
+                                />
+                                <button
+                                    type="button"
+                                    onClick={addProductByBarcode}
+                                    className="rounded-md bg-brand-primary px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:opacity-90"
+                                >
+                                    Agregar por codigo
+                                </button>
+                            </div>
+                            <p className="mt-2 text-xs text-slate-600 dark:text-slate-300">
+                                El lector puede enviar Enter automaticamente. Si el producto ya esta en la compra con la misma unidad, se suma una unidad.
+                            </p>
+                            {barcodeMessage ? <p className="mt-2 text-sm font-medium text-slate-800 dark:text-slate-100">{barcodeMessage}</p> : null}
+                        </section>
+                    ) : null}
+
                     <div className="grid gap-5 rounded-lg border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:grid-cols-4">
                         <FormField label="Documento" name="document_number" value={data.document_number} onChange={(event) => setData('document_number', event.target.value)} error={errors.document_number} required />
                         <SelectField label="Sucursal" name="branch_id" value={data.branch_id} onChange={(event) => setData('branch_id', event.target.value)} error={errors.branch_id} helpTitle="Sucursal de ingreso" helpTooltip="Todo stock que ingrese por esta compra quedara disponible en esta sucursal, salvo que la compra quede como borrador." helpText="La sucursal seleccionada recibira el stock cuando la compra quede como recibida.">
                             {branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
                         </SelectField>
-                        <SelectField label="Proveedor" name="supplier_id" value={data.supplier_id} onChange={(event) => setData('supplier_id', event.target.value)} error={errors.supplier_id}>
-                            <option value="">Sin proveedor</option>
-                            {suppliers.map((supplier) => <option key={supplier.id} value={supplier.id}>{supplier.name}</option>)}
-                        </SelectField>
+                        {!supplierHidden ? (
+                            <SelectField label={supplierRequired ? 'Proveedor' : 'Proveedor opcional'} name="supplier_id" value={data.supplier_id} onChange={(event) => setData('supplier_id', event.target.value)} error={errors.supplier_id} required={supplierRequired}>
+                                <option value="">{supplierRequired ? 'Seleccionar proveedor' : 'Sin proveedor'}</option>
+                                {suppliers.map((supplier) => <option key={supplier.id} value={supplier.id}>{supplier.name}</option>)}
+                            </SelectField>
+                        ) : (
+                            <div className="rounded-md border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300">
+                                El perfil activo oculta proveedores para compras rapidas.
+                            </div>
+                        )}
                         <FormField label="Fecha" name="purchase_date" type="date" value={data.purchase_date} onChange={(event) => setData('purchase_date', event.target.value)} error={errors.purchase_date} required />
                         <SelectField label="Estado" name="status" value={data.status} onChange={(event) => setData('status', event.target.value)} error={errors.status} helpTitle="Estado de compra" helpTooltip="Recibida aumenta stock y registra movimiento de inventario. Borrador sirve para guardar la compra sin afectar cantidades." helpText="Recibida mueve inventario inmediatamente. Borrador guarda la compra sin aumentar stock.">
                             <option value="received">Recibida e ingresar inventario</option>
@@ -175,7 +252,7 @@ export default function Form({ branches = [], suppliers = [], units = [], catego
                                     <div key={index} className="grid gap-3 border-t border-slate-100 pt-5 dark:border-slate-800 sm:grid-cols-7">
                                         <SelectField label="Tipo de item" name={`items.${index}.product_mode`} value={item.product_mode ?? 'existing'} onChange={(event) => setProductMode(index, event.target.value)} helpTitle="Producto de compra" helpTooltip="Si el producto ya existe, seleccionalo para mantener historial y stock. Si no existe, crea el producto desde aqui sin abrir otra pantalla." helpText="Usa producto existente si ya esta creado. Usa producto nuevo si llego mercaderia que aun no existe en inventario.">
                                             <option value="existing">Producto existente</option>
-                                            <option value="new">Producto nuevo</option>
+                                            {workflow?.allowCreateProduct === false ? null : <option value="new">Producto nuevo</option>}
                                         </SelectField>
                                         {item.product_mode === 'new' ? (
                                             <section className="rounded-2xl border border-brand-primary/20 bg-brand-primary/5 p-4 dark:border-brand-primary/30 dark:bg-brand-primary/10 sm:col-span-7">
@@ -195,6 +272,7 @@ export default function Form({ branches = [], suppliers = [], units = [], catego
                                                     branches={branches}
                                                     attributeDefinitions={attributeDefinitions}
                                                     decimalFormat={decimalFormat}
+                                                    productPolicy={workflow.productPolicy}
                                                     compact
                                                 />
                                             </section>
@@ -325,6 +403,49 @@ function newDefaultItem(categories = [], units = [], branches = []) {
         new_product: buildProductFormData({ categories, units, branches }),
         item_attributes: [],
     };
+}
+
+function addOrIncrementProductItem(items, product, units = [], categories = [], branches = []) {
+    const unit = productUnitSymbol(product);
+    const duplicateIndex = items.findIndex((item) => (
+        item.product_mode !== 'new'
+        && String(item.product_id) === String(product.id)
+        && String(item.display_unit_label || unit) === String(unit)
+        && (item.calculation_mode ?? 'direct') === 'direct'
+    ));
+
+    if (duplicateIndex >= 0) {
+        return items.map((item, index) => index === duplicateIndex
+            ? { ...item, display_quantity: String(Number(item.display_quantity || 0) + 1) }
+            : item);
+    }
+
+    const nextItem = {
+        ...newDefaultItem(categories, units, branches),
+        product_mode: 'existing',
+        product_category_id: product.product_category_id ?? '',
+        product_id: product.id,
+        display_quantity: '1',
+        display_unit_label: unit,
+        calculation_mode: 'direct',
+        item_attributes: defaultItemAttributes(product),
+        meters: '',
+        unit_cost: String(product.purchase_price ?? 0),
+        description: product.name ?? '',
+    };
+
+    const emptyIndex = items.findIndex((item) => (
+        item.product_mode !== 'new'
+        && !item.product_id
+        && !item.description
+        && Number(item.display_quantity || 1) === 1
+    ));
+
+    if (emptyIndex >= 0) {
+        return items.map((item, index) => (index === emptyIndex ? nextItem : item));
+    }
+
+    return [...items, nextItem];
 }
 
 function nestedErrors(errors, prefix) {

@@ -10,9 +10,11 @@ use App\Modules\Inventory\Models\ProductBranchStock;
 use App\Modules\Inventory\Models\ProductCategory;
 use App\Modules\Inventory\Models\ProductCoil;
 use App\Modules\Inventory\Models\ProductUnit;
+use App\Modules\Inventory\Services\ProductWorkflowPolicy;
 use App\Modules\Inventory\Support\ProductCodeGenerator;
 use App\Modules\Purchases\Http\Requests\StorePurchaseRequest;
 use App\Modules\Purchases\Models\Purchase;
+use App\Modules\Purchases\Services\PurchaseWorkflowPolicy;
 use App\Support\BranchAccess;
 use App\Support\UiCatalogCache;
 use Illuminate\Http\RedirectResponse;
@@ -60,13 +62,16 @@ class PurchaseController extends Controller
 
     public function create(Request $request): Response
     {
+        $workflow = app(PurchaseWorkflowPolicy::class);
+
         return Inertia::render('Purchases/Form', [
+            'workflow' => $workflow->summary(),
             'branches' => UiCatalogCache::activeBranchesForUser($request->user()),
             'units' => UiCatalogCache::productUnits(),
             'categories' => UiCatalogCache::productCategories(),
             'thicknesses' => UiCatalogCache::activeThicknesses(),
             'attributeDefinitions' => UiCatalogCache::productAttributeDefinitions(),
-            'suppliers' => Inertia::defer(fn () => UiCatalogCache::activeSuppliers(), 'purchase-form-catalogs'),
+            'suppliers' => Inertia::defer(fn () => $workflow->supplierHidden() ? [] : UiCatalogCache::activeSuppliers(), 'purchase-form-catalogs'),
             'products' => Inertia::defer(fn () => UiCatalogCache::activeProductsWithThickness(), 'purchase-form-catalogs'),
         ]);
     }
@@ -267,12 +272,15 @@ class PurchaseController extends Controller
         $unit = ProductUnit::query()->find($payload['product_unit_id'] ?? $category->default_unit_id);
         $baseUnit = $unit?->symbol ?? $category->defaultUnit?->symbol ?? 'unidad';
         $tracking = $payload['inventory_tracking_mode'] ?? $category->default_tracking_mode ?? Product::TRACKING_GLOBAL;
-        $allowedUnits = collect($payload['allowed_units'] ?? [])
+        $productPolicy = app(ProductWorkflowPolicy::class);
+        $allowedUnits = $productPolicy->unitEquivalencesEnabled()
+            ? collect($payload['allowed_units'] ?? [])
             ->push($baseUnit)
             ->filter()
             ->unique()
             ->values()
-            ->all();
+            ->all()
+            : [$baseUnit];
 
         $product = Product::query()->create([
             'thickness_id' => $payload['thickness_id'] ?? null,
@@ -294,7 +302,9 @@ class PurchaseController extends Controller
         ]);
 
         $this->syncNewProductBranches($product, $payload, $branchId);
-        $this->syncNewProductUnitConversions($product, $payload['unit_conversions'] ?? [], $unit?->id);
+        if ($productPolicy->unitEquivalencesEnabled()) {
+            $this->syncNewProductUnitConversions($product, $payload['unit_conversions'] ?? [], $unit?->id);
+        }
 
         $item['product_id'] = $product->id;
         $item['display_unit_label'] = $item['display_unit_label'] ?: $baseUnit;

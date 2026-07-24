@@ -2,6 +2,7 @@ const permissionGroups = {
     alerts: 'Alertas',
     audit: 'Auditoria',
     banks: 'Bancos',
+    billing: 'Facturacion SIAT',
     branches: 'Sucursales',
     cash: 'Caja',
     customers: 'Clientes',
@@ -25,6 +26,8 @@ const permissionNames = {
     'audit.view': 'Ver auditoria',
     'banks.view': 'Ver bancos',
     'banks.manage': 'Gestionar bancos',
+    'billing.view': 'Ver facturacion SIAT',
+    'billing.manage': 'Configurar, emitir, anular y sincronizar SIAT',
     'branches.view': 'Ver sucursales',
     'branches.manage': 'Gestionar sucursales',
     'cash.view': 'Ver caja',
@@ -77,6 +80,7 @@ const groupOrder = [
     'Clientes',
     'Gastos',
     'Bancos',
+    'Facturacion SIAT',
     'Sucursales',
     'Usuarios y roles',
     'Reportes',
@@ -87,6 +91,7 @@ const groupOrder = [
 
 const roleNames = {
     superadmin: 'Superadministrador',
+    sistemasuperadmin: 'Superadministrador del sistema',
 };
 
 export function roleLabel(roleName) {

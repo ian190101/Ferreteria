@@ -1,8 +1,11 @@
 <?php
 
+use App\Http\Middleware\EnsureBusinessFeatureEnabled;
 use App\Http\Middleware\EnsurePasswordWasChanged;
+use App\Http\Middleware\EnsureSystemSuperadmin;
 use App\Http\Middleware\ForceHttpsForProxy;
 use App\Http\Middleware\HandleInertiaRequests;
+use App\Http\Middleware\SandboxContext;
 use App\Support\UserHomeRoute;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -19,17 +22,21 @@ return Application::configure(basePath: dirname(__DIR__))
             __DIR__.'/../routes/web.php',
             __DIR__.'/../app/Modules/Alerts/routes/web.php',
             __DIR__.'/../app/Modules/Banks/routes/web.php',
+            __DIR__.'/../app/Modules/Billing/routes/web.php',
             __DIR__.'/../app/Modules/Branches/routes/web.php',
             __DIR__.'/../app/Modules/Cash/routes/web.php',
             __DIR__.'/../app/Modules/Customers/routes/web.php',
             __DIR__.'/../app/Modules/Expenses/routes/web.php',
             __DIR__.'/../app/Modules/Exports/routes/web.php',
             __DIR__.'/../app/Modules/Inventory/routes/web.php',
+            __DIR__.'/../app/Modules/HumanResources/routes/web.php',
             __DIR__.'/../app/Modules/Payments/routes/web.php',
+            __DIR__.'/../app/Modules/Pos/routes/web.php',
             __DIR__.'/../app/Modules/Production/routes/web.php',
             __DIR__.'/../app/Modules/Purchases/routes/web.php',
             __DIR__.'/../app/Modules/Sales/routes/web.php',
             __DIR__.'/../app/Modules/Settings/routes/web.php',
+            __DIR__.'/../app/Modules/SystemSuperadmin/routes/web.php',
             __DIR__.'/../app/Modules/Users/routes/web.php',
             __DIR__.'/../app/Modules/Audit/routes/web.php',
             __DIR__.'/../app/Modules/Reports/routes/web.php',
@@ -54,6 +61,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->redirectUsersTo(fn (Request $request) => UserHomeRoute::pathFor($request->user()));
 
         $middleware->web(append: [
+            SandboxContext::class,
             HandleInertiaRequests::class,
             EnsurePasswordWasChanged::class,
             AddLinkHeadersForPreloadedAssets::class,
@@ -63,6 +71,8 @@ return Application::configure(basePath: dirname(__DIR__))
             'role' => RoleMiddleware::class,
             'permission' => PermissionMiddleware::class,
             'role_or_permission' => RoleOrPermissionMiddleware::class,
+            'business_feature' => EnsureBusinessFeatureEnabled::class,
+            'system_superadmin' => EnsureSystemSuperadmin::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {

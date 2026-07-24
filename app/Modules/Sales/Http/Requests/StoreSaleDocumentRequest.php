@@ -7,8 +7,12 @@ use App\Modules\Inventory\Models\InventoryReservation;
 use App\Modules\Inventory\Models\Product;
 use App\Modules\Inventory\Models\ProductBranchStock;
 use App\Modules\Inventory\Models\ProductCoil;
+use App\Modules\Payments\Models\PaymentMethod;
 use App\Modules\Sales\Models\AdvanceOption;
 use App\Modules\Sales\Models\Sale;
+use App\Modules\Sales\Services\DeliveryWorkflowPolicy;
+use App\Modules\Sales\Services\SalesDocumentPolicy;
+use App\Modules\Sales\Services\SalesWorkflowPolicy;
 use App\Support\BranchAccess;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -79,13 +83,21 @@ class StoreSaleDocumentRequest extends FormRequest
             ],
             'source_quotation_id' => ['nullable', 'integer', 'exists:sales,id'],
             'receipt_number' => ['nullable', 'string', 'max:80', 'unique:sales,receipt_number'],
-            'customer_name' => ['required_without:customer_id', 'nullable', 'string', 'max:255'],
+            'customer_name' => [
+                Rule::requiredIf(fn () => app(SalesWorkflowPolicy::class)->customerRequired() && ! $this->filled('customer_id')),
+                'nullable',
+                'string',
+                'max:255',
+            ],
             'customer_document' => ['nullable', 'string', 'max:80'],
             'customer_contact' => ['nullable', 'string', 'max:40'],
             'sold_at' => ['nullable', 'date'],
             'terms' => ['nullable', 'string', 'max:2000'],
             'internal_notes' => ['nullable', 'string', 'max:2000'],
             'requires_delivery' => ['nullable', 'boolean'],
+            'pos_payment_method_id' => ['nullable', 'integer', 'exists:payment_methods,id'],
+            'pos_payment_amount' => ['nullable', 'numeric', 'gt:0', 'max:999999999999.99'],
+            'pos_payment_reference' => ['nullable', 'string', 'max:120'],
             'items' => ['required', 'array', 'min:1'],
             'items.*.product_id' => ['required', 'integer', 'exists:products,id'],
             'items.*.product_coil_id' => ['nullable', 'integer', 'exists:product_coils,id'],
@@ -114,6 +126,7 @@ class StoreSaleDocumentRequest extends FormRequest
             'items.*.meters.gt' => 'La cantidad calculada del item debe ser mayor que 0.',
             'items.*.unit_price.required' => 'Cada item debe tener precio.',
             'items.*.unit_price.gte' => 'El precio del item no puede ser negativo.',
+            'pos_payment_amount.gt' => 'El monto cobrado en POS debe ser mayor que 0.',
         ];
     }
 
@@ -129,6 +142,9 @@ class StoreSaleDocumentRequest extends FormRequest
             'advance_option_id' => 'porcentaje de anticipo',
             'advance_amount_input' => 'monto de anticipo',
             'requires_delivery' => 'tipo de entrega',
+            'pos_payment_method_id' => 'metodo de pago POS',
+            'pos_payment_amount' => 'monto cobrado POS',
+            'pos_payment_reference' => 'referencia POS',
             'items' => 'items',
             'items.*.product_id' => 'producto del item',
             'items.*.description' => 'descripcion del item',
@@ -148,6 +164,53 @@ class StoreSaleDocumentRequest extends FormRequest
                 $validator->errors()->add('branch_id', $message);
 
                 return;
+            }
+
+            $workflow = app(SalesWorkflowPolicy::class);
+            $documentType = (string) $this->input('document_type');
+
+            if (! $workflow->allowsDocumentType($documentType)) {
+                $validator->errors()->add('document_type', $workflow->documentTypeError($documentType));
+
+                return;
+            }
+
+            if ($documentType === 'sale_note' && $workflow->requiresSourceQuotationForSaleNote() && ! $this->filled('source_quotation_id')) {
+                $validator->errors()->add('source_quotation_id', 'La configuracion actual exige crear la nota de venta desde una cotizacion.');
+            }
+
+            if ($workflow->customerRequired() && ! $this->filled('customer_id') && blank($this->input('customer_name'))) {
+                $validator->errors()->add('customer_name', 'La configuracion actual exige seleccionar o registrar un cliente.');
+            }
+
+            if ($workflow->customerHidden() && ($this->filled('customer_id') || filled($this->input('customer_name')) || filled($this->input('customer_document')) || filled($this->input('customer_contact')))) {
+                $validator->errors()->add('customer_name', 'La configuracion actual oculta clientes para este flujo de venta.');
+            }
+
+            $deliveryPolicy = app(DeliveryWorkflowPolicy::class);
+
+            if ($documentType === 'sale_note' && $deliveryPolicy->required() && ! $this->boolean('requires_delivery')) {
+                $validator->errors()->add('requires_delivery', 'La configuracion actual exige que las notas de venta pasen por despacho.');
+            }
+
+            if ($this->filled('pos_payment_amount') && ! $this->filled('pos_payment_method_id')) {
+                $validator->errors()->add('pos_payment_method_id', 'Selecciona el metodo de pago para finalizar desde POS.');
+            }
+
+            if ($this->filled('pos_payment_method_id')) {
+                $method = PaymentMethod::query()->find($this->integer('pos_payment_method_id'));
+
+                if (! $method || ! $method->is_active) {
+                    $validator->errors()->add('pos_payment_method_id', 'El metodo de pago POS no esta activo.');
+                } elseif (! app(SalesDocumentPolicy::class)->isPaymentMethodAllowed($method->code, 'pos')) {
+                    $validator->errors()->add('pos_payment_method_id', 'El perfil de negocio actual no permite usar este metodo de pago en ventas.');
+                } elseif ($method->requires_reference && blank($this->input('pos_payment_reference'))) {
+                    $validator->errors()->add('pos_payment_reference', 'La referencia es obligatoria para este metodo de pago.');
+                }
+
+                if ($documentType !== 'sale_note') {
+                    $validator->errors()->add('pos_payment_method_id', 'El cobro POS solo aplica a notas de venta.');
+                }
             }
 
             $items = collect($this->input('items', []));
@@ -218,6 +281,18 @@ class StoreSaleDocumentRequest extends FormRequest
                 return;
             }
 
+            if ($workflow->shouldDiscountInventoryOnDelivery()) {
+                if (! $this->boolean('requires_delivery')) {
+                    $validator->errors()->add('requires_delivery', 'La configuracion actual descuenta inventario al despachar, por eso esta nota debe marcarse como requiere despacho.');
+                }
+
+                return;
+            }
+
+            if (! $workflow->shouldDiscountInventoryOnSaleNote() && ! $workflow->shouldDiscountInventoryOnPayment()) {
+                return;
+            }
+
             $globalMetersByProduct = [];
             $coilMetersById = [];
 
@@ -251,7 +326,7 @@ class StoreSaleDocumentRequest extends FormRequest
                 $globalMetersByProduct[$product->id] = ($globalMetersByProduct[$product->id] ?? 0) + $meters;
             }
 
-            if ($globalMetersByProduct !== []) {
+            if ($globalMetersByProduct !== [] && ! $workflow->allowsNegativeStock()) {
                 $stocks = ProductBranchStock::query()
                     ->where('branch_id', $this->integer('branch_id'))
                     ->whereIn('product_id', array_keys($globalMetersByProduct))
@@ -268,7 +343,7 @@ class StoreSaleDocumentRequest extends FormRequest
                 }
             }
 
-            if ($coilMetersById !== []) {
+            if ($coilMetersById !== [] && ! $workflow->allowsNegativeStock()) {
                 $coils = ProductCoil::query()
                     ->where('branch_id', $this->integer('branch_id'))
                     ->where('status', 'available')

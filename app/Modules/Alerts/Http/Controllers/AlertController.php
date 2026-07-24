@@ -9,6 +9,7 @@ use App\Modules\Inventory\Models\ProductBranchStock;
 use App\Modules\Inventory\Models\ProductCoil;
 use App\Modules\Payments\Models\PaymentPromise;
 use App\Modules\Sales\Models\Sale;
+use App\Modules\SystemSuperadmin\Services\ActiveBusinessProfile;
 use App\Support\BranchAccess;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
@@ -46,12 +47,12 @@ class AlertController extends Controller
         $branchIds = $user->isSuperAdministrator() ? [] : ($user->accessibleBranchIds() ?: [-1]);
 
         return collect()
-            ->merge($user->can('inventory.products.view') ? $this->lowStockAlerts($branchIds) : [])
-            ->merge($user->can('payments.view') ? $this->receivableAlerts($branchIds) : [])
-            ->merge($user->can('payment-promises.view') ? $this->paymentPromiseAlerts($branchIds) : [])
-            ->merge($user->can('cash.view') ? $this->cashAlerts($branchIds) : [])
-            ->merge($user->can('customers.view') ? $this->customerFollowUpAlerts() : [])
-            ->merge($user->can('inventory.coils.manage') ? $this->coilAlerts($branchIds) : []);
+            ->merge($this->can($user, 'inventory.products.view', 'inventory') ? $this->lowStockAlerts($branchIds) : [])
+            ->merge($this->can($user, 'payments.view', 'sales_notes') ? $this->receivableAlerts($branchIds) : [])
+            ->merge($this->can($user, 'payment-promises.view', 'payment_promises') ? $this->paymentPromiseAlerts($branchIds) : [])
+            ->merge($this->can($user, 'cash.view', 'cash') ? $this->cashAlerts($branchIds) : [])
+            ->merge($this->can($user, 'customers.view', 'customers') ? $this->customerFollowUpAlerts() : [])
+            ->merge($this->can($user, 'inventory.coils.manage', 'inventory_lots') ? $this->coilAlerts($branchIds) : []);
     }
 
     private function lowStockAlerts(array $branchIds): Collection
@@ -245,12 +246,26 @@ class AlertController extends Controller
     private function availableTypes(Request $request): array
     {
         return collect([
-            $request->user()->can('inventory.products.view') ? 'low_stock' : null,
-            $request->user()->can('payments.view') ? 'receivable' : null,
-            $request->user()->can('payment-promises.view') ? 'payment_promise' : null,
-            $request->user()->can('cash.view') ? 'cash_open' : null,
-            $request->user()->can('customers.view') ? 'customer_follow_up' : null,
-            $request->user()->can('inventory.coils.manage') ? 'depleted_coil' : null,
+            $this->can($request->user(), 'inventory.products.view', 'inventory') ? 'low_stock' : null,
+            $this->can($request->user(), 'payments.view', 'sales_notes') ? 'receivable' : null,
+            $this->can($request->user(), 'payment-promises.view', 'payment_promises') ? 'payment_promise' : null,
+            $this->can($request->user(), 'cash.view', 'cash') ? 'cash_open' : null,
+            $this->can($request->user(), 'customers.view', 'customers') ? 'customer_follow_up' : null,
+            $this->can($request->user(), 'inventory.coils.manage', 'inventory_lots') ? 'depleted_coil' : null,
         ])->filter()->values()->all();
+    }
+
+    private function can($user, string $permission, string $feature): bool
+    {
+        if (! $user->can($permission)) {
+            return false;
+        }
+
+        if ($feature === 'inventory_lots') {
+            return ActiveBusinessProfile::enabled('inventory')
+                && (bool) (ActiveBusinessProfile::payload()['inventory']['lot_tracking_optional'] ?? false);
+        }
+
+        return ActiveBusinessProfile::enabled($feature);
     }
 }

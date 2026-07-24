@@ -3,6 +3,7 @@
 namespace App\Modules\Sales\Models;
 
 use App\Models\User;
+use App\Modules\Billing\Models\SiatInvoice;
 use App\Modules\Branches\Models\Branch;
 use App\Modules\Customers\Models\Customer;
 use App\Modules\Payments\Models\CreditNote;
@@ -113,5 +114,10 @@ class Sale extends AuditableModel
     public function paymentPromises(): HasMany
     {
         return $this->hasMany(PaymentPromise::class);
+    }
+
+    public function siatInvoices(): HasMany
+    {
+        return $this->hasMany(SiatInvoice::class);
     }
 }

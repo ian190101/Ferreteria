@@ -4,9 +4,11 @@ namespace App\Modules\Expenses\Models;
 
 use App\Models\User;
 use App\Modules\Branches\Models\Branch;
+use App\Modules\HumanResources\Models\SalaryPayment;
 use App\Modules\Payments\Models\PaymentMethod;
 use App\Modules\Shared\Models\AuditableModel;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Expense extends AuditableModel
@@ -53,5 +55,10 @@ class Expense extends AuditableModel
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    public function salaryPayment(): HasOne
+    {
+        return $this->hasOne(SalaryPayment::class);
     }
 }

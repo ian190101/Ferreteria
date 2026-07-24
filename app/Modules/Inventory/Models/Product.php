@@ -2,9 +2,11 @@
 
 namespace App\Modules\Inventory\Models;
 
+use App\Modules\Billing\Models\SiatProductMapping;
 use App\Modules\Shared\Models\AuditableModel;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Product extends AuditableModel
@@ -72,5 +74,10 @@ class Product extends AuditableModel
     public function unitConversions(): HasMany
     {
         return $this->hasMany(ProductUnitConversion::class);
+    }
+
+    public function siatMapping(): HasOne
+    {
+        return $this->hasOne(SiatProductMapping::class);
     }
 }

@@ -8,6 +8,8 @@ use App\Modules\Expenses\Http\Requests\StoreExpenseRequest;
 use App\Modules\Expenses\Http\Requests\VoidExpenseRequest;
 use App\Modules\Expenses\Models\Expense;
 use App\Modules\Expenses\Models\ExpenseCategory;
+use App\Modules\HumanResources\Models\SalaryPayment;
+use App\Modules\HumanResources\Models\Worker;
 use App\Support\BranchAccess;
 use App\Support\UiCatalogCache;
 use Illuminate\Http\RedirectResponse;
@@ -40,7 +42,7 @@ class ExpenseController extends Controller
 
         return Inertia::render('Expenses/Index', [
             'expenses' => $query
-                ->with(['branch:id,name', 'category:id,name', 'paymentMethod:id,name', 'user:id,name'])
+                ->with(['branch:id,name', 'category:id,name,code', 'paymentMethod:id,name', 'user:id,name', 'salaryPayment.worker:id,name,position'])
                 ->latest('spent_at')
                 ->paginate($request->integer('per_page', 15))
                 ->withQueryString(),
@@ -54,6 +56,11 @@ class ExpenseController extends Controller
                 ->paginate($request->integer('categories_per_page', 10), ['*'], 'categories_page')
                 ->withQueryString(),
             'paymentMethods' => UiCatalogCache::activePaymentMethods(['id', 'name']),
+            'workers' => Worker::query()
+                ->where('is_active', true)
+                ->when(true, fn ($query) => BranchAccess::apply($query, $request->user()))
+                ->orderBy('name')
+                ->get(['id', 'branch_id', 'name', 'position', 'salary_amount']),
             'filters' => $request->only(['branch_id', 'expense_category_id', 'status', 'from', 'to', 'per_page']),
         ]);
     }
@@ -61,13 +68,47 @@ class ExpenseController extends Controller
     public function store(StoreExpenseRequest $request, BankReconciliationService $banks): RedirectResponse
     {
         DB::transaction(function () use ($request, $banks) {
+            $data = $request->validated();
+            $category = ExpenseCategory::query()
+                ->whereKey($data['expense_category_id'])
+                ->lockForUpdate()
+                ->firstOrFail();
+
             $expense = Expense::query()->create([
-                ...$request->validated(),
+                ...collect($data)->only([
+                    'branch_id',
+                    'expense_category_id',
+                    'payment_method_id',
+                    'description',
+                    'amount',
+                    'reference',
+                    'notes',
+                ])->all(),
                 'user_id' => $request->user()->id,
                 'spent_at' => now(),
+                'status' => Expense::STATUS_REGISTERED,
             ]);
 
             $banks->recordExpense($expense);
+
+            if ($category->code === ExpenseCategory::SALARY_PAYROLL_CODE) {
+                $worker = Worker::query()->whereKey($data['worker_id'])->lockForUpdate()->firstOrFail();
+
+                SalaryPayment::query()->create([
+                    'worker_id' => $worker->id,
+                    'branch_id' => $expense->branch_id,
+                    'payment_method_id' => $expense->payment_method_id,
+                    'expense_id' => $expense->id,
+                    'user_id' => $request->user()->id,
+                    'period_from' => $data['period_from'] ?? null,
+                    'period_to' => $data['period_to'] ?? null,
+                    'paid_at' => $expense->spent_at,
+                    'amount' => $expense->amount,
+                    'reference' => $expense->reference,
+                    'status' => SalaryPayment::STATUS_PAID,
+                    'notes' => $expense->notes,
+                ]);
+            }
         });
 
         $this->bumpSummaryCache();
@@ -80,7 +121,11 @@ class ExpenseController extends Controller
         abort_unless(BranchAccess::canAccess($request->user(), (int) $expense->branch_id), 403);
 
         DB::transaction(function () use ($request, $expense, $banks) {
-            $expense = Expense::query()->whereKey($expense->id)->lockForUpdate()->firstOrFail();
+            $expense = Expense::query()
+                ->with('salaryPayment')
+                ->whereKey($expense->id)
+                ->lockForUpdate()
+                ->firstOrFail();
             $voidReason = 'Anulado por '.$request->user()->name.': '.$request->string('reason')->toString();
             $notes = trim(implode("\n", array_filter([
                 $expense->notes,
@@ -92,6 +137,13 @@ class ExpenseController extends Controller
                 'status' => Expense::STATUS_VOID,
                 'notes' => $notes,
             ]);
+
+            if ($expense->salaryPayment && $expense->salaryPayment->status !== SalaryPayment::STATUS_VOID) {
+                $expense->salaryPayment->update([
+                    'status' => SalaryPayment::STATUS_VOID,
+                    'notes' => trim(implode("\n", array_filter([$expense->salaryPayment->notes, $voidReason]))),
+                ]);
+            }
         });
 
         $this->bumpSummaryCache();

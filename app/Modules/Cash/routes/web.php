@@ -3,7 +3,7 @@
 use App\Modules\Cash\Http\Controllers\CashRegisterController;
 use Illuminate\Support\Facades\Route;
 
-Route::middleware(['auth', 'verified'])
+Route::middleware(['auth', 'verified', 'business_feature:cash'])
     ->prefix('cash')
     ->name('cash.')
     ->group(function () {

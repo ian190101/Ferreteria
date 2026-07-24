@@ -3,12 +3,15 @@
 namespace App\Modules\Sales\Http\Controllers;
 
 use App\Http\Controllers\Controller;
+use App\Modules\Billing\Services\BillingWorkflowPolicy;
+use App\Modules\Billing\Services\SiatInvoiceService;
 use App\Modules\Customers\Models\Customer;
-use App\Modules\Inventory\Models\InventoryMovement;
 use App\Modules\Inventory\Models\InventoryReservation;
 use App\Modules\Inventory\Models\Product;
 use App\Modules\Inventory\Models\ProductBranchStock;
 use App\Modules\Inventory\Models\ProductCoil;
+use App\Modules\Inventory\Services\ProductWorkflowPolicy;
+use App\Modules\Sales\Events\SaleNoteIssued;
 use App\Modules\Sales\Http\Requests\ConvertQuotationRequest;
 use App\Modules\Sales\Http\Requests\StoreSaleDocumentRequest;
 use App\Modules\Sales\Http\Requests\VoidSaleRequest;
@@ -18,6 +21,10 @@ use App\Modules\Sales\Models\DocumentSequence;
 use App\Modules\Sales\Models\ReceiptTemplate;
 use App\Modules\Sales\Models\Sale;
 use App\Modules\Sales\Models\SaleItem;
+use App\Modules\Sales\Services\CommercialPolicy;
+use App\Modules\Sales\Services\SaleInventoryService;
+use App\Modules\Sales\Services\SalesDocumentPolicy;
+use App\Modules\Sales\Services\SalesWorkflowPolicy;
 use App\Support\BranchAccess;
 use App\Support\SystemCacheInvalidator;
 use App\Support\UiCatalogCache;
@@ -35,6 +42,7 @@ class SaleController extends Controller
 
     public function index(Request $request): Response
     {
+        $workflow = app(SalesWorkflowPolicy::class);
         $sales = Sale::query()
             ->select([
                 'id',
@@ -61,24 +69,41 @@ class SaleController extends Controller
         return Inertia::render('Sales/Index', [
             'sales' => $sales,
             'filters' => $request->only('per_page'),
+            'workflow' => $workflow->summary(),
+            'documentPolicy' => app(SalesDocumentPolicy::class)->summary(),
         ]);
     }
 
     public function create(Request $request): Response
     {
-        $documentType = $request->string('type', 'sale_note')->toString();
+        $workflow = app(SalesWorkflowPolicy::class);
+        $documentPolicy = app(SalesDocumentPolicy::class);
+        $documentType = $request->string('type')->isNotEmpty()
+            ? $request->string('type')->toString()
+            : ($workflow->quotationMode() === 'required' ? 'quotation' : 'sale_note');
+
+        if (! $workflow->allowsDocumentType($documentType)) {
+            $documentType = $workflow->allowsDocumentType('sale_note') ? 'sale_note' : 'quotation';
+        }
+
+        abort_unless($workflow->allowsDocumentType($documentType), 403);
 
         return Inertia::render('Sales/Form', [
             'documentType' => $documentType,
+            'workflow' => $workflow->summary(),
+            'documentPolicy' => $documentPolicy->summary(),
+            'commercialPolicy' => app(CommercialPolicy::class)->summary(),
+            'productPolicy' => app(ProductWorkflowPolicy::class)->summary(),
             'branches' => UiCatalogCache::activeBranchesForUser($request->user(), ['id', 'name', 'address', 'phone', 'secondary_phone', 'point_of_sale_name']),
             'saleTypes' => UiCatalogCache::saleTypes(),
             'currencies' => UiCatalogCache::currencies(),
             'advanceOptions' => UiCatalogCache::advanceOptions(),
+            'paymentMethods' => Inertia::defer(fn () => $this->allowedPaymentMethods(), 'sales-form-catalogs'),
             'units' => UiCatalogCache::productUnits(),
             'categories' => UiCatalogCache::productCategories(),
             'products' => Inertia::defer(fn () => UiCatalogCache::activeProductsWithThickness(), 'sales-form-catalogs'),
             'coils' => Inertia::defer(fn () => $this->availableCoils($request), 'sales-form-catalogs'),
-            'customers' => Inertia::defer(fn () => UiCatalogCache::recentCustomers(), 'sales-form-catalogs'),
+            'customers' => Inertia::defer(fn () => $workflow->customerHidden() ? [] : UiCatalogCache::recentCustomers(), 'sales-form-catalogs'),
             'sequencePreviews' => Inertia::defer(fn () => $this->sequencePreviews($request), 'sales-form-catalogs'),
             'quotations' => Inertia::defer(fn () => $documentType === 'sale_note'
                 ? $this->convertibleQuotations($request)
@@ -98,33 +123,53 @@ class SaleController extends Controller
                 ? AdvanceOption::query()->findOrFail($request->integer('advance_option_id'))
                 : null;
 
+            $commercialPolicy = app(CommercialPolicy::class);
             $canOverridePrices = $request->user()->can('sales.prices.override');
             $validatedItems = collect($request->validated('items'));
             $products = Product::query()
-                ->with(['unit:id,symbol'])
+                ->with(['unit:id,symbol', 'productCategory:id,name'])
                 ->whereIn('id', $validatedItems->pluck('product_id')->unique()->values())
                 ->get(['id', 'product_category_id', 'product_unit_id', 'name', 'sale_price', 'allowed_units', 'attributes', 'custom_attributes'])
                 ->keyBy('id');
 
-            $items = $validatedItems->map(function (array $item) use ($canOverridePrices, $products) {
+            $items = $validatedItems->map(function (array $item) use ($commercialPolicy, $canOverridePrices, $products, $request, $customer) {
                 $product = $products->get($item['product_id']);
 
                 $item['display_quantity'] = $item['display_quantity'] ?? 1;
                 $item['display_unit_label'] = $item['display_unit_label'] ?? $product?->unit?->symbol ?? $item['unit_label'];
                 $item['item_attributes'] = $this->saleItemAttributes($product, $item['item_attributes'] ?? []);
                 $item['calculation_mode'] = $item['calculation_mode'] ?? 'direct';
-                $item['unit_price'] = $canOverridePrices ? $item['unit_price'] : (float) ($product?->sale_price ?? 0);
-                $lineTotal = ((float) $item['meters'] * (float) $item['unit_price']) - (float) $item['discount_amount'];
+                $item['unit_price'] = $canOverridePrices
+                    ? $item['unit_price']
+                    : ($product ? $commercialPolicy->priceFor($product, $request->integer('branch_id'), $customer?->id) : 0);
+                $lineGross = (float) $item['meters'] * (float) $item['unit_price'];
+                $discount = (float) $item['discount_amount'];
+
+                if ($discount > 0 && ! $commercialPolicy->canApplyDiscount($request->user())) {
+                    throw ValidationException::withMessages([
+                        'items' => 'La politica comercial actual no permite aplicar descuentos con este usuario.',
+                    ]);
+                }
+
+                if ($discount > 0 && $commercialPolicy->discountExceedsLimit($lineGross, $discount)) {
+                    throw ValidationException::withMessages([
+                        'items' => 'El descuento supera el limite configurado para este perfil de negocio.',
+                    ]);
+                }
+
+                $lineTotal = $lineGross - $discount;
                 $item['total'] = max(round($lineTotal, 2), 0);
 
                 return $item;
             });
             $this->ensureProductsEnabledForBranch($items->pluck('product_id')->all(), $request->integer('branch_id'));
+            $this->ensureStockPolicyAllowsSale($items->all(), $products, $request->integer('branch_id'), $request->user(), $commercialPolicy);
 
             $subtotal = round($items->sum(fn ($item) => (float) $item['meters'] * (float) $item['unit_price']), 2);
             $discountTotal = round($items->sum(fn ($item) => (float) $item['discount_amount']), 2);
             $total = round($items->sum('total'), 2);
             [$advancePercentage, $advanceAmount] = $this->advanceValues($advanceOption, $total, (float) $request->input('advance_amount_input', 0), $advanceMode);
+            $commercialPolicy->assertCreditAllowed($customer, $total);
 
             $sourceQuotation = $request->filled('source_quotation_id')
                 ? Sale::query()
@@ -135,7 +180,8 @@ class SaleController extends Controller
                 : null;
 
             $sale = Sale::query()->create([
-                ...$request->safe()->except(['items', 'source_quotation_id', 'advance_mode', 'advance_amount_input']),
+                ...$request->safe()->except(['items', 'source_quotation_id', 'advance_mode', 'advance_amount_input', 'pos_payment_method_id', 'pos_payment_amount', 'pos_payment_reference']),
+                'terms' => filled($request->validated('terms')) ? $request->validated('terms') : app(SalesDocumentPolicy::class)->defaultTermsFor($request->string('document_type')->toString()),
                 'receipt_number' => $request->filled('receipt_number')
                     ? $request->validated('receipt_number')
                     : $this->nextReceiptNumber($request->integer('branch_id'), $request->string('document_type')->toString()),
@@ -159,22 +205,24 @@ class SaleController extends Controller
             $sale->load('items.product:id,inventory_tracking_mode');
 
             if ($sale->document_type === 'sale_note') {
-                $this->decrementInventoryForSale($sale, $request->user()->id);
-
-                if ($sourceQuotation) {
-                    $this->consumeReservationsForQuotation($sourceQuotation, $sale);
-                    $sourceQuotation->update([
-                        'status' => 'converted',
-                        'internal_notes' => trim(implode("\n", array_filter([
-                            $sourceQuotation->internal_notes,
-                            'Convertida a nota de venta '.$sale->receipt_number,
-                        ]))),
-                    ]);
-                }
+                event(new SaleNoteIssued(
+                    saleId: (int) $sale->id,
+                    userId: (int) $request->user()->id,
+                    sourceQuotationId: $sourceQuotation?->id,
+                    posPayment: $request->filled('pos_payment_method_id') && $request->filled('pos_payment_amount')
+                        ? [
+                            'payment_method_id' => $request->integer('pos_payment_method_id'),
+                            'amount' => (float) $request->input('pos_payment_amount'),
+                            'reference' => $request->string('pos_payment_reference')->toString() ?: null,
+                        ]
+                        : null,
+                ));
             }
 
             return $sale;
         });
+
+        $this->issueFiscalInvoiceIfRequired($sale, $request->user()->id, afterQuotationConversion: false);
 
         return redirect()->route('sales.show', $sale)->with('success', 'Documento generado correctamente.');
     }
@@ -196,13 +244,16 @@ class SaleController extends Controller
             'items.deliveryItems:id,sale_item_id,meters,display_quantity,display_unit_label',
             'payments:id,sale_id,payment_method_id,amount,paid_at',
             'payments.method:id,name',
+            'siatInvoices:id,sale_id,invoice_number,cuf,status,reception_code,total_amount,issued_at',
         ]);
         $template = $this->templateFor($sale);
 
         return Inertia::render('Sales/Show', [
             'sale' => $sale,
             'template' => $template,
-            'paymentMethods' => Inertia::defer(fn () => UiCatalogCache::activePaymentMethods(), 'sales-show-actions'),
+            'documentPolicy' => app(SalesDocumentPolicy::class)->summary(),
+            'billingPolicy' => app(BillingWorkflowPolicy::class)->summary(),
+            'paymentMethods' => Inertia::defer(fn () => $this->allowedPaymentMethods('collections'), 'sales-show-actions'),
             'conversionReadiness' => Inertia::defer(fn () => $this->conversionReadiness($sale), 'sales-show-actions'),
         ]);
     }
@@ -281,7 +332,7 @@ class SaleController extends Controller
                 'total' => $quotation->total,
                 'status' => 'issued',
                 'requires_delivery' => $request->boolean('requires_delivery'),
-                'terms' => $quotation->terms,
+                'terms' => filled($quotation->terms) ? $quotation->terms : app(SalesDocumentPolicy::class)->defaultTermsFor('sale_note'),
                 'internal_notes' => trim('Generada desde cotizacion '.$quotation->receipt_number),
             ]);
 
@@ -301,36 +352,61 @@ class SaleController extends Controller
             ])->all());
             $newSale->load('items.product:id,inventory_tracking_mode');
 
-            $this->consumeReservationsForQuotation($quotation, $newSale);
-            $this->decrementInventoryForSale($newSale, $request->user()->id);
-
-            $quotation->update([
-                'status' => 'converted',
-                'internal_notes' => trim(implode("\n", array_filter([
-                    $quotation->internal_notes,
-                    'Convertida a nota de venta '.$newSale->receipt_number,
-                ]))),
-            ]);
+            event(new SaleNoteIssued(
+                saleId: (int) $newSale->id,
+                userId: (int) $request->user()->id,
+                sourceQuotationId: (int) $quotation->id,
+            ));
 
             return $newSale;
         });
 
+        $this->issueFiscalInvoiceIfRequired($newSale, $request->user()->id, afterQuotationConversion: true);
+
         return redirect()->route('sales.show', $newSale)->with('success', 'Cotizacion convertida en nota de venta.');
     }
 
-    public function void(VoidSaleRequest $request, Sale $sale): RedirectResponse
+    private function issueFiscalInvoiceIfRequired(Sale $sale, int $userId, bool $afterQuotationConversion): void
+    {
+        $billing = app(BillingWorkflowPolicy::class);
+        $shouldIssue = $afterQuotationConversion
+            ? $billing->shouldAutoIssueAfterQuotationConversion($sale)
+            : $billing->shouldAutoIssueAfterSaleCreated($sale);
+
+        if (! $shouldIssue) {
+            return;
+        }
+
+        try {
+            app(SiatInvoiceService::class)->issueFromSale($sale, $userId, $billing->allowTemporaryReceipt());
+        } catch (\Throwable $exception) {
+            if ($billing->blockSaleIfInvoiceFails()) {
+                throw $exception;
+            }
+
+            report($exception);
+        }
+    }
+
+    public function void(VoidSaleRequest $request, Sale $sale, SaleInventoryService $inventory): RedirectResponse
     {
         abort_unless(BranchAccess::canAccess($request->user(), (int) $sale->branch_id), 403);
 
-        DB::transaction(function () use ($request, $sale) {
-            $sale = Sale::query()->with('items.product:id,inventory_tracking_mode')->lockForUpdate()->findOrFail($sale->id);
+        DB::transaction(function () use ($request, $sale, $inventory) {
+            $sale = Sale::query()
+                ->with([
+                    'items.deliveryItems:id,sale_item_id',
+                    'items.product:id,inventory_tracking_mode',
+                ])
+                ->lockForUpdate()
+                ->findOrFail($sale->id);
             $internalNotes = trim(implode("\n", array_filter([
                 $sale->internal_notes,
                 'Anulado por '.$request->user()->name.': '.$request->string('reason')->toString(),
             ])));
 
             if ($sale->document_type === 'sale_note') {
-                $this->returnInventoryForVoidedSale($sale, $request->user()->id);
+                $inventory->returnForVoidedSale($sale, $request->user()->id);
             }
 
             $sale->update([
@@ -341,21 +417,6 @@ class SaleController extends Controller
         });
 
         return redirect()->route('sales.index')->with('success', 'Documento anulado correctamente.');
-    }
-
-    private function decrementInventoryForSale(Sale $sale, int $userId): void
-    {
-        foreach ($sale->items as $item) {
-            $product = $item->product;
-
-            if ($product->inventory_tracking_mode === Product::TRACKING_COIL) {
-                $this->decrementCoilStock($sale, $item, $userId);
-
-                continue;
-            }
-
-            $this->decrementGlobalStock($sale, $item, $userId);
-        }
     }
 
     private function conversionReadiness(Sale $sale): array
@@ -577,173 +638,6 @@ class SaleController extends Controller
         return "{$formatted} {$unit}";
     }
 
-    private function consumeReservationsForQuotation(Sale $quotation, Sale $newSale): void
-    {
-        $reservations = InventoryReservation::query()
-            ->where('sale_id', $quotation->id)
-            ->where('status', InventoryReservation::STATUS_ACTIVE)
-            ->lockForUpdate()
-            ->get();
-
-        foreach ($reservations as $reservation) {
-            if (! $reservation->product_coil_id) {
-                $stock = ProductBranchStock::query()
-                    ->where('branch_id', $reservation->branch_id)
-                    ->where('product_id', $reservation->product_id)
-                    ->lockForUpdate()
-                    ->first();
-
-                if ($stock) {
-                    $stock->update([
-                        'reserved_meters' => max(round((float) $stock->reserved_meters - (float) $reservation->meters, 3), 0),
-                    ]);
-                }
-            }
-
-            $reservation->update([
-                'status' => InventoryReservation::STATUS_CONSUMED,
-                'consumed_sale_id' => $newSale->id,
-                'consumed_at' => now(),
-            ]);
-        }
-    }
-
-    private function decrementGlobalStock(Sale $sale, SaleItem $item, int $userId): void
-    {
-        $stock = ProductBranchStock::query()
-            ->where('branch_id', $sale->branch_id)
-            ->where('product_id', $item->product_id)
-            ->lockForUpdate()
-            ->first();
-
-        if (! $stock) {
-            throw ValidationException::withMessages([
-                'items' => 'La sucursal no tiene stock global suficiente para completar la venta.',
-            ]);
-        }
-
-        $before = (float) $stock->available_meters;
-        $after = round($before - (float) $item->meters, 3);
-
-        $reserved = (float) $stock->reserved_meters;
-
-        if ($after < 0 || $after < $reserved) {
-            throw ValidationException::withMessages([
-                'items' => 'La sucursal no tiene stock global libre suficiente para completar la venta.',
-            ]);
-        }
-
-        $stock->update(['available_meters' => $after]);
-        $this->movement($sale, $item, $userId, 'sale_stock_out', -((float) $item->meters), $before, $after, null);
-    }
-
-    private function decrementCoilStock(Sale $sale, SaleItem $item, int $userId): void
-    {
-        $coil = ProductCoil::query()->lockForUpdate()->findOrFail($item->product_coil_id);
-
-        if ((int) $coil->branch_id !== (int) $sale->branch_id || (int) $coil->product_id !== (int) $item->product_id || $coil->status !== 'available') {
-            throw ValidationException::withMessages([
-                'items' => 'Un lote o unidad fisica seleccionada ya no esta disponible para la venta.',
-            ]);
-        }
-
-        $before = (float) $coil->available_meters;
-        $after = round($before - (float) $item->meters, 3);
-
-        $reserved = (float) InventoryReservation::query()
-            ->where('product_coil_id', $coil->id)
-            ->where('status', InventoryReservation::STATUS_ACTIVE)
-            ->sum('meters');
-
-        if ($after < 0 || $after < $reserved) {
-            throw ValidationException::withMessages([
-                'items' => 'Un lote o unidad fisica seleccionada no tiene cantidad libre suficiente.',
-            ]);
-        }
-
-        $coil->update([
-            'available_meters' => $after,
-            'status' => $after <= 0 ? 'depleted' : 'available',
-        ]);
-        $this->movement($sale, $item, $userId, 'sale_stock_out', -((float) $item->meters), $before, $after, $coil->id);
-    }
-
-    private function returnInventoryForVoidedSale(Sale $sale, int $userId): void
-    {
-        foreach ($sale->items as $item) {
-            $hadStockOut = InventoryMovement::query()
-                ->where('source_type', SaleItem::class)
-                ->where('source_id', $item->id)
-                ->where('type', 'sale_stock_out')
-                ->exists();
-            $alreadyReturned = InventoryMovement::query()
-                ->where('source_type', SaleItem::class)
-                ->where('source_id', $item->id)
-                ->where('type', 'sale_void_return')
-                ->exists();
-
-            if (! $hadStockOut || $alreadyReturned) {
-                continue;
-            }
-
-            if ($item->product->inventory_tracking_mode === Product::TRACKING_COIL) {
-                $this->returnCoilStock($sale, $item, $userId);
-
-                continue;
-            }
-
-            $this->returnGlobalStock($sale, $item, $userId);
-        }
-    }
-
-    private function returnGlobalStock(Sale $sale, SaleItem $item, int $userId): void
-    {
-        $stock = ProductBranchStock::query()->firstOrCreate([
-            'branch_id' => $sale->branch_id,
-            'product_id' => $item->product_id,
-        ], [
-            'available_meters' => 0,
-            'reserved_meters' => 0,
-        ]);
-        $stock = ProductBranchStock::query()->whereKey($stock->id)->lockForUpdate()->firstOrFail();
-        $before = (float) $stock->available_meters;
-        $after = round($before + (float) $item->meters, 3);
-
-        $stock->update(['available_meters' => $after]);
-        $this->movement($sale, $item, $userId, 'sale_void_return', (float) $item->meters, $before, $after, null);
-    }
-
-    private function returnCoilStock(Sale $sale, SaleItem $item, int $userId): void
-    {
-        $coil = ProductCoil::query()->lockForUpdate()->findOrFail($item->product_coil_id);
-        $before = (float) $coil->available_meters;
-        $after = round($before + (float) $item->meters, 3);
-
-        $coil->update([
-            'available_meters' => $after,
-            'status' => 'available',
-        ]);
-        $this->movement($sale, $item, $userId, 'sale_void_return', (float) $item->meters, $before, $after, $coil->id);
-    }
-
-    private function movement(Sale $sale, SaleItem $item, int $userId, string $type, float $delta, float $before, float $after, ?int $coilId): void
-    {
-        InventoryMovement::query()->create([
-            'branch_id' => $sale->branch_id,
-            'product_id' => $item->product_id,
-            'product_coil_id' => $coilId,
-            'user_id' => $userId,
-            'source_type' => SaleItem::class,
-            'source_id' => $item->id,
-            'type' => $type,
-            'meters_delta' => $delta,
-            'meters_before' => $before,
-            'meters_after' => $after,
-            'reason' => "Venta {$sale->receipt_number}",
-            'created_at' => $sale->sold_at,
-        ]);
-    }
-
     private function sequencePreviews(Request $request): array
     {
         return DocumentSequence::query()
@@ -851,9 +745,12 @@ class SaleController extends Controller
     private function templateFor(Sale $sale): array
     {
         $version = Cache::get('receipt-template-version', 1);
-        $cacheKey = "receipt-template:v{$version}:{$sale->branch_id}:{$sale->document_type}";
+        $documentPolicy = app(SalesDocumentPolicy::class);
+        $profileColumns = $documentPolicy->visibleTemplateColumns();
+        $profileColumnSignature = md5(implode('|', $profileColumns));
+        $cacheKey = 'receipt-template:v'.$version.':'.SystemCacheInvalidator::operationalVersion().":{$profileColumnSignature}:{$sale->branch_id}:{$sale->document_type}";
 
-        return Cache::remember($cacheKey, now()->addSeconds(self::CACHE_SECONDS), function () use ($sale) {
+        return Cache::remember($cacheKey, now()->addSeconds(self::CACHE_SECONDS), function () use ($sale, $profileColumns) {
             $template = ReceiptTemplate::query()
                 ->where('is_active', true)
                 ->where(function ($query) use ($sale) {
@@ -874,7 +771,7 @@ class SaleController extends Controller
                     'paper_type' => 'letter',
                     'thermal_width_mm' => null,
                     'use_branding' => true,
-                    'layout' => ReceiptTemplate::defaultLayout(),
+                    'layout' => $this->layoutWithProfileColumns(ReceiptTemplate::defaultLayout(), $profileColumns),
                 ];
             }
 
@@ -882,9 +779,62 @@ class SaleController extends Controller
                 'paper_type' => $template->paper_type,
                 'thermal_width_mm' => $template->thermal_width_mm,
                 'use_branding' => $template->use_branding,
-                'layout' => array_replace_recursive(ReceiptTemplate::defaultLayout(), $template->layout ?? []),
+                'layout' => $this->layoutWithProfileColumns(array_replace_recursive(ReceiptTemplate::defaultLayout(), $template->layout ?? []), $profileColumns),
             ];
         });
+    }
+
+    private function layoutWithProfileColumns(array $layout, array $profileColumns): array
+    {
+        if ($profileColumns === []) {
+            return $layout;
+        }
+
+        $allowed = array_flip($profileColumns);
+        $orders = collect($profileColumns)
+            ->flip()
+            ->map(fn (int $index) => $index + 1);
+        $layout['item_columns'] = collect($layout['item_columns'] ?? ReceiptTemplate::defaultLayout()['item_columns'])
+            ->map(function (array $column) use ($allowed) {
+                $column['show'] = isset($allowed[$column['key']]);
+
+                return $column;
+            })
+            ->values()
+            ->all();
+
+        foreach ($layout['item_columns'] as $index => $column) {
+            if ($orders->has($column['key'])) {
+                $layout['item_columns'][$index]['order'] = (int) $orders->get($column['key']);
+            }
+
+            $layout['fields'][$column['key']] = (bool) $column['show'];
+        }
+
+        foreach ($profileColumns as $columnKey) {
+            $layout['fields'][$columnKey] = true;
+
+            if (! collect($layout['item_columns'])->contains('key', $columnKey)) {
+                $layout['item_columns'][] = [
+                    'key' => $columnKey,
+                    'label' => '',
+                    'show' => true,
+                    'align' => in_array($columnKey, ['item_quantity', 'item_base', 'item_price', 'item_subtotal'], true) ? 'right' : 'left',
+                    'order' => (int) $orders->get($columnKey, 99),
+                ];
+            }
+        }
+
+        return $layout;
+    }
+
+    private function allowedPaymentMethods(string $flow = 'sales')
+    {
+        $policy = app(SalesDocumentPolicy::class);
+
+        return UiCatalogCache::activePaymentMethods(['id', 'name', 'code', 'requires_reference'])
+            ->filter(fn ($method) => $policy->isPaymentMethodAllowed($method->code, $flow))
+            ->values();
     }
 
     private function saleItemAttributes(?Product $product, array $payloadAttributes): array
@@ -923,6 +873,39 @@ class SaleController extends Controller
             throw ValidationException::withMessages([
                 'items' => 'Uno o mas productos no estan habilitados para la sucursal seleccionada.',
             ]);
+        }
+    }
+
+    private function ensureStockPolicyAllowsSale(array $items, $products, int $branchId, $user, CommercialPolicy $policy): void
+    {
+        $requiredByProduct = collect($items)
+            ->groupBy('product_id')
+            ->map(fn ($group) => round((float) $group->sum('meters'), 3));
+        $stocks = ProductBranchStock::query()
+            ->where('branch_id', $branchId)
+            ->whereIn('product_id', $requiredByProduct->keys())
+            ->pluck('available_meters', 'product_id');
+
+        foreach ($requiredByProduct as $productId => $required) {
+            $available = (float) ($stocks[$productId] ?? 0);
+
+            if ($available >= $required) {
+                continue;
+            }
+
+            $product = $products->get((int) $productId);
+            $categoryName = $product?->productCategory?->name;
+
+            if (! $policy->canSellNegativeStock($user, $categoryName)) {
+                throw ValidationException::withMessages([
+                    'items' => sprintf(
+                        'Stock insuficiente para %s. Disponible: %s, requerido: %s. La politica comercial no permite vender con stock negativo.',
+                        $product?->name ?? 'producto',
+                        number_format($available, 3, '.', ''),
+                        number_format($required, 3, '.', ''),
+                    ),
+                ]);
+            }
         }
     }
 }

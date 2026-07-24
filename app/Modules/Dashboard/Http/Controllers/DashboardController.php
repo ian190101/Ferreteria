@@ -12,6 +12,7 @@ use App\Modules\Payments\Models\PurchasePayment;
 use App\Modules\Production\Models\ProductionOrder;
 use App\Modules\Purchases\Models\Purchase;
 use App\Modules\Sales\Models\Sale;
+use App\Modules\SystemSuperadmin\Services\ActiveBusinessProfile;
 use App\Support\AuthSessionCache;
 use App\Support\SystemCacheInvalidator;
 use App\Support\UiCatalogCache;
@@ -115,7 +116,7 @@ class DashboardController extends Controller
 
     private function recentSales($user, ?int $branchId, array $branchIds, Carbon $from, Carbon $to)
     {
-        if (! $user->can('sales.view')) {
+        if (! $this->userCan($user, 'sales.view')) {
             return [];
         }
 
@@ -129,7 +130,7 @@ class DashboardController extends Controller
 
     private function pendingReceivables($user, ?int $branchId, array $branchIds, Carbon $from, Carbon $to)
     {
-        if (! $user->can('payments.view')) {
+        if (! $this->userCan($user, 'payments.view')) {
             return [];
         }
 
@@ -143,7 +144,7 @@ class DashboardController extends Controller
 
     private function lowStocks($user, ?int $branchId, array $branchIds)
     {
-        if (! $user->can('inventory.products.view')) {
+        if (! $this->userCan($user, 'inventory.products.view')) {
             return [];
         }
 
@@ -156,7 +157,7 @@ class DashboardController extends Controller
 
     private function openCashSessions($user, ?int $branchId, array $branchIds)
     {
-        if (! $user->can('cash.view')) {
+        if (! $this->userCan($user, 'cash.view')) {
             return [];
         }
 
@@ -170,14 +171,14 @@ class DashboardController extends Controller
     private function charts($user, ?int $branchId, array $branchIds, Carbon $from, Carbon $to, Carbon $today): array
     {
         return [
-            'salesTrend' => $user->can('sales.view') ? $this->salesTrend($branchId, $branchIds, $from, $to) : [],
-            'stockByProduct' => $user->can('inventory.products.view') ? $this->stockByProduct($branchId, $branchIds) : [],
-            'topProducts' => $user->can('sales.view') ? $this->topProducts($branchId, $branchIds, $from, $to) : [],
-            'cashFlowTrend' => $user->can('purchases.view') || $user->can('expenses.view') ? $this->cashFlowTrend($user, $branchId, $branchIds, $from, $to) : [],
-            'incomeExpenseProfitTrend' => $user->can('payments.view') || $user->can('purchases.view') || $user->can('expenses.view') ? $this->incomeExpenseProfitTrend($user, $branchId, $branchIds, $from, $to) : [],
-            'receivablesAging' => $user->can('payments.view') ? $this->receivablesAging($branchId, $branchIds, $today) : [],
-            'cashProfitByBranchDay' => $user->can('payments.view') || $user->can('purchases.view') || $user->can('expenses.view') ? $this->cashProfitByBranchDay($user, $branchId, $branchIds, $from, $to) : [],
-            'profitByBranch' => $user->can('payments.view') || $user->can('purchases.view') || $user->can('expenses.view') ? $this->profitByBranch($user, $branchId, $branchIds, $from, $to) : [],
+            'salesTrend' => $this->userCan($user, 'sales.view') ? $this->salesTrend($branchId, $branchIds, $from, $to) : [],
+            'stockByProduct' => $this->userCan($user, 'inventory.products.view') ? $this->stockByProduct($branchId, $branchIds) : [],
+            'topProducts' => $this->userCan($user, 'sales.view') ? $this->topProducts($branchId, $branchIds, $from, $to) : [],
+            'cashFlowTrend' => $this->userCanAny($user, ['purchases.view', 'expenses.view']) ? $this->cashFlowTrend($user, $branchId, $branchIds, $from, $to) : [],
+            'incomeExpenseProfitTrend' => $this->userCanAny($user, ['payments.view', 'purchases.view', 'expenses.view']) ? $this->incomeExpenseProfitTrend($user, $branchId, $branchIds, $from, $to) : [],
+            'receivablesAging' => $this->userCan($user, 'payments.view') ? $this->receivablesAging($branchId, $branchIds, $today) : [],
+            'cashProfitByBranchDay' => $this->userCanAny($user, ['payments.view', 'purchases.view', 'expenses.view']) ? $this->cashProfitByBranchDay($user, $branchId, $branchIds, $from, $to) : [],
+            'profitByBranch' => $this->userCanAny($user, ['payments.view', 'purchases.view', 'expenses.view']) ? $this->profitByBranch($user, $branchId, $branchIds, $from, $to) : [],
         ];
     }
 
@@ -266,14 +267,14 @@ class DashboardController extends Controller
 
     private function cashFlowTrend($user, ?int $branchId, array $branchIds, Carbon $from, Carbon $to): array
     {
-        $purchases = $user->can('purchases.view')
+        $purchases = $this->userCan($user, 'purchases.view')
             ? $this->purchasePaymentsQuery($branchId, $branchIds)
                 ->whereBetween('paid_at', [$from, $to])
                 ->selectRaw('DATE(paid_at) as date, SUM(amount) as total')
                 ->groupBy('date')
                 ->pluck('total', 'date')
             : collect();
-        $expenses = $user->can('expenses.view')
+        $expenses = $this->userCan($user, 'expenses.view')
             ? $this->expenseQuery($branchId, $branchIds)
                 ->whereBetween('spent_at', [$from, $to])
                 ->selectRaw('DATE(spent_at) as date, SUM(amount) as total')
@@ -352,7 +353,7 @@ class DashboardController extends Controller
 
     private function incomeExpenseProfitTrend($user, ?int $branchId, array $branchIds, Carbon $from, Carbon $to): array
     {
-        $income = $user->can('payments.view')
+        $income = $this->userCan($user, 'payments.view')
             ? DB::table('sale_payments')
                 ->whereNull('sale_payments.deleted_at')
                 ->when(true, fn ($query) => $this->applyBranchScope($query, $branchId, $branchIds, 'sale_payments.branch_id'))
@@ -362,7 +363,7 @@ class DashboardController extends Controller
                 ->pluck('total', 'date')
             : collect();
 
-        $expenses = $user->can('expenses.view')
+        $expenses = $this->userCan($user, 'expenses.view')
             ? DB::table('expenses')
                 ->whereNull('expenses.deleted_at')
                 ->where('expenses.status', Expense::STATUS_REGISTERED)
@@ -373,7 +374,7 @@ class DashboardController extends Controller
                 ->pluck('total', 'date')
             : collect();
 
-        $purchases = $user->can('purchases.view')
+        $purchases = $this->userCan($user, 'purchases.view')
             ? DB::table('purchase_payments')
                 ->whereNull('purchase_payments.deleted_at')
                 ->when(true, fn ($query) => $this->applyBranchScope($query, $branchId, $branchIds, 'purchase_payments.branch_id'))
@@ -406,7 +407,7 @@ class DashboardController extends Controller
         $incomeRows = DB::table('sale_payments')
             ->join('branches', 'sale_payments.branch_id', '=', 'branches.id')
             ->whereNull('sale_payments.deleted_at')
-            ->when(! $user->can('payments.view'), fn ($query) => $query->whereRaw('1 = 0'))
+            ->when(! $this->userCan($user, 'payments.view'), fn ($query) => $query->whereRaw('1 = 0'))
             ->when(true, fn ($query) => $this->applyBranchScope($query, $branchId, $branchIds, 'sale_payments.branch_id'))
             ->whereBetween('sale_payments.paid_at', [$from, $to])
             ->groupBy('sale_payments.branch_id', 'branches.name', DB::raw('DATE(sale_payments.paid_at)'))
@@ -421,7 +422,7 @@ class DashboardController extends Controller
             ->join('branches', 'expenses.branch_id', '=', 'branches.id')
             ->whereNull('expenses.deleted_at')
             ->where('expenses.status', Expense::STATUS_REGISTERED)
-            ->when(! $user->can('expenses.view'), fn ($query) => $query->whereRaw('1 = 0'))
+            ->when(! $this->userCan($user, 'expenses.view'), fn ($query) => $query->whereRaw('1 = 0'))
             ->when(true, fn ($query) => $this->applyBranchScope($query, $branchId, $branchIds, 'expenses.branch_id'))
             ->whereBetween('expenses.spent_at', [$from, $to])
             ->groupBy('expenses.branch_id', 'branches.name', DB::raw('DATE(expenses.spent_at)'))
@@ -435,7 +436,7 @@ class DashboardController extends Controller
         $purchaseRows = DB::table('purchase_payments')
             ->join('branches', 'purchase_payments.branch_id', '=', 'branches.id')
             ->whereNull('purchase_payments.deleted_at')
-            ->when(! $user->can('purchases.view'), fn ($query) => $query->whereRaw('1 = 0'))
+            ->when(! $this->userCan($user, 'purchases.view'), fn ($query) => $query->whereRaw('1 = 0'))
             ->when(true, fn ($query) => $this->applyBranchScope($query, $branchId, $branchIds, 'purchase_payments.branch_id'))
             ->whereBetween('purchase_payments.paid_at', [$from, $to])
             ->groupBy('purchase_payments.branch_id', 'branches.name', DB::raw('DATE(purchase_payments.paid_at)'))
@@ -507,7 +508,7 @@ class DashboardController extends Controller
                     ->whereNull('sale_payments.deleted_at')
                     ->whereBetween('sale_payments.paid_at', [$from, $to]);
             })
-            ->when(! $user->can('payments.view'), fn ($query) => $query->whereRaw('1 = 0'))
+            ->when(! $this->userCan($user, 'payments.view'), fn ($query) => $query->whereRaw('1 = 0'))
             ->when(true, fn ($query) => $this->applyBranchScope($query, $branchId, $branchIds, 'branches.id'))
             ->groupBy('branches.id', 'branches.name')
             ->get([
@@ -524,7 +525,7 @@ class DashboardController extends Controller
                     ->where('expenses.status', Expense::STATUS_REGISTERED)
                     ->whereBetween('expenses.spent_at', [$from, $to]);
             })
-            ->when(! $user->can('expenses.view'), fn ($query) => $query->whereRaw('1 = 0'))
+            ->when(! $this->userCan($user, 'expenses.view'), fn ($query) => $query->whereRaw('1 = 0'))
             ->when(true, fn ($query) => $this->applyBranchScope($query, $branchId, $branchIds, 'branches.id'))
             ->groupBy('branches.id', 'branches.name')
             ->get([
@@ -540,7 +541,7 @@ class DashboardController extends Controller
                     ->whereNull('purchase_payments.deleted_at')
                     ->whereBetween('purchase_payments.paid_at', [$from, $to]);
             })
-            ->when(! $user->can('purchases.view'), fn ($query) => $query->whereRaw('1 = 0'))
+            ->when(! $this->userCan($user, 'purchases.view'), fn ($query) => $query->whereRaw('1 = 0'))
             ->when(true, fn ($query) => $this->applyBranchScope($query, $branchId, $branchIds, 'branches.id'))
             ->groupBy('branches.id', 'branches.name')
             ->get([
@@ -689,7 +690,13 @@ class DashboardController extends Controller
 
     private function can(array $permissions, string $permission): bool
     {
-        return in_array($permission, $permissions, true);
+        if (! in_array($permission, $permissions, true)) {
+            return false;
+        }
+
+        $feature = $this->featureForPermission($permission);
+
+        return $feature === null || ActiveBusinessProfile::enabled($feature);
     }
 
     /**
@@ -697,6 +704,44 @@ class DashboardController extends Controller
      */
     private function canAny(array $permissions, array $required): bool
     {
-        return count(array_intersect($required, $permissions)) > 0;
+        foreach ($required as $permission) {
+            if ($this->can($permissions, $permission)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function userCan($user, string $permission): bool
+    {
+        return $user->can($permission)
+            && ($this->featureForPermission($permission) === null || ActiveBusinessProfile::enabled($this->featureForPermission($permission)));
+    }
+
+    private function userCanAny($user, array $permissions): bool
+    {
+        foreach ($permissions as $permission) {
+            if ($this->userCan($user, $permission)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function featureForPermission(string $permission): ?string
+    {
+        return match (true) {
+            str_starts_with($permission, 'sales.') => 'sales_notes',
+            str_starts_with($permission, 'payments.') => 'sales_notes',
+            str_starts_with($permission, 'payment-promises.') => 'payment_promises',
+            str_starts_with($permission, 'purchases.') => 'purchases',
+            str_starts_with($permission, 'expenses.') => 'expenses',
+            str_starts_with($permission, 'cash.') => 'cash',
+            str_starts_with($permission, 'production.') => 'production',
+            str_starts_with($permission, 'inventory.') => 'inventory',
+            default => null,
+        };
     }
 }

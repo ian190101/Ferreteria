@@ -4,7 +4,7 @@ use App\Modules\Customers\Http\Controllers\CustomerController;
 use App\Modules\Customers\Http\Controllers\CustomerTypeController;
 use Illuminate\Support\Facades\Route;
 
-Route::middleware(['auth', 'verified'])
+Route::middleware(['auth', 'verified', 'business_feature:customers'])
     ->prefix('customers')
     ->name('customers.')
     ->group(function () {

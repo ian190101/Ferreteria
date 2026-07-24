@@ -5,6 +5,7 @@ namespace App\Modules\Purchases\Http\Requests;
 use App\Modules\Inventory\Models\Product;
 use App\Modules\Inventory\Models\ProductCategory;
 use App\Modules\Inventory\Models\ProductUnit;
+use App\Modules\Purchases\Services\PurchaseWorkflowPolicy;
 use App\Support\BranchAccess;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -161,6 +162,16 @@ class StorePurchaseRequest extends FormRequest
             }
 
             $items = collect($this->input('items', []));
+            $workflow = app(PurchaseWorkflowPolicy::class);
+
+            if ($workflow->supplierRequired() && ! $this->filled('supplier_id')) {
+                $validator->errors()->add('supplier_id', 'La configuracion actual exige seleccionar un proveedor para registrar compras.');
+            }
+
+            if ($workflow->supplierHidden() && $this->filled('supplier_id')) {
+                $validator->errors()->add('supplier_id', 'La configuracion actual oculta proveedores para este flujo de compra.');
+            }
+
             $products = Product::query()
                 ->with('thickness:id')
                 ->whereIn('id', $items->pluck('product_id')->filter()->unique()->values())
@@ -171,6 +182,12 @@ class StorePurchaseRequest extends FormRequest
                 $product = $products->get($item['product_id'] ?? null);
                 $newProduct = $item['new_product'] ?? [];
                 $hasNewProduct = blank($item['product_id'] ?? null) && filled($newProduct['name'] ?? null);
+
+                if ($hasNewProduct && ! $workflow->allowCreateProductFromPurchase()) {
+                    $validator->errors()->add("items.{$index}.new_product.name", 'La configuracion actual no permite crear productos nuevos desde compras.');
+
+                    continue;
+                }
 
                 if (! $product && is_array($newProduct) && $newProduct !== [] && blank($newProduct['name'] ?? null)) {
                     $validator->errors()->add("items.{$index}.new_product.name", 'Ingresa el nombre del producto nuevo.');

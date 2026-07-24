@@ -5,6 +5,7 @@ namespace App\Modules\Inventory\Http\Requests;
 use App\Modules\Inventory\Models\Product;
 use App\Modules\Inventory\Models\ProductCategory;
 use App\Modules\Inventory\Models\ProductUnit;
+use App\Modules\Inventory\Services\ProductWorkflowPolicy;
 use App\Modules\Inventory\Support\ProductCodeGenerator;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Str;
@@ -27,7 +28,7 @@ class StoreProductRequest extends FormRequest
             'name' => ['required', 'string', 'max:255'],
             'category' => ['required', 'string', 'max:80'],
             'sku' => ['required', 'string', 'max:80', 'unique:products,sku'],
-            'barcode' => ['required', 'string', 'max:80', 'unique:products,barcode'],
+            'barcode' => [app(ProductWorkflowPolicy::class)->barcodeRequired() ? 'required' : 'nullable', 'string', 'max:80', 'unique:products,barcode'],
             'inventory_tracking_mode' => ['required', Rule::in([Product::TRACKING_GLOBAL, Product::TRACKING_COIL])],
             'base_unit' => ['required', 'string', 'max:24'],
             'attributes' => ['nullable', 'array'],
@@ -76,8 +77,8 @@ class StoreProductRequest extends FormRequest
             'product_unit_id' => $unit?->id ?? $this->input('product_unit_id'),
             'attributes' => $this->normalizedAttributes(),
             'custom_attributes' => $this->normalizedCustomAttributes(),
-            'unit_conversions' => $this->normalizedUnitConversions($unit?->id),
-            'allowed_units' => $this->normalizedAllowedUnits($unit?->symbol),
+            'unit_conversions' => app(ProductWorkflowPolicy::class)->unitEquivalencesEnabled() ? $this->normalizedUnitConversions($unit?->id) : [],
+            'allowed_units' => app(ProductWorkflowPolicy::class)->unitEquivalencesEnabled() ? $this->normalizedAllowedUnits($unit?->symbol) : array_values(array_filter([$unit?->symbol])),
         ]);
     }
 

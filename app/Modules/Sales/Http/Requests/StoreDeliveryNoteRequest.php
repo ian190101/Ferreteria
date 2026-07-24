@@ -8,6 +8,7 @@ use App\Modules\Sales\Models\DeliveryTruck;
 use App\Modules\Sales\Models\Sale;
 use App\Modules\Sales\Models\SaleItem;
 use App\Modules\Sales\Models\SaleReturnItem;
+use App\Modules\Sales\Services\DeliveryWorkflowPolicy;
 use App\Support\BranchAccess;
 use Illuminate\Foundation\Http\FormRequest;
 
@@ -54,6 +55,14 @@ class StoreDeliveryNoteRequest extends FormRequest
     public function withValidator($validator): void
     {
         $validator->after(function ($validator) {
+            $policy = app(DeliveryWorkflowPolicy::class);
+
+            if (! $policy->enabled()) {
+                $validator->errors()->add('sale_id', 'La configuracion empresarial actual no permite registrar despachos.');
+
+                return;
+            }
+
             $sale = Sale::query()->find($this->integer('sale_id'));
 
             if (! $sale || $sale->document_type !== 'sale_note' || $sale->status === 'void') {
@@ -74,7 +83,7 @@ class StoreDeliveryNoteRequest extends FormRequest
                 return;
             }
 
-            $this->validateDriverAndTruck($validator, $sale);
+            $this->validateDriverAndTruck($validator, $sale, $policy);
 
             $metersByItem = [];
             $itemIds = collect($this->input('items', []))
@@ -132,8 +141,16 @@ class StoreDeliveryNoteRequest extends FormRequest
         });
     }
 
-    private function validateDriverAndTruck($validator, Sale $sale): void
+    private function validateDriverAndTruck($validator, Sale $sale, DeliveryWorkflowPolicy $policy): void
     {
+        if ($policy->driverRequired() && ! $this->filled('delivery_driver_id') && ! $this->boolean('manual_driver')) {
+            $validator->errors()->add('delivery_driver_id', 'La configuracion actual exige seleccionar o registrar un conductor para el despacho.');
+        }
+
+        if ($policy->truckRequired() && ! $this->filled('delivery_truck_id') && ! $this->boolean('manual_truck')) {
+            $validator->errors()->add('delivery_truck_id', 'La configuracion actual exige seleccionar o registrar un camion para el despacho.');
+        }
+
         if ($this->filled('delivery_driver_id')) {
             $driver = DeliveryDriver::query()->find($this->integer('delivery_driver_id'));
 

@@ -13,6 +13,7 @@ const iconPaths = {
     inventario: 'M4 7 12 3l8 4-8 4-8-4Zm0 3 8 4 8-4v7l-8 4-8-4v-7Z',
     ventas: 'M5 4h14v16H5V4Zm3 4h8V6H8v2Zm0 4h8v-2H8v2Zm0 4h5v-2H8v2Z',
     clientes: 'M8 11a4 4 0 1 1 0-8 4 4 0 0 1 0 8Zm8 1a3 3 0 1 1 0-6 3 3 0 0 1 0 6ZM2 20a6 6 0 0 1 12 0H2Zm12.5 0a7.5 7.5 0 0 0-2-5.1A5 5 0 0 1 22 18v2h-7.5Z',
+    trabajadores: 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm-7 8a7 7 0 0 1 14 0H5Zm14-7h2v3h3v2h-3v3h-2v-3h-3v-2h3v-3Z',
     compras: 'M6 6h15l-2 8H8L6 6Zm0 0L5 3H2v2h1.5l3 11.5A2 2 0 0 0 8.4 18H20v-2H8.4l-.4-2M9 22a2 2 0 1 0 0-4 2 2 0 0 0 0 4Zm9 0a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z',
     produccion: 'M4 14h3v6H4v-6Zm6-5h3v11h-3V9Zm6-5h3v16h-3V4ZM3 21h18v-2H3v2Z',
     pagos: 'M4 6h16v12H4V6Zm2 3v6h12V9H6Zm3 1h6v4H9v-4Z',
@@ -23,7 +24,7 @@ const iconPaths = {
 };
 
 export default function AuthenticatedLayout({ header, children }) {
-    const { auth, branding } = usePage().props;
+    const { auth, branding, businessProfile, sandboxMode } = usePage().props;
     const user = auth.user;
     const permissions = auth.permissions;
     const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -37,7 +38,8 @@ export default function AuthenticatedLayout({ header, children }) {
         return document.documentElement.classList.contains('dark') ? 'dark' : 'light';
     });
 
-    const navigation = useMemo(() => buildNavigation(permissions), [permissions]);
+    const isSystemSuperadmin = auth.roles?.includes('sistemasuperadmin');
+    const navigation = useMemo(() => buildNavigation(permissions, isSystemSuperadmin, businessProfile?.modules ?? {}), [permissions, isSystemSuperadmin, businessProfile?.modules]);
     const activeItem = navigation
         .flatMap((section) => section.items)
         .find((item) => item.active);
@@ -72,6 +74,19 @@ export default function AuthenticatedLayout({ header, children }) {
             ) : null}
 
             <div className="lg:pl-72">
+                {sandboxMode?.active ? (
+                    <div className="sticky top-0 z-50 flex flex-wrap items-center justify-between gap-3 border-b border-amber-300 bg-amber-100 px-4 py-2 text-sm font-semibold text-amber-950 shadow-sm lg:px-8">
+                        <span>Modo demo completo activo: no afecta produccion.</span>
+                        <div className="flex gap-2">
+                            <Link href={route('system-superadmin.business-profiles.sandbox-full.leave')} method="post" as="button" className="rounded-full bg-white px-3 py-1 text-xs text-amber-900 shadow-sm">
+                                Salir de demo
+                            </Link>
+                            <Link href={route('system-superadmin.business-profiles.sandbox-full.discard')} method="delete" as="button" className="rounded-full bg-amber-900 px-3 py-1 text-xs text-white shadow-sm">
+                                Descartar demo
+                            </Link>
+                        </div>
+                    </div>
+                ) : null}
                 <header className="sticky top-0 z-30 border-b border-white/60 bg-slate-50/78 backdrop-blur-2xl dark:border-white/10 dark:bg-slate-950/72">
                     <div className="flex min-h-16 flex-wrap items-center justify-between gap-2 px-3 py-2 sm:flex-nowrap sm:gap-4 sm:px-6 sm:py-0 lg:px-8">
                         <div className="flex min-w-0 flex-1 items-center gap-3">
@@ -234,60 +249,72 @@ function Icon({ path }) {
     );
 }
 
-function buildNavigation(permissions) {
+function buildNavigation(permissions, isSystemSuperadmin = false, modules = {}) {
     const can = (permission) => permissions.includes(permission);
+    const moduleEnabled = (module) => isSystemSuperadmin || modules[module] !== false;
     const item = (condition, section, label, href, active, icon) => condition ? { section, label, href, active, icon } : null;
 
     return [
         {
+            label: 'Sistema maestro',
+            items: [
+                item(isSystemSuperadmin, 'Sistema maestro', 'Configuracion de negocio', route('system-superadmin.business-profiles.index'), route().current('system-superadmin.business-profiles.*'), 'configuracion'),
+            ].filter(Boolean),
+        },
+        {
             label: 'Operacion',
             items: [
                 item(can('dashboard.view'), 'Operacion', 'Panel', route('dashboard'), route().current('dashboard'), 'dashboard'),
-                item(can('alerts.view'), 'Operacion', 'Alertas', route('alerts.index'), route().current('alerts.*'), 'alertas'),
-                item(can('reports.view'), 'Operacion', 'Reportes', route('reports.index'), route().current('reports.*'), 'reportes'),
+                item(moduleEnabled('alerts') && can('alerts.view'), 'Operacion', 'Alertas', route('alerts.index'), route().current('alerts.*'), 'alertas'),
+                item(moduleEnabled('reports') && can('reports.view'), 'Operacion', 'Reportes', route('reports.index'), route().current('reports.*'), 'reportes'),
             ].filter(Boolean),
         },
         {
             label: 'Comercial',
             items: [
-                item(can('sales.view'), 'Comercial', 'Ventas', route('sales.index'), route().current('sales.index') || route().current('sales.create') || route().current('sales.show') || route().current('sales.settings.*') || route().current('sales.templates.*'), 'ventas'),
-                item(can('sales.deliveries.view'), 'Comercial', 'Despachos', route('sales.deliveries.index'), route().current('sales.deliveries.*'), 'ventas'),
-                item(can('sales.returns.view'), 'Comercial', 'Devoluciones', route('sales.returns.index'), route().current('sales.returns.*'), 'ventas'),
-                item(can('customers.view'), 'Comercial', 'Clientes', route('customers.index'), route().current('customers.*'), 'clientes'),
+                item(moduleEnabled('pos') && can('sales.manage'), 'Comercial', 'POS rapido', route('pos.index'), route().current('pos.*'), 'ventas'),
+                item(moduleEnabled('sales_notes') && can('sales.view'), 'Comercial', 'Ventas', route('sales.index'), route().current('sales.index') || route().current('sales.create') || route().current('sales.show') || route().current('sales.settings.*') || route().current('sales.templates.*'), 'ventas'),
+                item(moduleEnabled('deliveries') && can('sales.deliveries.view'), 'Comercial', 'Despachos', route('sales.deliveries.index'), route().current('sales.deliveries.*'), 'ventas'),
+                item(moduleEnabled('returns') && can('sales.returns.view'), 'Comercial', 'Devoluciones', route('sales.returns.index'), route().current('sales.returns.*'), 'ventas'),
+                item(moduleEnabled('customers') && can('customers.view'), 'Comercial', 'Clientes', route('customers.index'), route().current('customers.*'), 'clientes'),
             ].filter(Boolean),
         },
         {
             label: 'Inventario',
             items: [
-                item(can('inventory.products.view'), 'Inventario', 'Stock central', route('inventory.stock.index'), route().current('inventory.stock.*'), 'inventario'),
-                item(can('inventory.products.view'), 'Inventario', 'Productos', route('inventory.products.index'), route().current('inventory.products.*') || route().current('inventory.thicknesses.*') || route().current('inventory.coils.*'), 'inventario'),
-                item(can('inventory.adjustments.view'), 'Inventario', 'Ajustes', route('inventory.adjustments.index'), route().current('inventory.adjustments.*'), 'inventario'),
-                item(can('inventory.movements.view'), 'Inventario', 'Kardex', route('inventory.movements.index'), route().current('inventory.movements.*'), 'reportes'),
-                item(can('inventory.reservations.view'), 'Inventario', 'Reservas', route('inventory.reservations.index'), route().current('inventory.reservations.*'), 'inventario'),
-                item(can('inventory.transfers.view'), 'Inventario', 'Transferencias', route('inventory.transfers.index'), route().current('inventory.transfers.*'), 'inventario'),
+                item(moduleEnabled('inventory') && can('inventory.products.view'), 'Inventario', 'Stock central', route('inventory.stock.index'), route().current('inventory.stock.*'), 'inventario'),
+                item(moduleEnabled('inventory') && can('inventory.products.view'), 'Inventario', 'Productos', route('inventory.products.index'), route().current('inventory.products.*') || route().current('inventory.thicknesses.*') || route().current('inventory.coils.*'), 'inventario'),
+                item(moduleEnabled('inventory') && can('inventory.adjustments.view'), 'Inventario', 'Ajustes', route('inventory.adjustments.index'), route().current('inventory.adjustments.*'), 'inventario'),
+                item(moduleEnabled('inventory') && can('inventory.movements.view'), 'Inventario', 'Kardex', route('inventory.movements.index'), route().current('inventory.movements.*'), 'reportes'),
+                item(moduleEnabled('inventory') && moduleEnabled('reservations') && can('inventory.reservations.view'), 'Inventario', 'Reservas', route('inventory.reservations.index'), route().current('inventory.reservations.*'), 'inventario'),
+                item(moduleEnabled('inventory') && moduleEnabled('transfers') && can('inventory.transfers.view'), 'Inventario', 'Transferencias', route('inventory.transfers.index'), route().current('inventory.transfers.*'), 'inventario'),
             ].filter(Boolean),
         },
         {
             label: 'Finanzas',
             items: [
-                item(can('purchases.view'), 'Finanzas', 'Compras', route('purchases.index'), route().current('purchases.*'), 'compras'),
-                item(can('payments.view'), 'Finanzas', 'Pagos clientes', route('payments.index'), route().current('payments.index'), 'pagos'),
-                item(can('payments.view'), 'Finanzas', 'Pagos proveedores', route('payments.purchase-payments.index'), route().current('payments.purchase-payments.*'), 'pagos'),
-                item(can('payment-promises.view'), 'Finanzas', 'Cobranza', route('payments.promises.index'), route().current('payments.promises.*'), 'pagos'),
-                item(can('credit-notes.view'), 'Finanzas', 'Notas credito', route('payments.credit-notes.index'), route().current('payments.credit-notes.*'), 'pagos'),
-                item(can('expenses.view'), 'Finanzas', 'Gastos', route('expenses.index'), route().current('expenses.*'), 'pagos'),
-                item(can('cash.view'), 'Finanzas', 'Caja', route('cash.index'), route().current('cash.*'), 'pagos'),
-                item(can('banks.view'), 'Finanzas', 'Bancos', route('banks.index'), route().current('banks.*'), 'pagos'),
+                item(moduleEnabled('purchases') && can('purchases.view'), 'Finanzas', 'Compras', route('purchases.index'), route().current('purchases.index') || route().current('purchases.create') || route().current('purchases.show') || route().current('purchases.orders.*'), 'compras'),
+                item(moduleEnabled('suppliers') && can('purchases.view'), 'Finanzas', 'Proveedores', route('purchases.suppliers.index'), route().current('purchases.suppliers.*'), 'compras'),
+                item(moduleEnabled('sales_notes') && can('payments.view'), 'Finanzas', 'Pagos clientes', route('payments.index'), route().current('payments.index'), 'pagos'),
+                item(moduleEnabled('purchases') && can('payments.view'), 'Finanzas', 'Pagos proveedores', route('payments.purchase-payments.index'), route().current('payments.purchase-payments.*'), 'pagos'),
+                item(moduleEnabled('payment_promises') && can('payment-promises.view'), 'Finanzas', 'Cobranza', route('payments.promises.index'), route().current('payments.promises.*'), 'pagos'),
+                item(moduleEnabled('sales_notes') && can('credit-notes.view'), 'Finanzas', 'Notas credito', route('payments.credit-notes.index'), route().current('payments.credit-notes.*'), 'pagos'),
+                item(moduleEnabled('expenses') && can('expenses.view'), 'Finanzas', 'Gastos', route('expenses.index'), route().current('expenses.*'), 'pagos'),
+                item(moduleEnabled('payroll') && can('payroll.view'), 'Finanzas', 'Sueldos', route('human-resources.payroll.index'), route().current('human-resources.payroll.*'), 'pagos'),
+                item(moduleEnabled('cash') && can('cash.view'), 'Finanzas', 'Caja', route('cash.index'), route().current('cash.*'), 'pagos'),
+                item(moduleEnabled('banks') && can('banks.view'), 'Finanzas', 'Bancos', route('banks.index'), route().current('banks.*'), 'pagos'),
+                item(moduleEnabled('billing') && can('billing.view'), 'Finanzas', 'Facturacion SIAT', route('billing.index'), route().current('billing.*'), 'pagos'),
             ].filter(Boolean),
         },
         {
             label: 'Administracion',
             items: [
-                item(can('production.view'), 'Administracion', 'Produccion', route('production.index'), route().current('production.*'), 'produccion'),
+                item(moduleEnabled('production') && can('production.view'), 'Administracion', 'Produccion', route('production.index'), route().current('production.*'), 'produccion'),
+                item(moduleEnabled('workers') && can('workers.view'), 'Administracion', 'Trabajadores', route('human-resources.workers.index'), route().current('human-resources.workers.*'), 'trabajadores'),
                 item(can('users.view'), 'Administracion', 'Usuarios', route('users.index'), route().current('users.*'), 'configuracion'),
                 item(can('branches.view'), 'Administracion', 'Sucursales', route('branches.index'), route().current('branches.*'), 'configuracion'),
                 item(can('audit.view'), 'Administracion', 'Auditoria', route('audit.index'), route().current('audit.*'), 'reportes'),
-                item(can('settings.manage'), 'Administracion', 'Exportaciones', route('exports.index'), route().current('exports.*'), 'exportaciones'),
+                item(moduleEnabled('exports') && can('settings.manage'), 'Administracion', 'Exportaciones', route('exports.index'), route().current('exports.*'), 'exportaciones'),
                 item(can('settings.manage'), 'Administracion', 'Informacion', route('settings.info.index'), route().current('settings.info.*'), 'informacion'),
                 item(can('settings.manage'), 'Administracion', 'Sistema', route('settings.system.index'), route().current('settings.system.*'), 'configuracion'),
             ].filter(Boolean),

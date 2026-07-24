@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Modules\Users\Http\Requests\StoreRoleRequest;
 use App\Modules\Users\Http\Requests\UpdateRoleRequest;
 use App\Support\AuthSessionCache;
+use App\Support\SystemRoles;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -18,6 +19,7 @@ class RoleController extends Controller
     public function index(Request $request): Response
     {
         $roles = Role::query()
+            ->whereNotIn('name', SystemRoles::reserved())
             ->with('permissions:id,name')
             ->withCount('users')
             ->when($request->string('search')->isNotEmpty(), function ($query) use ($request) {
@@ -56,6 +58,8 @@ class RoleController extends Controller
 
     public function edit(Role $role): Response
     {
+        $this->abortIfReservedRole($role);
+
         return Inertia::render('Users/Roles/Form', [
             'role' => $role->load('permissions:id,name'),
             'permissions' => $this->permissions(),
@@ -64,6 +68,8 @@ class RoleController extends Controller
 
     public function update(UpdateRoleRequest $request, Role $role): RedirectResponse
     {
+        $this->abortIfReservedRole($role);
+
         $role->update([
             'name' => $request->string('name')->toString(),
         ]);
@@ -75,8 +81,8 @@ class RoleController extends Controller
 
     public function destroy(Role $role): RedirectResponse
     {
-        if ($role->name === 'superadmin') {
-            return back()->withErrors(['role' => 'El rol superadmin no puede eliminarse.']);
+        if ($role->name === 'superadmin' || in_array($role->name, SystemRoles::reserved(), true)) {
+            return back()->withErrors(['role' => 'Este rol es protegido y no puede eliminarse.']);
         }
 
         $role->delete();
@@ -91,6 +97,11 @@ class RoleController extends Controller
             ->orderBy('name')
             ->get(['id', 'name'])
             ->groupBy(fn (Permission $permission) => str($permission->name)->before('.')->toString());
+    }
+
+    private function abortIfReservedRole(Role $role): void
+    {
+        abort_if(in_array($role->name, SystemRoles::reserved(), true), 404);
     }
 
     private function bumpAuthCacheVersion(): void

@@ -7,14 +7,16 @@ import ModuleHeader from '../../../../Shared/Resources/Components/ModuleHeader';
 import Pagination from '../../../../Shared/Resources/Components/Pagination';
 import SelectField from '../../../../Shared/Resources/Components/SelectField';
 import { Head, router, useForm, usePage } from '@inertiajs/react';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 
 const moneyFormatter = new Intl.NumberFormat('es-BO', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
 });
 
-export default function Index({ expenses, summary, branches, categories, categoryCatalog, paymentMethods, filters }) {
+const salaryCategoryCode = 'salary-payroll';
+
+export default function Index({ expenses, summary, branches, categories, categoryCatalog, paymentMethods, workers = [], filters }) {
     const permissions = usePage().props.auth.permissions;
     const canManage = permissions.includes('expenses.manage');
     const [editingCategory, setEditingCategory] = useState(null);
@@ -36,6 +38,9 @@ export default function Index({ expenses, summary, branches, categories, categor
         reference: '',
         status: 'registered',
         notes: '',
+        worker_id: '',
+        period_from: '',
+        period_to: '',
     });
     const categoryForm = useForm({
         name: '',
@@ -52,7 +57,38 @@ export default function Index({ expenses, summary, branches, categories, categor
         event.preventDefault();
         expenseForm.post(route('expenses.store'), {
             preserveScroll: true,
-            onSuccess: () => expenseForm.reset('description', 'amount', 'reference', 'notes'),
+            onSuccess: () => expenseForm.reset('description', 'amount', 'reference', 'notes', 'worker_id', 'period_from', 'period_to'),
+        });
+    };
+
+    const selectedExpenseCategory = useMemo(
+        () => categories.find((category) => Number(category.id) === Number(expenseForm.data.expense_category_id)),
+        [categories, expenseForm.data.expense_category_id],
+    );
+    const isSalaryExpense = selectedExpenseCategory?.code === salaryCategoryCode;
+    const workersForSelectedBranch = useMemo(
+        () => workers.filter((worker) => Number(worker.branch_id) === Number(expenseForm.data.branch_id)),
+        [workers, expenseForm.data.branch_id],
+    );
+
+    const setExpenseCategory = (categoryId) => {
+        const category = categories.find((item) => Number(item.id) === Number(categoryId));
+        expenseForm.setData({
+            ...expenseForm.data,
+            expense_category_id: categoryId,
+            worker_id: category?.code === salaryCategoryCode ? expenseForm.data.worker_id : '',
+            period_from: category?.code === salaryCategoryCode ? expenseForm.data.period_from : '',
+            period_to: category?.code === salaryCategoryCode ? expenseForm.data.period_to : '',
+        });
+    };
+
+    const setExpenseWorker = (workerId) => {
+        const worker = workers.find((item) => Number(item.id) === Number(workerId));
+        expenseForm.setData({
+            ...expenseForm.data,
+            worker_id: workerId,
+            amount: worker?.salary_amount ?? expenseForm.data.amount,
+            description: worker ? `Pago de sueldo: ${worker.name}` : expenseForm.data.description,
         });
     };
 
@@ -110,12 +146,29 @@ export default function Index({ expenses, summary, branches, categories, categor
                     <div className="mb-6 grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
                         <Panel title="Registrar gasto">
                             <form onSubmit={submitExpense} className="grid gap-4 p-4 sm:grid-cols-2">
-                                <SelectField label="Sucursal" name="branch_id" value={expenseForm.data.branch_id} onChange={(event) => expenseForm.setData('branch_id', event.target.value)} error={expenseForm.errors.branch_id} required>
+                                <SelectField
+                                    label="Sucursal"
+                                    name="branch_id"
+                                    value={expenseForm.data.branch_id}
+                                    onChange={(event) => expenseForm.setData({ ...expenseForm.data, branch_id: event.target.value, worker_id: '' })}
+                                    error={expenseForm.errors.branch_id}
+                                    required
+                                >
                                     {branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
                                 </SelectField>
-                                <SelectField label="Categoria" name="expense_category_id" value={expenseForm.data.expense_category_id} onChange={(event) => expenseForm.setData('expense_category_id', event.target.value)} error={expenseForm.errors.expense_category_id} required>
+                                <SelectField label="Categoria" name="expense_category_id" value={expenseForm.data.expense_category_id} onChange={(event) => setExpenseCategory(event.target.value)} error={expenseForm.errors.expense_category_id} helpTooltip="Si eliges Pago de sueldos, el egreso tambien se registrara en planilla y respetara la sucursal del trabajador." required>
                                     {categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
                                 </SelectField>
+                                {isSalaryExpense ? (
+                                    <>
+                                        <SelectField label="Trabajador" name="worker_id" value={expenseForm.data.worker_id} onChange={(event) => setExpenseWorker(event.target.value)} error={expenseForm.errors.worker_id} helpTooltip="Solo se muestran trabajadores activos de la sucursal seleccionada." required>
+                                            <option value="">Seleccionar trabajador</option>
+                                            {workersForSelectedBranch.map((worker) => <option key={worker.id} value={worker.id}>{worker.name} - {worker.position ?? 'Sin cargo'}</option>)}
+                                        </SelectField>
+                                        <FormField label="Desde periodo" name="period_from" type="date" value={expenseForm.data.period_from} onChange={(event) => expenseForm.setData('period_from', event.target.value)} error={expenseForm.errors.period_from} />
+                                        <FormField label="Hasta periodo" name="period_to" type="date" value={expenseForm.data.period_to} onChange={(event) => expenseForm.setData('period_to', event.target.value)} error={expenseForm.errors.period_to} />
+                                    </>
+                                ) : null}
                                 <SelectField label="Metodo de pago" name="payment_method_id" value={expenseForm.data.payment_method_id} onChange={(event) => expenseForm.setData('payment_method_id', event.target.value)} error={expenseForm.errors.payment_method_id}>
                                     <option value="">Sin metodo</option>
                                     {paymentMethods.map((method) => <option key={method.id} value={method.id}>{method.name}</option>)}
@@ -143,7 +196,7 @@ export default function Index({ expenses, summary, branches, categories, categor
                         <Panel title={editingCategory ? 'Editar categoria' : 'Nueva categoria'}>
                             <form onSubmit={submitCategory} className="grid gap-4 p-4">
                                 <FormField label="Nombre" name="name" value={categoryForm.data.name} onChange={(event) => categoryForm.setData('name', event.target.value)} error={categoryForm.errors.name} required />
-                                <FormField label="Codigo" name="code" value={categoryForm.data.code} onChange={(event) => categoryForm.setData('code', event.target.value)} error={categoryForm.errors.code} required />
+                                <FormField label="Codigo" name="code" value={categoryForm.data.code} onChange={(event) => categoryForm.setData('code', event.target.value)} error={categoryForm.errors.code} disabled={editingCategory?.code === salaryCategoryCode} required />
                                 <SelectField label="Estado" name="category_is_active" value={categoryForm.data.is_active ? '1' : '0'} onChange={(event) => categoryForm.setData('is_active', event.target.value === '1')} error={categoryForm.errors.is_active}>
                                     <option value="1">Activo</option>
                                     <option value="0">Inactivo</option>
@@ -253,10 +306,11 @@ export default function Index({ expenses, summary, branches, categories, categor
                                 {expenses.data.map((expense) => (
                                     <tr key={expense.id}>
                                         <td className="whitespace-nowrap px-4 py-3">{formatDate(expense.spent_at)}</td>
-                                        <td className="px-4 py-3">
-                                            <p className="font-medium">{expense.description}</p>
-                                            <p className="text-xs text-slate-500">{expense.reference ?? '-'}</p>
-                                        </td>
+                                            <td className="px-4 py-3">
+                                                <p className="font-medium">{expense.description}</p>
+                                                {expense.salary_payment?.worker ? <p className="text-xs text-emerald-600">Trabajador: {expense.salary_payment.worker.name}</p> : null}
+                                                <p className="text-xs text-slate-500">{expense.reference ?? '-'}</p>
+                                            </td>
                                         <td className="px-4 py-3">{expense.category?.name ?? '-'}</td>
                                         <td className="px-4 py-3">{expense.branch?.name ?? '-'}</td>
                                         <td className="px-4 py-3">{expense.payment_method?.name ?? '-'}</td>

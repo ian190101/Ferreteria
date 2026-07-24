@@ -3,7 +3,7 @@
 use App\Modules\Production\Http\Controllers\ProductionOrderController;
 use Illuminate\Support\Facades\Route;
 
-Route::middleware(['auth', 'verified'])
+Route::middleware(['auth', 'verified', 'business_feature:production'])
     ->prefix('production')
     ->name('production.')
     ->group(function () {

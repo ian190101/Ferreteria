@@ -43,9 +43,12 @@ use App\Modules\Sales\Models\ReceiptTemplate;
 use App\Modules\Sales\Models\Sale;
 use App\Modules\Sales\Models\SaleReturn;
 use App\Modules\Sales\Models\SaleType;
+use App\Modules\Sales\Events\SaleNoteIssued;
+use App\Modules\Sales\Listeners\ProcessSaleNoteIssued;
 use App\Support\AuthSessionCache;
 use App\Support\SystemCacheInvalidator;
 use App\Support\UiCatalogCache;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Support\Facades\Vite;
@@ -79,7 +82,13 @@ class AppServiceProvider extends ServiceProvider
         Vite::createAssetPathsUsing(fn (string $path) => '/'.$path);
         Vite::prefetch(concurrency: 3);
 
+        $this->registerDomainEvents();
         $this->registerCacheInvalidationHooks();
+    }
+
+    private function registerDomainEvents(): void
+    {
+        Event::listen(SaleNoteIssued::class, ProcessSaleNoteIssued::class);
     }
 
     private function registerCacheInvalidationHooks(): void

@@ -15,11 +15,11 @@ use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 class ExportController extends Controller
 {
-    public function index(ExportDatasetService $datasets): Response
+    public function index(Request $request, ExportDatasetService $datasets): Response
     {
         return Inertia::render('Exports/Index', [
-            'catalog' => $datasets->catalog(),
-            'branches' => UiCatalogCache::activeBranchesForUser(request()->user()),
+            'catalog' => $datasets->catalog($request),
+            'branches' => UiCatalogCache::activeBranchesForUser($request->user()),
             'defaults' => [
                 'from' => now()->startOfMonth()->toDateString(),
                 'to' => now()->toDateString(),

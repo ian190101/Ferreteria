@@ -35,4 +35,9 @@ return [
         ],
     ],
 
+    'siat' => [
+        'pilot_base' => env('SIAT_PILOT_BASE', 'https://pilotosiatservicios.impuestos.gob.bo/v2'),
+        'production_base' => env('SIAT_PRODUCTION_BASE', 'https://siatservicios.impuestos.gob.bo/v2'),
+    ],
+
 ];

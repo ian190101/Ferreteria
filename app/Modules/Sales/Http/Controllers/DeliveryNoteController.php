@@ -11,6 +11,8 @@ use App\Modules\Sales\Models\DeliveryTruck;
 use App\Modules\Sales\Models\Sale;
 use App\Modules\Sales\Models\SaleItem;
 use App\Modules\Sales\Models\SaleReturnItem;
+use App\Modules\Sales\Services\SaleInventoryService;
+use App\Modules\Sales\Services\SalesWorkflowPolicy;
 use App\Support\BranchAccess;
 use App\Support\UiCatalogCache;
 use Illuminate\Http\RedirectResponse;
@@ -78,9 +80,9 @@ class DeliveryNoteController extends Controller
         ]);
     }
 
-    public function store(StoreDeliveryNoteRequest $request): RedirectResponse
+    public function store(StoreDeliveryNoteRequest $request, SaleInventoryService $inventory, SalesWorkflowPolicy $workflow): RedirectResponse
     {
-        DB::transaction(function () use ($request) {
+        DB::transaction(function () use ($request, $inventory, $workflow) {
             $sale = Sale::query()
                 ->where('document_type', 'sale_note')
                 ->where('status', '!=', 'void')
@@ -151,7 +153,7 @@ class DeliveryNoteController extends Controller
                     ]);
                 }
 
-                $delivery->items()->create([
+                $deliveryItem = $delivery->items()->create([
                     'sale_item_id' => $saleItem->id,
                     'product_id' => $saleItem->product_id,
                     'product_coil_id' => $saleItem->product_coil_id,
@@ -159,6 +161,10 @@ class DeliveryNoteController extends Controller
                     'display_quantity' => $displayQuantity > 0 ? $displayQuantity : $this->baseToDisplayQuantity($saleItem, $meters),
                     'display_unit_label' => $saleItem->display_unit_label ?: $saleItem->unit_label,
                 ]);
+
+                if ($workflow->shouldDiscountInventoryOnDelivery()) {
+                    $inventory->decrementForDeliveryItem($deliveryItem, (int) $request->user()->id);
+                }
 
                 $totalMeters += $meters;
                 $pendingByItem[$saleItem->id] = max(round($pendingMeters - $meters, 3), 0);

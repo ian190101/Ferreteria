@@ -4,12 +4,16 @@ namespace App\Modules\Cash\Support;
 
 use App\Models\User;
 use App\Modules\Cash\Models\CashRegisterSession;
+use App\Modules\SystemSuperadmin\Services\ActiveBusinessProfile;
 
 class CashSessionGuard
 {
     public static function requiresOpenSession(User $user, int $branchId): bool
     {
-        return ! $user->isSuperAdministrator()
+        $cashRules = ActiveBusinessProfile::payload()['cash'] ?? [];
+
+        return (bool) ($cashRules['required_to_sell'] ?? true)
+            && ! $user->isSuperAdministrator()
             && ! self::hasOpenSession($user, $branchId);
     }
 

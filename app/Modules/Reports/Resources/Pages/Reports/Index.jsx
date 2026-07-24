@@ -15,6 +15,7 @@ export default function Index({
     agingBuckets = {},
     agingReceivables = { data: [], links: [] },
     latestMovements = [],
+    profileFeatures = {},
 }) {
     const decimalFormat = useDecimalFormatter('finance');
     const { data, setData, get, processing } = useForm({
@@ -57,15 +58,15 @@ export default function Index({
                 </form>
 
                 <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-                    <MetricCard title="Ventas" value={`Bs ${decimalFormat.money(metrics.sales_total ?? 0)}`} detail={`${metrics.sales_count ?? 0} documentos emitidos`} />
-                    <MetricCard title="Cotizaciones" value={metrics.quotations_count ?? 0} detail="Documentos tipo cotizacion" />
-                    <MetricCard title="Compras" value={`Bs ${decimalFormat.money(metrics.purchase_total ?? 0)}`} detail={`${metrics.purchase_count ?? 0} ingresos registrados`} />
-                    <MetricCard title="Gastos" value={`Bs ${decimalFormat.money(metrics.expense_total ?? 0)}`} detail={`${metrics.expense_count ?? 0} egresos registrados`} />
-                    <MetricCard title="Inventario" value={metrics.active_coils ?? 0} detail={`${metrics.low_stock_count ?? 0} alertas de stock bajo`} tone={Number(metrics.low_stock_count ?? 0) > 0 ? 'warning' : 'default'} />
+                    {profileFeatures.sales ? <MetricCard title="Ventas" value={`Bs ${decimalFormat.money(metrics.sales_total ?? 0)}`} detail={`${metrics.sales_count ?? 0} documentos emitidos`} /> : null}
+                    {profileFeatures.quotes ? <MetricCard title="Cotizaciones" value={metrics.quotations_count ?? 0} detail="Documentos tipo cotizacion" /> : null}
+                    {profileFeatures.purchases ? <MetricCard title="Compras" value={`Bs ${decimalFormat.money(metrics.purchase_total ?? 0)}`} detail={`${metrics.purchase_count ?? 0} ingresos registrados`} /> : null}
+                    {profileFeatures.expenses ? <MetricCard title="Gastos" value={`Bs ${decimalFormat.money(metrics.expense_total ?? 0)}`} detail={`${metrics.expense_count ?? 0} egresos registrados`} /> : null}
+                    {profileFeatures.inventory ? <MetricCard title="Inventario" value={metrics.active_coils ?? 0} detail={`${metrics.low_stock_count ?? 0} alertas de stock bajo`} tone={Number(metrics.low_stock_count ?? 0) > 0 ? 'warning' : 'default'} /> : null}
                 </div>
 
                 <div className="grid gap-6 xl:grid-cols-[1.35fr_1fr]">
-                    <Panel title="Ventas recientes">
+                    {profileFeatures.sales ? <Panel title="Ventas recientes">
                         <DataTable>
                             <thead className="bg-slate-100 text-left text-slate-600 dark:bg-slate-800 dark:text-slate-300">
                                 <tr>
@@ -91,9 +92,9 @@ export default function Index({
                                 ))}
                             </tbody>
                         </DataTable>
-                    </Panel>
+                    </Panel> : null}
 
-                    <Panel title="Stock bajo">
+                    {profileFeatures.inventory ? <Panel title="Stock bajo">
                         <div className="divide-y divide-slate-100 dark:divide-slate-800">
                             {lowStocks.length === 0 ? (
                                 <p className="px-4 py-5 text-sm text-slate-500">Sin alertas de stock bajo.</p>
@@ -114,10 +115,10 @@ export default function Index({
                                 </div>
                             ))}
                         </div>
-                    </Panel>
+                    </Panel> : null}
                 </div>
 
-                <Panel title="Antiguedad de cuentas por cobrar" className="mt-6">
+                {profileFeatures.payments ? <Panel title="Antiguedad de cuentas por cobrar" className="mt-6">
                     <div className="grid gap-4 border-b border-slate-200 p-4 dark:border-slate-800 sm:grid-cols-2 xl:grid-cols-4">
                         {Object.entries(agingBuckets).map(([key, bucket]) => (
                             <MetricCard
@@ -169,9 +170,9 @@ export default function Index({
                     <div className="px-4 py-3">
                         <Pagination links={agingReceivables.links} />
                     </div>
-                </Panel>
+                </Panel> : null}
 
-                <Panel title="Ultimos lotes/unidades registrados" className="mt-6">
+                {profileFeatures.inventory_lots ? <Panel title="Ultimos lotes/unidades registrados" className="mt-6">
                     <DataTable>
                         <thead className="bg-slate-100 text-left text-slate-600 dark:bg-slate-800 dark:text-slate-300">
                             <tr>
@@ -199,7 +200,7 @@ export default function Index({
                             ))}
                         </tbody>
                     </DataTable>
-                </Panel>
+                </Panel> : null}
             </section>
         </AuthenticatedLayout>
     );

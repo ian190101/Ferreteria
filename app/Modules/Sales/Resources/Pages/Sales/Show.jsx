@@ -28,8 +28,8 @@ const DEFAULT_ITEM_COLUMNS = [
     { key: 'item_subtotal', label: 'Subtotal', show: true, align: 'right' },
 ];
 
-export default function Show({ sale, template, paymentMethods = [], conversionReadiness = { can_convert: false, issues: [], items: [] } }) {
-    const documentTitle = sale.document_type === 'quotation' ? 'COTIZACION' : 'NOTA DE VENTA';
+export default function Show({ sale, template, documentPolicy = {}, billingPolicy = {}, paymentMethods = [], conversionReadiness = { can_convert: false, issues: [], items: [] } }) {
+    const documentTitle = documentTitleForSale(sale, documentPolicy);
     const page = usePage();
     const permissions = page.props.auth.permissions;
     const errors = page.props.errors ?? {};
@@ -158,14 +158,37 @@ export default function Show({ sale, template, paymentMethods = [], conversionRe
                             disabled={!canConvertQuotation}
                             className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-400"
                             type="button"
-                            title={canConvertQuotation ? 'Convertir a nota de venta' : 'No hay stock libre suficiente para convertir'}
+                            title={canConvertQuotation ? `Convertir a ${String(documentPolicy.saleNoteLabel ?? 'nota de venta').toLowerCase()}` : 'No hay stock libre suficiente para convertir'}
                         >
-                            Convertir a nota
+                            Convertir a {documentPolicy.saleNoteLabel ?? 'nota'}
                         </button>
                     ) : null}
                     <Link href={route('sales.templates.index')} className="rounded-md border border-slate-300 px-4 py-2 text-sm dark:border-slate-700">Editar plantillas</Link>
+                    {billingPolicy.enabled && billingPolicy.issueTiming === 'manual' && sale.document_type === 'sale_note' && sale.status !== 'void' && !sale.siat_invoices?.some((invoice) => ['pending', 'validated'].includes(invoice.status)) && permissions.includes('billing.manage') ? (
+                        <button
+                            onClick={() => router.post(route('billing.sales.issue', sale.id), {}, { preserveScroll: true })}
+                            className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white"
+                            type="button"
+                            title={billingPolicy.scenarioLabel ?? 'Emitir factura fiscal'}
+                        >
+                            Emitir factura SIAT
+                        </button>
+                    ) : null}
                     <Link href={route('sales.index')} className="rounded-md border border-slate-300 px-4 py-2 text-sm dark:border-slate-700">Volver</Link>
                 </div>
+
+                {sale.siat_invoices?.length ? (
+                    <div className="print-hidden mx-auto mb-4 max-w-4xl rounded-2xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm text-indigo-900 dark:border-indigo-900/70 dark:bg-indigo-950/30 dark:text-indigo-100">
+                        <p className="font-semibold">Facturacion SIAT</p>
+                        <div className="mt-2 space-y-1">
+                            {sale.siat_invoices.map((invoice) => (
+                                <Link key={invoice.id} href={route('billing.invoices.show', invoice.id)} className="block underline">
+                                    Factura {invoice.invoice_number} - {invoice.status} - {invoice.reception_code ?? 'sin codigo recepcion'}
+                                </Link>
+                            ))}
+                        </div>
+                    </div>
+                ) : null}
 
                 {sale.status === 'void' ? (
                     <div className="print-hidden mx-auto mb-4 max-w-4xl rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
@@ -344,7 +367,7 @@ function HeaderSection({ sale, branch, documentTitle, fields, layout, primary, l
             <div className="text-right">
                 <p>DOCUMENTO SIN VALOR FISCAL</p>
                 <p>*** Exija su factura ***</p>
-                <p className="font-bold">NOTA DE VENTA</p>
+                <p className="font-bold">{documentTitle}</p>
                 <div className={compact ? 'mt-9' : 'mt-12'}>
                     {fields.document_title ? <p className="font-bold">{documentTitle}</p> : null}
                     {fields.receipt_number ? <p>Nro.: {sale.receipt_number}</p> : null}
@@ -547,6 +570,14 @@ function printableAttributeName(name, unit) {
     const label = String(name ?? '').replace(/\s+util$/i, '').trim();
 
     return unit ? `${label} (${unit})` : label;
+}
+
+function documentTitleForSale(sale, policy) {
+    if (sale.document_type === 'quotation') {
+        return String(policy.quotationLabel ?? 'Cotizacion').toUpperCase();
+    }
+
+    return String(policy.documentMain === 'ticket' ? (policy.ticketLabel ?? 'Ticket POS') : (policy.saleNoteLabel ?? 'Nota de venta')).toUpperCase();
 }
 
 function itemAttributeValue(item, code) {

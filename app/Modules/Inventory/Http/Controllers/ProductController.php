@@ -8,6 +8,7 @@ use App\Modules\Inventory\Http\Requests\StoreProductRequest;
 use App\Modules\Inventory\Http\Requests\UpdateProductRequest;
 use App\Modules\Inventory\Models\Product;
 use App\Modules\Inventory\Models\ProductBranchStock;
+use App\Modules\Inventory\Services\ProductWorkflowPolicy;
 use App\Support\UiCatalogCache;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -74,6 +75,10 @@ class ProductController extends Controller
 
     public function create(): Response
     {
+        $policy = app(ProductWorkflowPolicy::class);
+
+        abort_unless($policy->canCreateFromInventory(), 403);
+
         return Inertia::render('Inventory/Products/Form', [
             'product' => null,
             'thicknesses' => $this->activeThicknesses(),
@@ -81,6 +86,7 @@ class ProductController extends Controller
             'units' => $this->activeUnits(),
             'branches' => $this->activeBranches(request()),
             'attributeDefinitions' => UiCatalogCache::productAttributeDefinitions(),
+            'productPolicy' => $policy->summary(),
         ]);
     }
 
@@ -103,6 +109,8 @@ class ProductController extends Controller
 
     public function edit(Product $product): Response
     {
+        $policy = app(ProductWorkflowPolicy::class);
+
         return Inertia::render('Inventory/Products/Form', [
             'product' => $product->load(['thickness', 'productCategory', 'unit', 'unitConversions.unit:id,name,symbol,kind', 'branchStocks:id,product_id,branch_id,is_enabled']),
             'thicknesses' => $this->activeThicknesses(),
@@ -110,6 +118,7 @@ class ProductController extends Controller
             'units' => $this->activeUnits(),
             'branches' => $this->activeBranches(request()),
             'attributeDefinitions' => UiCatalogCache::productAttributeDefinitions(),
+            'productPolicy' => $policy->summary(),
         ]);
     }
 

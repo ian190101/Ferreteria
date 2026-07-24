@@ -10,6 +10,9 @@ use App\Modules\Payments\Models\CreditNote;
 use App\Modules\Payments\Models\PaymentMethod;
 use App\Modules\Payments\Models\SalePayment;
 use App\Modules\Sales\Models\Sale;
+use App\Modules\Sales\Services\SaleInventoryService;
+use App\Modules\Sales\Services\SalesDocumentPolicy;
+use App\Modules\Sales\Services\SalesWorkflowPolicy;
 use App\Support\BranchAccess;
 use App\Support\UiCatalogCache;
 use Illuminate\Http\RedirectResponse;
@@ -22,6 +25,11 @@ class PaymentController extends Controller
 {
     public function index(Request $request): Response
     {
+        $documentPolicy = app(SalesDocumentPolicy::class);
+        $allowedMethods = UiCatalogCache::activePaymentMethods()
+            ->filter(fn ($method) => $documentPolicy->isPaymentMethodAllowed($method->code, 'collections'))
+            ->values();
+
         $payments = SalePayment::query()
             ->with(['sale:id,receipt_number,customer_name,total,balance_due,status', 'branch:id,name', 'user:id,name', 'method:id,name'])
             ->when(true, fn ($query) => BranchAccess::apply($query, $request->user()))
@@ -46,7 +54,7 @@ class PaymentController extends Controller
             'payments' => $payments,
             'receivables' => $receivables,
             'branches' => UiCatalogCache::activeBranchesForUser($request->user()),
-            'methods' => UiCatalogCache::activePaymentMethods(),
+            'methods' => $allowedMethods,
             'methodCatalog' => PaymentMethod::query()
                 ->withCount('payments')
                 ->orderByDesc('is_active')
@@ -57,9 +65,9 @@ class PaymentController extends Controller
         ]);
     }
 
-    public function store(StoreSalePaymentRequest $request, BankReconciliationService $banks): RedirectResponse
+    public function store(StoreSalePaymentRequest $request, BankReconciliationService $banks, SaleInventoryService $inventory, SalesWorkflowPolicy $workflow): RedirectResponse
     {
-        $payment = DB::transaction(function () use ($request, $banks) {
+        $payment = DB::transaction(function () use ($request, $banks, $inventory, $workflow) {
             $sale = Sale::query()->lockForUpdate()->findOrFail($request->integer('sale_id'));
             $amount = round((float) $request->input('amount'), 2);
 
@@ -83,6 +91,11 @@ class PaymentController extends Controller
             ]);
 
             $banks->recordSalePayment($payment);
+
+            if ($workflow->shouldDiscountInventoryOnPayment()) {
+                $sale->loadMissing('items.product:id,inventory_tracking_mode');
+                $inventory->decrementForSale($sale, (int) $request->user()->id);
+            }
 
             return $payment;
         });

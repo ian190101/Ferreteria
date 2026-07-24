@@ -9,6 +9,7 @@ use App\Modules\Inventory\Models\ProductCoil;
 use App\Modules\Payments\Models\PaymentPromise;
 use App\Modules\Purchases\Models\Purchase;
 use App\Modules\Sales\Models\Sale;
+use App\Modules\SystemSuperadmin\Services\ActiveBusinessProfile;
 use App\Support\BranchAccess;
 use App\Support\SystemCacheInvalidator;
 use App\Support\UiCatalogCache;
@@ -39,17 +40,28 @@ class ReportController extends Controller
             $to->toDateString(),
         );
 
-        $metrics = Cache::remember($cacheKey, now()->addSeconds(self::CACHE_SECONDS), function () use ($from, $to, $branchId) {
+        $profileFeatures = [
+            'sales' => ActiveBusinessProfile::enabled('quotes') || ActiveBusinessProfile::enabled('sales_notes') || ActiveBusinessProfile::enabled('pos'),
+            'quotes' => ActiveBusinessProfile::enabled('quotes'),
+            'purchases' => ActiveBusinessProfile::enabled('purchases'),
+            'expenses' => ActiveBusinessProfile::enabled('expenses'),
+            'inventory' => ActiveBusinessProfile::enabled('inventory'),
+            'inventory_lots' => ActiveBusinessProfile::enabled('inventory')
+                && (bool) (ActiveBusinessProfile::payload()['inventory']['lot_tracking_optional'] ?? false),
+            'payments' => ActiveBusinessProfile::enabled('sales_notes'),
+        ];
+
+        $metrics = Cache::remember($cacheKey.':'.md5(json_encode($profileFeatures)), now()->addSeconds(self::CACHE_SECONDS), function () use ($from, $to, $branchId, $profileFeatures) {
             return [
-                'sales_total' => (float) $this->salesQuery($from, $to, $branchId)->sum('total'),
-                'sales_count' => $this->salesQuery($from, $to, $branchId)->count(),
-                'quotations_count' => $this->salesQuery($from, $to, $branchId)->where('document_type', 'quotation')->count(),
-                'purchase_total' => (float) $this->purchaseQuery($from, $to, $branchId)->sum('total_amount'),
-                'purchase_count' => $this->purchaseQuery($from, $to, $branchId)->count(),
-                'expense_total' => (float) $this->expenseQuery($from, $to, $branchId)->sum('amount'),
-                'expense_count' => $this->expenseQuery($from, $to, $branchId)->count(),
-                'active_coils' => $this->coilQuery($branchId)->where('status', 'available')->count(),
-                'low_stock_count' => $this->lowStockQuery($branchId)->count(),
+                'sales_total' => $profileFeatures['sales'] ? (float) $this->salesQuery($from, $to, $branchId)->sum('total') : 0.0,
+                'sales_count' => $profileFeatures['sales'] ? $this->salesQuery($from, $to, $branchId)->count() : 0,
+                'quotations_count' => $profileFeatures['quotes'] ? $this->salesQuery($from, $to, $branchId)->where('document_type', 'quotation')->count() : 0,
+                'purchase_total' => $profileFeatures['purchases'] ? (float) $this->purchaseQuery($from, $to, $branchId)->sum('total_amount') : 0.0,
+                'purchase_count' => $profileFeatures['purchases'] ? $this->purchaseQuery($from, $to, $branchId)->count() : 0,
+                'expense_total' => $profileFeatures['expenses'] ? (float) $this->expenseQuery($from, $to, $branchId)->sum('amount') : 0.0,
+                'expense_count' => $profileFeatures['expenses'] ? $this->expenseQuery($from, $to, $branchId)->count() : 0,
+                'active_coils' => $profileFeatures['inventory_lots'] ? $this->coilQuery($branchId)->where('status', 'available')->count() : 0,
+                'low_stock_count' => $profileFeatures['inventory'] ? $this->lowStockQuery($branchId)->count() : 0,
             ];
         });
 
@@ -61,11 +73,12 @@ class ReportController extends Controller
             ],
             'branches' => UiCatalogCache::activeBranchesForUser($request->user()),
             'metrics' => $metrics,
-            'recentSales' => Inertia::defer(fn () => Cache::remember($this->sectionCacheKey('recent-sales', $user->id, $branchId, $from, $to), now()->addSeconds(self::CACHE_SECONDS), fn () => $this->recentSales($from, $to, $branchId)), 'reports-lists'),
-            'lowStocks' => Inertia::defer(fn () => Cache::remember($this->sectionCacheKey('low-stocks', $user->id, $branchId, $from, $to), now()->addSeconds(self::CACHE_SECONDS), fn () => $this->lowStocks($branchId)), 'reports-lists'),
-            'agingBuckets' => Inertia::defer(fn () => Cache::remember($this->sectionCacheKey('aging-buckets', $user->id, $branchId, $from, $to), now()->addSeconds(self::CACHE_SECONDS), fn () => $this->agingBuckets($branchId)), 'reports-lists'),
-            'agingReceivables' => Inertia::defer(fn () => $this->agingReceivables($branchId, $request), 'reports-lists'),
-            'latestMovements' => Inertia::defer(fn () => Cache::remember($this->sectionCacheKey('latest-movements', $user->id, $branchId, $from, $to), now()->addSeconds(self::CACHE_SECONDS), fn () => $this->latestMovements($request, $branchId)), 'reports-lists'),
+            'profileFeatures' => $profileFeatures,
+            'recentSales' => Inertia::defer(fn () => $profileFeatures['sales'] ? Cache::remember($this->sectionCacheKey('recent-sales', $user->id, $branchId, $from, $to), now()->addSeconds(self::CACHE_SECONDS), fn () => $this->recentSales($from, $to, $branchId)) : collect(), 'reports-lists'),
+            'lowStocks' => Inertia::defer(fn () => $profileFeatures['inventory'] ? Cache::remember($this->sectionCacheKey('low-stocks', $user->id, $branchId, $from, $to), now()->addSeconds(self::CACHE_SECONDS), fn () => $this->lowStocks($branchId)) : collect(), 'reports-lists'),
+            'agingBuckets' => Inertia::defer(fn () => $profileFeatures['payments'] ? Cache::remember($this->sectionCacheKey('aging-buckets', $user->id, $branchId, $from, $to), now()->addSeconds(self::CACHE_SECONDS), fn () => $this->agingBuckets($branchId)) : $this->emptyAgingBuckets(), 'reports-lists'),
+            'agingReceivables' => Inertia::defer(fn () => $profileFeatures['payments'] ? $this->agingReceivables($branchId, $request) : Sale::query()->whereRaw('1 = 0')->paginate($request->integer('aging_per_page', 10), ['id'], 'aging_page'), 'reports-lists'),
+            'latestMovements' => Inertia::defer(fn () => $profileFeatures['inventory_lots'] ? Cache::remember($this->sectionCacheKey('latest-movements', $user->id, $branchId, $from, $to), now()->addSeconds(self::CACHE_SECONDS), fn () => $this->latestMovements($request, $branchId)) : collect(), 'reports-lists'),
         ]);
     }
 
@@ -123,12 +136,7 @@ class ReportController extends Controller
 
     private function agingBuckets(?int $branchId): array
     {
-        $buckets = [
-            '0_7' => ['label' => '0 a 7 dias', 'count' => 0, 'total' => 0.0],
-            '8_15' => ['label' => '8 a 15 dias', 'count' => 0, 'total' => 0.0],
-            '16_30' => ['label' => '16 a 30 dias', 'count' => 0, 'total' => 0.0],
-            '31_plus' => ['label' => '31 dias o mas', 'count' => 0, 'total' => 0.0],
-        ];
+        $buckets = $this->emptyAgingBuckets();
 
         $this->receivablesQuery($branchId)
             ->get(['id', 'sold_at', 'balance_due'])
@@ -137,6 +145,18 @@ class ReportController extends Controller
                 $buckets[$bucket]['count']++;
                 $buckets[$bucket]['total'] = round($buckets[$bucket]['total'] + (float) $sale->balance_due, 2);
             });
+
+        return $buckets;
+    }
+
+    private function emptyAgingBuckets(): array
+    {
+        $buckets = [
+            '0_7' => ['label' => '0 a 7 dias', 'count' => 0, 'total' => 0.0],
+            '8_15' => ['label' => '8 a 15 dias', 'count' => 0, 'total' => 0.0],
+            '16_30' => ['label' => '16 a 30 dias', 'count' => 0, 'total' => 0.0],
+            '31_plus' => ['label' => '31 dias o mas', 'count' => 0, 'total' => 0.0],
+        ];
 
         return $buckets;
     }

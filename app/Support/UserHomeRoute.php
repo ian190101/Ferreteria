@@ -8,6 +8,10 @@ class UserHomeRoute
 {
     public static function nameFor(?User $user): string
     {
+        if ($user && AuthSessionCache::isSystemSuperadmin($user)) {
+            return 'system-superadmin.business-profiles.index';
+        }
+
         $routesByPermission = [
             'dashboard.view' => 'dashboard',
             'cash.view' => 'cash.index',

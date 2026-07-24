@@ -3,6 +3,7 @@
 namespace App\Http\Middleware;
 
 use App\Modules\Branches\Models\BranchSetting;
+use App\Modules\SystemSuperadmin\Services\ActiveBusinessProfile;
 use App\Support\AuthSessionCache;
 use App\Support\DecimalPrecision;
 use Illuminate\Http\Request;
@@ -37,7 +38,20 @@ class HandleInertiaRequests extends Middleware
             ...parent::share($request),
             'auth' => $this->auth($request),
             'branding' => $this->branding($request),
+            'businessProfile' => ActiveBusinessProfile::payload(),
             'decimalPrecision' => DecimalPrecision::config(),
+            'sandboxMode' => $this->sandboxMode($request),
+        ];
+    }
+
+    private function sandboxMode(Request $request): array
+    {
+        $session = app()->bound('business_full_sandbox') ? app('business_full_sandbox') : null;
+
+        return [
+            'active' => (bool) $session,
+            'id' => $session?->id,
+            'name' => $session?->name,
         ];
     }
 

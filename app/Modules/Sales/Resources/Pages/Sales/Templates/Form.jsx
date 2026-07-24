@@ -74,7 +74,7 @@ const PAPER_PREVIEW_SIZES = {
     thermal: { width: null, minHeight: '360px' },
 };
 
-export default function Form({ template, branches, defaultLayout, attributeFields = [] }) {
+export default function Form({ template, branches, defaultLayout, attributeFields = [], documentPolicy = {} }) {
     const isEditing = Boolean(template);
     const [draggedSection, setDraggedSection] = useState(null);
     const [draggedColumn, setDraggedColumn] = useState(null);
@@ -199,8 +199,8 @@ export default function Form({ template, branches, defaultLayout, attributeField
                                 </SelectField>
                                 <SelectField label="Documento" name="document_type" value={data.document_type} onChange={(event) => setData('document_type', event.target.value)} error={errors.document_type}>
                                     <option value="both">Ambos</option>
-                                    <option value="quotation">Cotizacion</option>
-                                    <option value="sale_note">Nota de venta</option>
+                                    <option value="quotation">{documentPolicy.quotationLabel ?? 'Cotizacion'}</option>
+                                    <option value="sale_note">{documentPolicy.saleNoteLabel ?? 'Nota de venta'}</option>
                                 </SelectField>
                                 <SelectField label="Tipo de hoja" name="paper_type" value={data.paper_type} onChange={(event) => setData('paper_type', event.target.value)} error={errors.paper_type} helpTitle="Tipo de hoja" helpTooltip="Media hoja carta/oficio imprime en una sola mitad vertical. No crea dos copias; solo ajusta el area imprimible del documento.">
                                     <option value="letter">Bond carta</option>
@@ -357,7 +357,7 @@ export default function Form({ template, branches, defaultLayout, attributeField
                         </div>
                     </div>
 
-                    <Preview data={data} attributeFields={attributeFields} />
+                    <Preview data={data} attributeFields={attributeFields} documentPolicy={documentPolicy} />
                 </form>
             </section>
         </AuthenticatedLayout>
@@ -434,7 +434,7 @@ function Panel({ title, children }) {
     );
 }
 
-function Preview({ data, attributeFields }) {
+function Preview({ data, attributeFields, documentPolicy }) {
     const paper = PAPER_PREVIEW_SIZES[data.paper_type] ?? PAPER_PREVIEW_SIZES.letter;
     const width = data.paper_type === 'thermal' ? `${data.thermal_width_mm}mm` : paper.width;
     const logo = data.layout.logo ?? {};
@@ -467,7 +467,7 @@ function Preview({ data, attributeFields }) {
                     ) : null}
                     <p className="text-center font-bold" style={{ color: primary }}>FABRICA DE CALAMINAS</p>
                     <p className="text-center text-xs" style={{ color: primary }}>Direccion / telefonos</p>
-                    <div className={`${paper.compact ? 'mt-1 pt-1' : 'mt-3 pt-2'} border-t border-black text-right text-xs`} style={{ color: secondary }}>NOTA DE VENTA<br />Nro.: 000001</div>
+                    <div className={`${paper.compact ? 'mt-1 pt-1' : 'mt-3 pt-2'} border-t border-black text-right text-xs`} style={{ color: secondary }}>{String(previewDocumentLabel(data.document_type, documentPolicy)).toUpperCase()}<br />Nro.: 000001</div>
                     <div className={`${paper.compact ? 'mt-1 pt-1' : 'mt-3 pt-2'} grid grid-cols-2 gap-1 border-t border-black text-xs`}>
                         <span>Cliente</span><span>Moneda</span><span>Vendedor</span><span>Tipo</span>
                     </div>
@@ -485,4 +485,11 @@ function logoPositionClass(position) {
         right: 'text-right',
         left: 'text-left',
     }[position] ?? 'text-left';
+}
+
+function previewDocumentLabel(type, policy) {
+    if (type === 'quotation') return policy?.quotationLabel ?? 'Cotizacion';
+    if (type === 'sale_note') return policy?.saleNoteLabel ?? 'Nota de venta';
+
+    return 'Comprobante';
 }

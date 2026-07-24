@@ -99,6 +99,9 @@ class AuditLogController extends Controller
             'Customer' => 'Cliente',
             'Supplier' => 'Proveedor',
             'ReceiptTemplate' => 'Plantilla de comprobante',
+            'BusinessProfile' => 'Perfil empresarial aplicado',
+            'BusinessProfileDraft' => 'Borrador de perfil empresarial',
+            'BusinessProfileVersion' => 'Version anterior de perfil empresarial',
             'User' => 'Usuario',
             'Branch' => 'Sucursal',
         ][$short] ?? $short;

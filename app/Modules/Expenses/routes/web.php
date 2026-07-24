@@ -4,7 +4,7 @@ use App\Modules\Expenses\Http\Controllers\ExpenseCategoryController;
 use App\Modules\Expenses\Http\Controllers\ExpenseController;
 use Illuminate\Support\Facades\Route;
 
-Route::middleware(['auth', 'verified'])
+Route::middleware(['auth', 'verified', 'business_feature:expenses'])
     ->prefix('expenses')
     ->name('expenses.')
     ->group(function () {
