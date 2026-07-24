@@ -103,8 +103,8 @@ export default function Index({
                 </div>
 
                 <div className="mt-6 grid gap-6 xl:grid-cols-3">
-                    <ChartPanel title="Productos mas vendidos" subtitle="Metros vendidos en los ultimos 30 dias">
-                        <VerticalBarChart data={charts.topProducts ?? []} color="#3b82f6" unit=" m" />
+                    <ChartPanel title="Productos mas vendidos" subtitle="Cantidad vendida segun la unidad configurada">
+                        <VerticalBarChart data={charts.topProducts ?? []} color="#3b82f6" unit="" />
                     </ChartPanel>
 
                     <ChartPanel title="Compras pagadas vs gastos" subtitle="Egresos reales segun pagos registrados">
@@ -243,6 +243,7 @@ function HorizontalBarChart({ data, color, unit = '' }) {
         <div className="space-y-3">
             {cleanData.map((item) => {
                 const width = Math.max((Number(item.value) / max) * 100, 3);
+                const displayUnit = unitLabel(item.unit ?? unit);
 
                 return (
                     <div key={item.label} className="grid gap-2 sm:grid-cols-[140px_1fr_auto] sm:items-center">
@@ -250,7 +251,7 @@ function HorizontalBarChart({ data, color, unit = '' }) {
                         <div className="h-4 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
                             <div className="h-full rounded-full" style={{ width: `${width}%`, backgroundColor: color }} />
                         </div>
-                        <p className="text-right text-sm font-semibold text-slate-900 dark:text-slate-100">{formatQuantityForUnit(item.value, item.unit ?? unit, decimalFormat)} {item.unit ?? unit}</p>
+                        <p className="text-right text-sm font-semibold text-slate-900 dark:text-slate-100">{formatQuantityForUnit(item.value, displayUnit, decimalFormat)} {displayUnit}</p>
                     </div>
                 );
             })}
@@ -663,7 +664,7 @@ function LowStockList({ stocks }) {
                         </span>
                     </div>
                     <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
-                        {formatQuantityForUnit(stock.available_meters ?? 0, unitLabel(stock.product?.base_unit), decimalFormat)} {unitLabel(stock.product?.base_unit)} disponibles - minimo {formatQuantityForUnit(stock.product?.minimum_stock_meters ?? 0, unitLabel(stock.product?.base_unit), decimalFormat)} {unitLabel(stock.product?.base_unit)}
+                        {formatQuantityForUnit(stock.available_meters ?? 0, productUnitLabel(stock.product), decimalFormat)} {productUnitLabel(stock.product)} disponibles - minimo {formatQuantityForUnit(stock.product?.minimum_stock_meters ?? 0, productUnitLabel(stock.product), decimalFormat)} {productUnitLabel(stock.product)}
                     </p>
                 </div>
             ))}
@@ -706,18 +707,26 @@ function documentType(type) {
     return type === 'quotation' ? 'Cotizacion' : 'Nota de venta';
 }
 
+function productUnitLabel(product) {
+    return unitLabel(product?.unit?.symbol ?? product?.base_unit);
+}
+
 function unitLabel(unit) {
-    return {
-        m: 'm',
-        unidad: 'unid.',
-        caja: 'cajas',
-        paquete: 'paquetes',
-        kg: 'kg',
-        ton: 'ton',
-        lt: 'lt',
-        galon: 'gal.',
-        rollo: 'rollos',
-    }[unit] ?? 'unid.';
+    const normalized = String(unit ?? '').trim().toLowerCase();
+
+    if (['m', 'mt', 'mts', 'metro', 'metros'].includes(normalized)) return 'm';
+    if (['unit', 'u', 'unid', 'unid.', 'unidad', 'unidades', 'pza', 'pzas', 'pieza', 'piezas'].includes(normalized)) return 'unid.';
+    if (['kg', 'kilo', 'kilos'].includes(normalized)) return 'kg';
+    if (['lb', 'lbs', 'libra', 'libras'].includes(normalized)) return 'lb';
+    if (['ton', 'tn', 'tonelada', 'toneladas'].includes(normalized)) return 'ton';
+    if (['caja', 'cajas'].includes(normalized)) return 'cajas';
+    if (['bolsa', 'bolsas'].includes(normalized)) return 'bolsas';
+    if (['paquete', 'paquetes'].includes(normalized)) return 'paquetes';
+    if (['rollo', 'rollos'].includes(normalized)) return 'rollos';
+    if (['lt', 'litro', 'litros'].includes(normalized)) return 'lt';
+    if (['galon', 'galones', 'galón'].includes(normalized)) return 'gal.';
+
+    return normalized || 'unid.';
 }
 
 function formatQuantityForUnit(value, unit, decimalFormat) {

@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\User;
+use App\Modules\Dashboard\Http\Controllers\DashboardController;
 use App\Modules\Branches\Models\Branch;
 use App\Modules\Cash\Models\CashRegisterSession;
 use App\Modules\Inventory\Models\Product;
@@ -187,4 +188,34 @@ it('muestra metricas de promesas de pago con permiso de cobranza', function () {
             ->where('scope.branch_id', null)
             ->has('branches', 1)
         );
+});
+
+it('usa la unidad configurada del producto en el grafico de stock', function () {
+    $user = dashboardUser(['dashboard.view', 'inventory.products.view']);
+    $product = Product::query()->create([
+        'name' => 'Casco de seguridad',
+        'sku' => 'CASCO-001',
+        'barcode' => 'PR-CASCO-001',
+        'inventory_tracking_mode' => Product::TRACKING_GLOBAL,
+        'base_unit' => 'u',
+        'minimum_stock_meters' => 5,
+        'is_active' => true,
+    ]);
+
+    ProductBranchStock::query()->create([
+        'branch_id' => $user->branch_id,
+        'product_id' => $product->id,
+        'available_meters' => 12,
+        'reserved_meters' => 0,
+    ]);
+
+    $method = new ReflectionMethod(DashboardController::class, 'stockByProduct');
+    $method->setAccessible(true);
+
+    $rows = $method->invoke(new DashboardController(), $user->branch_id, [$user->branch_id]);
+
+    expect($rows)->toHaveCount(1)
+        ->and($rows[0]['label'])->toBe('Casco de seguridad')
+        ->and($rows[0]['unit'])->toBe('unid.')
+        ->and($rows[0]['value'])->toBe(12.0);
 });

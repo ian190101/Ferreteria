@@ -110,7 +110,7 @@ export default function Index({
                                         </span>
                                     </div>
                                     <p className="text-sm text-slate-600 dark:text-slate-300">
-                                        Disponible: {decimalFormat.measure(stock.available_meters ?? 0)} m · Minimo: {decimalFormat.measure(stock.product?.minimum_stock_meters ?? 0)} m
+                                        Disponible: {formatQuantityForUnit(stock.available_meters ?? 0, productUnitLabel(stock.product), decimalFormat)} {productUnitLabel(stock.product)} · Minimo: {formatQuantityForUnit(stock.product?.minimum_stock_meters ?? 0, productUnitLabel(stock.product), decimalFormat)} {productUnitLabel(stock.product)}
                                     </p>
                                 </div>
                             ))}
@@ -181,7 +181,7 @@ export default function Index({
                                 <th className="px-4 py-3 font-medium">Barcode</th>
                                 <th className="px-4 py-3 font-medium">Lote</th>
                                 <th className="px-4 py-3 font-medium">Sucursal</th>
-                                <th className="px-4 py-3 text-right font-medium">Metros</th>
+                                <th className="px-4 py-3 text-right font-medium">Disponible</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -195,7 +195,7 @@ export default function Index({
                                     <td className="px-4 py-3">{coil.barcode}</td>
                                     <td className="px-4 py-3">{coil.lot_number}</td>
                                     <td className="px-4 py-3">{coil.branch?.name ?? '-'}</td>
-                                    <td className="px-4 py-3 text-right">{decimalFormat.measure(coil.available_meters ?? 0)}</td>
+                                    <td className="px-4 py-3 text-right">{formatQuantityForUnit(coil.available_meters ?? 0, productUnitLabel(coil.product), decimalFormat)} {productUnitLabel(coil.product)}</td>
                                 </tr>
                             ))}
                         </tbody>
@@ -243,6 +243,42 @@ function DataTable({ children }) {
 
 function documentType(type) {
     return type === 'quotation' ? 'Cotizacion' : 'Nota de venta';
+}
+
+function productUnitLabel(product) {
+    return unitLabel(product?.unit?.symbol ?? product?.base_unit);
+}
+
+function unitLabel(unit) {
+    const normalized = String(unit ?? '').trim().toLowerCase();
+
+    if (['m', 'mt', 'mts', 'metro', 'metros'].includes(normalized)) return 'm';
+    if (['unit', 'u', 'unid', 'unid.', 'unidad', 'unidades', 'pza', 'pzas', 'pieza', 'piezas'].includes(normalized)) return 'unid.';
+    if (['kg', 'kilo', 'kilos'].includes(normalized)) return 'kg';
+    if (['lb', 'lbs', 'libra', 'libras'].includes(normalized)) return 'lb';
+    if (['ton', 'tn', 'tonelada', 'toneladas'].includes(normalized)) return 'ton';
+    if (['caja', 'cajas'].includes(normalized)) return 'cajas';
+    if (['bolsa', 'bolsas'].includes(normalized)) return 'bolsas';
+    if (['paquete', 'paquetes'].includes(normalized)) return 'paquetes';
+    if (['rollo', 'rollos'].includes(normalized)) return 'rollos';
+    if (['lt', 'litro', 'litros'].includes(normalized)) return 'lt';
+    if (['galon', 'galones', 'galón'].includes(normalized)) return 'gal.';
+
+    return normalized || 'unid.';
+}
+
+function formatQuantityForUnit(value, unit, decimalFormat) {
+    const normalized = String(unit ?? '').toLowerCase();
+
+    if (['m', 'mt', 'mts', 'metro', 'metros'].includes(normalized)) {
+        return decimalFormat.measure(value);
+    }
+
+    if (['kg', 'kilo', 'kilos', 'ton', 'tn', 'tonelada', 'toneladas', 'lb', 'lbs'].includes(normalized)) {
+        return decimalFormat.weight(value);
+    }
+
+    return decimalFormat.quantity(value);
 }
 
 function formatDate(value) {

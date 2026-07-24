@@ -8,10 +8,10 @@ class SalesDocumentPolicy
 {
     private const COLUMN_MAP = [
         'description' => 'item_description',
-        'model' => 'item_model',
+        'model' => 'item_attribute_modelo',
         'color' => 'item_attribute_color',
-        'width' => 'item_attribute_width',
-        'length' => 'item_attribute_length',
+        'width' => 'item_attribute_ancho',
+        'length' => 'item_attribute_largo',
         'quantity' => 'item_quantity',
         'unit' => 'item_unit',
         'base' => 'item_base',

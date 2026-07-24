@@ -149,7 +149,7 @@ class DashboardController extends Controller
         }
 
         return $this->lowStockQuery($branchId, $branchIds)
-            ->with(['branch:id,name', 'product:id,name,sku,minimum_stock_meters,base_unit'])
+            ->with(['branch:id,name', 'product:id,name,sku,minimum_stock_meters,base_unit,product_unit_id', 'product.unit:id,name,symbol'])
             ->orderBy('available_meters')
             ->limit(6)
             ->get(['product_branch_stocks.id', 'product_branch_stocks.branch_id', 'product_branch_stocks.product_id', 'product_branch_stocks.available_meters', 'product_branch_stocks.reserved_meters']);
@@ -235,7 +235,7 @@ class DashboardController extends Controller
             ->map(function ($rows) {
                 return [
                     'label' => $rows->first()->label ?? 'Producto',
-                    'unit' => $rows->first()->unit_symbol ?: $this->unitLabel($rows->first()->base_unit),
+                    'unit' => $this->unitLabel($rows->first()->unit_symbol ?: $rows->first()->base_unit),
                     'value' => round((float) $rows->sum('value'), 3),
                 ];
             })
@@ -659,11 +659,22 @@ class DashboardController extends Controller
 
     private function unitLabel(?string $baseUnit): string
     {
-        return match ($baseUnit) {
-            'unit' => 'unid.',
+        $unit = mb_strtolower(trim((string) $baseUnit));
+
+        return match ($unit) {
+            'm', 'mt', 'mts', 'metro', 'metros' => 'm',
+            'unit', 'u', 'unid', 'unid.', 'unidad', 'unidades', 'pza', 'pzas', 'pieza', 'piezas' => 'unid.',
             'kg' => 'kg',
-            'lb' => 'lb',
-            default => 'm',
+            'kilo', 'kilos' => 'kg',
+            'lb', 'lbs', 'libra', 'libras' => 'lb',
+            'ton', 'tn', 'tonelada', 'toneladas' => 'ton',
+            'caja', 'cajas' => 'cajas',
+            'bolsa', 'bolsas' => 'bolsas',
+            'paquete', 'paquetes' => 'paquetes',
+            'rollo', 'rollos' => 'rollos',
+            'lt', 'litro', 'litros' => 'lt',
+            'galon', 'galones', 'galón', 'galónes' => 'gal.',
+            default => $unit !== '' ? $baseUnit : 'unid.',
         };
     }
 

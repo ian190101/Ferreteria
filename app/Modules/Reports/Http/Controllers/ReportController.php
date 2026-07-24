@@ -95,7 +95,7 @@ class ReportController extends Controller
     private function lowStocks(?int $branchId)
     {
         return $this->lowStockQuery($branchId)
-            ->with(['branch:id,name', 'product:id,name,sku,minimum_stock_meters'])
+            ->with(['branch:id,name', 'product:id,name,sku,minimum_stock_meters,base_unit,product_unit_id', 'product.unit:id,name,symbol'])
             ->orderBy('available_meters')
             ->limit(10)
             ->get(['id', 'branch_id', 'product_id', 'available_meters', 'reserved_meters']);
@@ -104,7 +104,7 @@ class ReportController extends Controller
     private function latestMovements(Request $request, ?int $branchId)
     {
         return ProductCoil::query()
-            ->with(['branch:id,name', 'product:id,name,sku'])
+            ->with(['branch:id,name', 'product:id,name,sku,base_unit,product_unit_id', 'product.unit:id,name,symbol'])
             ->when(true, fn ($query) => BranchAccess::apply($query, $request->user()))
             ->when($branchId, fn ($query) => $query->where('branch_id', $branchId))
             ->latest('id')

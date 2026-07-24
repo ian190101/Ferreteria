@@ -796,7 +796,9 @@ class SaleController extends Controller
             ->map(fn (int $index) => $index + 1);
         $layout['item_columns'] = collect($layout['item_columns'] ?? ReceiptTemplate::defaultLayout()['item_columns'])
             ->map(function (array $column) use ($allowed) {
-                $column['show'] = isset($allowed[$column['key']]);
+                if (! str_starts_with((string) ($column['key'] ?? ''), 'item_attribute_')) {
+                    $column['show'] = isset($allowed[$column['key']]);
+                }
 
                 return $column;
             })

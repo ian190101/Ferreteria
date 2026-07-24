@@ -20,7 +20,7 @@ const DEFAULT_ITEM_COLUMNS = [
     { key: 'item_number', label: 'N', show: true, align: 'left' },
     { key: 'item_description', label: 'Descripcion', show: true, align: 'left' },
     { key: 'item_lot', label: 'Lote', show: false, align: 'left' },
-    { key: 'item_model', label: 'Modelo', show: true, align: 'left' },
+    { key: 'item_model', label: 'SKU interno', show: false, align: 'left' },
     { key: 'item_unit', label: 'Und.', show: true, align: 'right' },
     { key: 'item_quantity', label: 'Cant.', show: true, align: 'right' },
     { key: 'item_base', label: 'Base', show: true, align: 'right' },
@@ -583,6 +583,10 @@ function documentTitleForSale(sale, policy) {
 function itemAttributeValue(item, code) {
     const attribute = (item.item_attributes ?? []).find((entry) => entry.code === code);
 
+    return printableAttributeValue(attribute);
+}
+
+function printableAttributeValue(attribute) {
     if (!attribute || attribute.value === '' || attribute.value === null || attribute.value === undefined) {
         return '-';
     }

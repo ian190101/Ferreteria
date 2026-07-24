@@ -5,7 +5,9 @@ use App\Modules\Branches\Models\Branch;
 use App\Modules\Customers\Models\Customer;
 use App\Modules\Inventory\Models\Product;
 use App\Modules\Purchases\Services\PurchaseWorkflowPolicy;
+use App\Modules\Sales\Http\Controllers\SaleController;
 use App\Modules\Sales\Models\ProductPriceRule;
+use App\Modules\Sales\Models\ReceiptTemplate;
 use App\Modules\Sales\Models\Sale;
 use App\Modules\Sales\Services\CommercialPolicy;
 use App\Modules\Sales\Services\DeliveryWorkflowPolicy;
@@ -54,6 +56,8 @@ it('aplica el preset ferreteria con cotizacion y nota', function () {
     expect(app(SalesDocumentPolicy::class)->summary())
         ->quotationLabel->toBe('Cotizacion')
         ->saleNoteLabel->toBe('Nota de venta')
+        ->visibleTemplateColumns->toContain('item_attribute_modelo')
+        ->visibleTemplateColumns->not->toContain('item_model')
         ->allowedPaymentMethodCodes->toBe(['cash', 'qr'])
         ->paymentMethodsByFlow->toBe([
             'sales' => ['cash', 'qr'],
@@ -63,6 +67,34 @@ it('aplica el preset ferreteria con cotizacion y nota', function () {
             'expenses' => ['cash', 'qr', 'transfer'],
             'payroll' => ['cash', 'qr', 'transfer'],
         ]);
+});
+
+it('mantiene visibles las caracteristicas dinamicas configuradas por plantilla', function () {
+    $layout = ReceiptTemplate::defaultLayout();
+    $layout['item_columns'][] = [
+        'key' => 'item_attribute_talla',
+        'label' => 'Talla',
+        'show' => true,
+        'align' => 'left',
+        'order' => 5,
+    ];
+    $layout['fields']['item_attribute_talla'] = true;
+
+    $method = new ReflectionMethod(SaleController::class, 'layoutWithProfileColumns');
+    $method->setAccessible(true);
+
+    $result = $method->invoke(new SaleController(), $layout, [
+        'item_number',
+        'item_description',
+        'item_attribute_modelo',
+        'item_quantity',
+    ]);
+    $columns = collect($result['item_columns'])->keyBy('key');
+
+    expect($columns->get('item_model')['show'])->toBeFalse()
+        ->and($columns->get('item_attribute_modelo')['show'])->toBeTrue()
+        ->and($columns->get('item_attribute_talla')['show'])->toBeTrue()
+        ->and($result['fields']['item_attribute_talla'])->toBeTrue();
 });
 
 it('aplica el preset ferreteria POS', function () {
