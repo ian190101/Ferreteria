@@ -1,7 +1,7 @@
 <?php
 
-it('returns a successful response', function () {
+it('redirige la raiz al login del sistema', function () {
     $response = $this->get('/');
 
-    $response->assertStatus(200);
+    $response->assertRedirect(route('login'));
 });

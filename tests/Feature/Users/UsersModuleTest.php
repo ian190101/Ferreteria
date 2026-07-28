@@ -60,6 +60,7 @@ it('crea usuarios con sucursal principal, multiples sucursales y rol', function 
         'barcode' => 'BR-USR-3',
         'is_active' => true,
     ]);
+    $admin->accessibleBranches()->sync([$branch->id, $secondaryBranch->id]);
 
     $this->actingAs($admin)
         ->post(route('users.store'), [
@@ -79,6 +80,30 @@ it('crea usuarios con sucursal principal, multiples sucursales y rol', function 
     expect($user->branch_id)->toBe($branch->id)
         ->and($user->accessibleBranches()->pluck('branches.id')->all())->toEqualCanonicalizing([$branch->id, $secondaryBranch->id])
         ->and($user->hasRole('operador-test'))->toBeTrue();
+});
+
+it('bloquea asignar usuarios a sucursales no permitidas para administradores no globales', function () {
+    $admin = usersAdmin(['users.view', 'users.manage']);
+    $role = Role::query()->create(['name' => 'operador-limitado-test', 'guard_name' => 'web']);
+    $blockedBranch = Branch::query()->create([
+        'name' => 'Sucursal no permitida',
+        'code' => 'USR-BLOCK',
+        'barcode' => 'BR-USR-BLOCK',
+        'is_active' => true,
+    ]);
+
+    $this->actingAs($admin)
+        ->post(route('users.store'), [
+            'branch_id' => $blockedBranch->id,
+            'branch_ids' => [$blockedBranch->id],
+            'name' => 'Operador bloqueado',
+            'email' => 'operador-bloqueado@example.com',
+            'password' => 'Password123!',
+            'password_confirmation' => 'Password123!',
+            'is_active' => true,
+            'roles' => ['operador-limitado-test'],
+        ])
+        ->assertForbidden();
 });
 
 it('oculta el usuario interno sistemasuperadmin en gestion de usuarios', function () {

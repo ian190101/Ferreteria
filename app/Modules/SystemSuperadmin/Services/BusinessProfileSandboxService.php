@@ -102,7 +102,13 @@ class BusinessProfileSandboxService
     public function discardDatabase(BusinessProfileSandboxSession $session): void
     {
         if (filled($session->database_name) && $this->databaseExists((string) $session->database_name)) {
-            DB::statement('DROP DATABASE '.$this->quoteIdentifier((string) $session->database_name));
+            $databaseName = (string) $session->database_name;
+
+            if (! $this->isSandboxDatabase($databaseName, (int) $session->id)) {
+                throw new \RuntimeException('La base indicada no pertenece a una demo sandbox segura.');
+            }
+
+            DB::statement('DROP DATABASE '.$this->quoteIdentifier($databaseName));
         }
 
         $session->update([
@@ -256,5 +262,10 @@ class BusinessProfileSandboxService
     private function quoteLiteral(string $value): string
     {
         return "'".str_replace(["\\", "'"], ["\\\\", "\\'"], $value)."'";
+    }
+
+    private function isSandboxDatabase(string $database, int $sessionId): bool
+    {
+        return preg_match('/^sandbox_'.$sessionId.'_[a-z0-9]{8}$/', $database) === 1;
     }
 }

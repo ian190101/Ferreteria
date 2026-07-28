@@ -2,17 +2,13 @@
 
 use App\Http\Controllers\ProfileController;
 use App\Modules\Dashboard\Http\Controllers\DashboardController;
-use Illuminate\Foundation\Application;
+use App\Support\UserHomeRoute;
 use Illuminate\Support\Facades\Route;
-use Inertia\Inertia;
 
 Route::get('/', function () {
-    return Inertia::render('Welcome', [
-        'canLogin' => Route::has('login'),
-        'canRegister' => Route::has('register'),
-        'laravelVersion' => Application::VERSION,
-        'phpVersion' => PHP_VERSION,
-    ]);
+    return auth()->check()
+        ? redirect(UserHomeRoute::pathFor(auth()->user()))
+        : redirect()->route('login');
 });
 
 Route::get('/dashboard', DashboardController::class)

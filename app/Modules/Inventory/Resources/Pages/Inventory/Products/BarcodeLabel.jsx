@@ -4,7 +4,7 @@ import ModuleHeader from '../../../../../Shared/Resources/Components/ModuleHeade
 import SelectField from '../../../../../Shared/Resources/Components/SelectField';
 import { Head, Link, router, useForm } from '@inertiajs/react';
 
-export default function BarcodeLabel({ product, template, templates = [], branches = [], quantity = 1, barcodeSvg }) {
+export default function BarcodeLabel({ product, template, templates = [], branches = [], quantity = 1, barcodePayload }) {
     const form = useForm({
         branch_id: template.branch_id ?? '',
         name: template.name,
@@ -42,6 +42,7 @@ export default function BarcodeLabel({ product, template, templates = [], branch
                     .barcode-print-area, .barcode-print-area * { visibility: visible !important; }
                     .barcode-print-area { position: absolute; inset: 0 auto auto 0; padding: 0; background: white; }
                     .barcode-label { page-break-inside: avoid; break-inside: avoid; }
+                    .barcode-label svg { display: block !important; width: 100% !important; height: auto !important; }
                 }
             `}</style>
             <section className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
@@ -97,7 +98,7 @@ export default function BarcodeLabel({ product, template, templates = [], branch
                             {Array.from({ length: Number(quantity || 1) }).map((_, index) => (
                                 <div key={index} className="barcode-label flex flex-col items-center justify-center border border-dashed border-slate-300 bg-white text-center text-black print:break-inside-avoid" style={labelStyle}>
                                     {form.data.show_product_name ? <strong className="mb-1 max-w-full truncate">{product.name}</strong> : null}
-                                    <div className="w-full" dangerouslySetInnerHTML={{ __html: barcodeSvg }} />
+                                    <BarcodeSvg payload={barcodePayload} value={product.barcode} />
                                     <span className="mt-1 font-mono">{product.barcode}</span>
                                     {form.data.show_sku ? <span>SKU: {product.sku}</span> : null}
                                     {form.data.show_price ? <span>Bs {Number(product.sale_price ?? 0).toFixed(2)}</span> : null}
@@ -108,6 +109,31 @@ export default function BarcodeLabel({ product, template, templates = [], branch
                 </div>
             </section>
         </AuthenticatedLayout>
+    );
+}
+
+function BarcodeSvg({ payload, value }) {
+    if (!payload?.bars?.length || !payload.width || !payload.height) {
+        return (
+            <div className="w-full rounded border border-red-200 bg-red-50 px-2 py-1 text-xs font-semibold text-red-700">
+                No se pudo generar el codigo de barras.
+            </div>
+        );
+    }
+
+    return (
+        <svg
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox={`0 0 ${payload.width} ${payload.height}`}
+            role="img"
+            aria-label={`Codigo de barras ${value}`}
+            className="w-full text-black"
+            preserveAspectRatio="none"
+        >
+            {payload.bars.map((bar, index) => (
+                <rect key={`${bar.x}-${bar.width}-${index}`} x={bar.x} y="0" width={bar.width} height={payload.height} fill="currentColor" />
+            ))}
+        </svg>
     );
 }
 

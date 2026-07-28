@@ -247,7 +247,7 @@ class PurchaseOrderController extends Controller
             'supplier_id' => $order->supplier_id,
             'user_id' => $user->id,
             'document_number' => $receiptNumber,
-            'purchase_date' => $payload['received_at'],
+            'purchase_date' => now()->toDateString(),
             'total_amount' => $totalAmount,
             'paid_amount' => 0,
             'balance_due' => $totalAmount,
@@ -262,7 +262,7 @@ class PurchaseOrderController extends Controller
             'supplier_id' => $order->supplier_id,
             'user_id' => $user->id,
             'receipt_number' => $receiptNumber,
-            'received_at' => $payload['received_at'],
+            'received_at' => now()->toDateString(),
             'total_amount' => $totalAmount,
             'notes' => $payload['notes'] ?? null,
         ]);

@@ -46,7 +46,7 @@ export default function Receive({ order }) {
                         <Summary label="Proveedor" value={order.supplier?.name ?? 'Sin proveedor'} />
                         <Summary label="Sucursal" value={order.branch?.name ?? '-'} />
                         <Summary label="Estado" value={statusLabel(order.status)} />
-                        <FormField label="Fecha recepcion" name="received_at" type="date" value={data.received_at} onChange={(event) => setData('received_at', event.target.value)} error={errors.received_at} required />
+                        <FormField label="Fecha recepcion" name="received_at" value="Se registrara automaticamente al guardar" disabled className="mt-1 block w-full rounded-md border-gray-300 bg-slate-100 shadow-sm dark:border-gray-700 dark:bg-slate-800 dark:text-gray-300" error={errors.received_at} />
                         <div className="sm:col-span-4">
                             <FormField label="Notas" name="notes" value={data.notes} onChange={(event) => setData('notes', event.target.value)} error={errors.notes} />
                         </div>

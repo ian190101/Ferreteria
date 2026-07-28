@@ -20,6 +20,28 @@ class Code39Barcode
 
     public function svg(string $value, int $height = 52): string
     {
+        $payload = $this->payload($value, $height);
+
+        $bars = array_map(
+            fn (array $bar): string => sprintf(
+                '<rect x="%d" y="0" width="%d" height="%d" fill="#000"/>',
+                $bar['x'],
+                $bar['width'],
+                $payload['height'],
+            ),
+            $payload['bars'],
+        );
+
+        return sprintf(
+            '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 %d %d" role="img" aria-label="Codigo de barras">%s</svg>',
+            $payload['width'],
+            $payload['height'],
+            implode('', $bars),
+        );
+    }
+
+    public function payload(string $value, int $height = 52): array
+    {
         $text = '*'.strtoupper(preg_replace('/[^0-9A-Z\-. $\/+%]/', '-', $value)).'*';
         $narrow = 2;
         $wide = 5;
@@ -34,7 +56,7 @@ class Code39Barcode
                 $width = $widthCode === 'w' ? $wide : $narrow;
 
                 if ($index % 2 === 0) {
-                    $bars[] = sprintf('<rect x="%d" y="0" width="%d" height="%d" fill="#000"/>', $x, $width, $height);
+                    $bars[] = ['x' => $x, 'width' => $width];
                 }
 
                 $x += $width;
@@ -43,11 +65,10 @@ class Code39Barcode
             $x += $gap;
         }
 
-        return sprintf(
-            '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 %d %d" role="img" aria-label="Codigo de barras">%s</svg>',
-            $x,
-            $height,
-            implode('', $bars),
-        );
+        return [
+            'width' => $x,
+            'height' => $height,
+            'bars' => $bars,
+        ];
     }
 }

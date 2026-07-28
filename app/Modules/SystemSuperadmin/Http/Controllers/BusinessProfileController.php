@@ -104,7 +104,12 @@ class BusinessProfileController extends Controller
     public function enterFullSandbox(Request $request, BusinessProfileSandboxService $sandbox): RedirectResponse
     {
         $session = $sandbox->sessionFor($request->user()->id);
-        $sandbox->provisionDatabase($session);
+
+        try {
+            $sandbox->provisionDatabase($session);
+        } catch (\RuntimeException $exception) {
+            return back()->with('error', $exception->getMessage());
+        }
 
         $request->session()->put('business_full_sandbox_id', $session->id);
 

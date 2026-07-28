@@ -39,6 +39,7 @@ class ProductBarcodeLabelController extends Controller
             'branches' => UiCatalogCache::activeBranchesForUser($request->user(), ['id', 'name']),
             'quantity' => $quantity,
             'barcodeSvg' => $barcode->svg((string) $product->barcode, (int) $template->barcode_height_mm * 4),
+            'barcodePayload' => $barcode->payload((string) $product->barcode, (int) $template->barcode_height_mm * 4),
         ]);
     }
 

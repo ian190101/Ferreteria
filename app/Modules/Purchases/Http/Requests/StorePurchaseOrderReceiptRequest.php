@@ -17,7 +17,7 @@ class StorePurchaseOrderReceiptRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'received_at' => ['required', 'date'],
+            'received_at' => ['nullable', 'date'],
             'notes' => ['nullable', 'string', 'max:1000'],
             'items' => ['required', 'array', 'min:1'],
             'items.*.purchase_order_item_id' => ['required', 'integer', 'exists:purchase_order_items,id'],

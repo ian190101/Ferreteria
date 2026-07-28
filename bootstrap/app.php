@@ -6,6 +6,7 @@ use App\Http\Middleware\EnsureSystemSuperadmin;
 use App\Http\Middleware\ForceHttpsForProxy;
 use App\Http\Middleware\HandleInertiaRequests;
 use App\Http\Middleware\SandboxContext;
+use App\Http\Middleware\SecurityHeaders;
 use App\Support\UserHomeRoute;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -61,6 +62,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->redirectUsersTo(fn (Request $request) => UserHomeRoute::pathFor($request->user()));
 
         $middleware->web(append: [
+            SecurityHeaders::class,
             SandboxContext::class,
             HandleInertiaRequests::class,
             EnsurePasswordWasChanged::class,

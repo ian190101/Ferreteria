@@ -17,7 +17,11 @@ export function assetUrl(path) {
         return `https://drive.google.com/thumbnail?id=${googleDriveFile[1]}&sz=w512`;
     }
 
-    if (/^(https?:)?\/\//i.test(value) || value.startsWith('data:')) {
+    if (/^https:\/\//i.test(value) || /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?\//i.test(value)) {
+        return value;
+    }
+
+    if (/^data:image\/(png|jpeg|jpg|webp|gif);base64,[A-Za-z0-9+/=]+$/i.test(value)) {
         return value;
     }
 

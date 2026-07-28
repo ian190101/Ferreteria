@@ -7,11 +7,15 @@ return new class extends Migration
 {
     public function up(): void
     {
-        DB::statement('ALTER TABLE inventory_movements MODIFY type VARCHAR(64) NOT NULL');
+        if (in_array(DB::getDriverName(), ['mysql', 'mariadb'], true)) {
+            DB::statement('ALTER TABLE inventory_movements MODIFY type VARCHAR(64) NOT NULL');
+        }
     }
 
     public function down(): void
     {
-        DB::statement('ALTER TABLE inventory_movements MODIFY type VARCHAR(24) NOT NULL');
+        if (in_array(DB::getDriverName(), ['mysql', 'mariadb'], true)) {
+            DB::statement('ALTER TABLE inventory_movements MODIFY type VARCHAR(24) NOT NULL');
+        }
     }
 };

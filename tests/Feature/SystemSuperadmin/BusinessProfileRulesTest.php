@@ -242,6 +242,15 @@ it('guarda y reinicia una demo sandbox aislada por usuario', function () {
 it('entra y descarta la demo completa con base temporal aislada', function () {
     $user = businessProfileUser(systemSuperadmin: true);
 
+    if (DB::getDriverName() !== 'mysql') {
+        $this->actingAs($user)
+            ->post(route('system-superadmin.business-profiles.sandbox-full.enter'))
+            ->assertRedirect()
+            ->assertSessionHas('error', 'La demo completa requiere MySQL o MariaDB para clonar una base aislada.');
+
+        return;
+    }
+
     $this->actingAs($user)
         ->post(route('system-superadmin.business-profiles.sandbox-full.enter'))
         ->assertRedirect(route('dashboard'))

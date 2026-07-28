@@ -37,9 +37,7 @@ class WorkerController extends Controller
         return Inertia::render('HumanResources/Workers/Index', [
             'workers' => $workers,
             'branches' => UiCatalogCache::activeBranchesForUser($request->user(), ['id', 'name']),
-            'users' => User::query()
-                ->withoutSystemSuperadmins()
-                ->where('is_active', true)
+            'users' => $this->visibleUsersQuery($request)
                 ->orderBy('name')
                 ->get(['id', 'name', 'email']),
             'filters' => $request->only(['search', 'per_page']),
@@ -97,8 +95,7 @@ class WorkerController extends Controller
                 return;
             }
 
-            $isVisibleUser = User::query()
-                ->withoutSystemSuperadmins()
+            $isVisibleUser = $this->visibleUsersQuery($request)
                 ->whereKey($request->integer('user_id'))
                 ->exists();
 
@@ -108,5 +105,20 @@ class WorkerController extends Controller
         });
 
         return $validator->validate();
+    }
+
+    private function visibleUsersQuery(Request $request)
+    {
+        return User::query()
+            ->withoutSystemSuperadmins()
+            ->where('is_active', true)
+            ->when(! $request->user()->isSuperAdministrator(), function ($query) use ($request) {
+                $allowedBranchIds = $request->user()->accessibleBranchIds() ?: [-1];
+
+                $query->where(function ($nested) use ($allowedBranchIds) {
+                    $nested->whereIn('branch_id', $allowedBranchIds)
+                        ->orWhereHas('accessibleBranches', fn ($branchQuery) => $branchQuery->whereIn('branches.id', $allowedBranchIds));
+                });
+            });
     }
 }

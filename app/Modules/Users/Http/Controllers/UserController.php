@@ -54,6 +54,7 @@ class UserController extends Controller
     {
         $data = $request->validated();
         $branchIds = $this->normalizedBranchIds($data);
+        $this->ensureBranchAssignmentAllowed($request, $branchIds->all());
         $data['branch_id'] ??= $branchIds->first();
         $data['force_password_change'] = true;
 
@@ -95,6 +96,7 @@ class UserController extends Controller
         }
 
         $branchIds = $this->normalizedBranchIds($data);
+        $this->ensureBranchAssignmentAllowed($request, $branchIds->all());
         $data['branch_id'] ??= $branchIds->first();
 
         $user->update(Arr::except($data, ['roles', 'branch_ids', 'password_confirmation']));
@@ -124,6 +126,8 @@ class UserController extends Controller
     {
         return Branch::query()
             ->where('is_active', true)
+            ->when(! request()->user()?->isSuperAdministrator(), fn ($query) => $query
+                ->whereIn('id', request()->user()?->accessibleBranchIds() ?: [-1]))
             ->orderBy('name')
             ->get(['id', 'name']);
     }
@@ -154,5 +158,22 @@ class UserController extends Controller
     private function abortIfReservedUser(User $user): void
     {
         abort_if($user->roles()->whereIn('name', SystemRoles::reserved())->exists(), 404);
+    }
+
+    private function ensureBranchAssignmentAllowed(Request $request, array $branchIds): void
+    {
+        if ($request->user()?->isSuperAdministrator()) {
+            return;
+        }
+
+        $allowed = collect($request->user()?->accessibleBranchIds() ?: [-1])
+            ->map(fn ($id) => (int) $id)
+            ->all();
+
+        $invalid = collect($branchIds)
+            ->map(fn ($id) => (int) $id)
+            ->contains(fn (int $id) => ! in_array($id, $allowed, true));
+
+        abort_if($invalid, 403, 'No puedes asignar usuarios a sucursales que no administras.');
     }
 }

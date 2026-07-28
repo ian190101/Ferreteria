@@ -170,8 +170,9 @@ class AuthSessionCache
     private static function key(string $scope, User $user): string
     {
         $updatedAt = $user->updated_at?->timestamp ?? 0;
+        $emailFingerprint = sha1((string) $user->email);
 
-        return "auth-session:{$scope}:v".self::version().":u{$user->id}:{$updatedAt}";
+        return "auth-session:{$scope}:v".self::version().":u{$user->id}:{$emailFingerprint}:{$updatedAt}";
     }
 
     private static function remember(string $key, mixed $ttl, callable $callback): mixed

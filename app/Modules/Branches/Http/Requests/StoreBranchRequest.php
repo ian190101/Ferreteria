@@ -2,6 +2,7 @@
 
 namespace App\Modules\Branches\Http\Requests;
 
+use App\Rules\SafeLogoPath;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -25,7 +26,7 @@ class StoreBranchRequest extends FormRequest
             'is_active' => ['required', 'boolean'],
             'setting.primary_color' => ['required', 'string', 'regex:/^#[0-9A-Fa-f]{6}$/'],
             'setting.secondary_color' => ['required', 'string', 'regex:/^#[0-9A-Fa-f]{6}$/'],
-            'setting.logo_path' => ['nullable', 'string', 'max:255'],
+            'setting.logo_path' => ['nullable', 'string', 'max:500', new SafeLogoPath],
             'setting.theme_mode' => ['required', Rule::in(['light', 'dark', 'system'])],
         ];
     }

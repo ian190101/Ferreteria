@@ -140,7 +140,15 @@ class HandleInertiaRequests extends Middleware
             return "https://drive.google.com/thumbnail?id={$matches[1]}&sz=w512";
         }
 
-        return $value;
+        if (preg_match('#^https://[^\s<>"\']+$#i', $value)
+            || preg_match('#^https?://(localhost|127\.0\.0\.1)(:\d+)?/[^\s<>"\']+$#i', $value)
+            || preg_match('#^data:image/(png|jpeg|jpg|webp|gif);base64,[A-Za-z0-9+/=]+$#i', $value)
+            || preg_match('#^/?(storage|images|img|logos)/[A-Za-z0-9._/\-]+$#', $value)
+        ) {
+            return $value;
+        }
+
+        return null;
     }
 
     private function defaultBranding(): array

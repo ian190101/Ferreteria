@@ -243,7 +243,7 @@ export default function Form({ branches = [], suppliers = [], units = [], catego
                                 El perfil activo oculta proveedores para compras rapidas.
                             </div>
                         )}
-                        <FormField label="Fecha" name="purchase_date" type="date" value={data.purchase_date} onChange={(event) => setData('purchase_date', event.target.value)} error={errors.purchase_date} required />
+                        <FormField label="Fecha" name="purchase_date" value="Se registrara automaticamente al guardar" disabled className="mt-1 block w-full rounded-md border-gray-300 bg-slate-100 shadow-sm dark:border-gray-700 dark:bg-slate-800 dark:text-gray-300" error={errors.purchase_date} />
                         <SelectField label="Estado" name="status" value={data.status} onChange={(event) => setData('status', event.target.value)} error={errors.status} helpTitle="Estado de compra" helpTooltip="Recibida aumenta stock y registra movimiento de inventario. Borrador sirve para guardar la compra sin afectar cantidades." helpText="Recibida mueve inventario inmediatamente. Borrador guarda la compra sin aumentar stock.">
                             <option value="received">Recibida e ingresar inventario</option>
                             <option value="draft">Borrador sin mover inventario</option>
