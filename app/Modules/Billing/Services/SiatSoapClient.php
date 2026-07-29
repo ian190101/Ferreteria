@@ -7,6 +7,7 @@ use App\Modules\Billing\Models\SiatLog;
 use SoapClient;
 use SoapFault;
 use Throwable;
+use Illuminate\Validation\ValidationException;
 
 class SiatSoapClient
 {
@@ -33,7 +34,7 @@ class SiatSoapClient
                 ]),
             ]);
 
-            $response = (array) $client->__soapCall($method, [$payload]);
+            $response = $this->normalizeResponse($client->__soapCall($method, [$payload]));
 
             $this->log($setting, $service, $method, 'success', $payload, $response, null, $startedAt);
 
@@ -41,7 +42,9 @@ class SiatSoapClient
         } catch (SoapFault|Throwable $exception) {
             $this->log($setting, $service, $method, 'error', $payload, null, $exception->getMessage(), $startedAt);
 
-            throw $exception;
+            throw ValidationException::withMessages([
+                'billing' => "No se pudo comunicar con SIAT en {$method}. Verifica token, ambiente, conexion y codigos fiscales. Detalle tecnico: {$exception->getMessage()}",
+            ]);
         }
     }
 
@@ -115,5 +118,10 @@ class SiatSoapClient
         }
 
         return substr($text, 0, 4).'***'.substr($text, -4);
+    }
+
+    private function normalizeResponse(mixed $response): array
+    {
+        return json_decode(json_encode($response), true) ?: [];
     }
 }

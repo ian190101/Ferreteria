@@ -15,6 +15,8 @@ export default function Index({
     agingBuckets = {},
     agingReceivables = { data: [], links: [] },
     latestMovements = [],
+    profitByProduct = [],
+    profitBySeller = [],
     profileFeatures = {},
 }) {
     const decimalFormat = useDecimalFormatter('finance');
@@ -63,7 +65,63 @@ export default function Index({
                     {profileFeatures.purchases ? <MetricCard title="Compras" value={`Bs ${decimalFormat.money(metrics.purchase_total ?? 0)}`} detail={`${metrics.purchase_count ?? 0} ingresos registrados`} /> : null}
                     {profileFeatures.expenses ? <MetricCard title="Gastos" value={`Bs ${decimalFormat.money(metrics.expense_total ?? 0)}`} detail={`${metrics.expense_count ?? 0} egresos registrados`} /> : null}
                     {profileFeatures.inventory ? <MetricCard title="Inventario" value={metrics.active_coils ?? 0} detail={`${metrics.low_stock_count ?? 0} alertas de stock bajo`} tone={Number(metrics.low_stock_count ?? 0) > 0 ? 'warning' : 'default'} /> : null}
+                    {profileFeatures.sales ? <MetricCard title="Utilidad bruta" value={`Bs ${decimalFormat.money(metrics.gross_profit ?? 0)}`} detail={`Margen ${decimalFormat.money(metrics.gross_margin_percent ?? 0)}%`} tone={Number(metrics.gross_profit ?? 0) < 0 ? 'warning' : 'default'} /> : null}
                 </div>
+
+                {profileFeatures.sales ? (
+                    <div className="mb-6 grid gap-6 xl:grid-cols-2">
+                        <Panel title="Productos con mayor utilidad">
+                            <DataTable>
+                                <thead className="bg-slate-100 text-left text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                                    <tr>
+                                        <th className="px-4 py-3 font-medium">Producto</th>
+                                        <th className="px-4 py-3 text-right font-medium">Venta</th>
+                                        <th className="px-4 py-3 text-right font-medium">Costo</th>
+                                        <th className="px-4 py-3 text-right font-medium">Utilidad</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                                    {profitByProduct.map((row, index) => (
+                                        <tr key={`${row.sku}-${index}`}>
+                                            <td className="px-4 py-3">
+                                                <p className="font-medium">{row.product}</p>
+                                                <p className="text-xs text-slate-500">{row.sku}</p>
+                                            </td>
+                                            <td className="px-4 py-3 text-right">Bs {decimalFormat.money(row.sales_total ?? 0)}</td>
+                                            <td className="px-4 py-3 text-right">Bs {decimalFormat.money(row.cost_total ?? 0)}</td>
+                                            <td className="px-4 py-3 text-right font-semibold">Bs {decimalFormat.money(row.profit ?? 0)}</td>
+                                        </tr>
+                                    ))}
+                                    {profitByProduct.length === 0 ? <EmptyTableRow colSpan={4} /> : null}
+                                </tbody>
+                            </DataTable>
+                        </Panel>
+
+                        <Panel title="Utilidad por vendedor">
+                            <DataTable>
+                                <thead className="bg-slate-100 text-left text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                                    <tr>
+                                        <th className="px-4 py-3 font-medium">Vendedor</th>
+                                        <th className="px-4 py-3 text-right font-medium">Ventas</th>
+                                        <th className="px-4 py-3 text-right font-medium">Total</th>
+                                        <th className="px-4 py-3 text-right font-medium">Utilidad</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                                    {profitBySeller.map((row) => (
+                                        <tr key={row.seller}>
+                                            <td className="px-4 py-3 font-medium">{row.seller}</td>
+                                            <td className="px-4 py-3 text-right">{row.sales_count}</td>
+                                            <td className="px-4 py-3 text-right">Bs {decimalFormat.money(row.sales_total ?? 0)}</td>
+                                            <td className="px-4 py-3 text-right font-semibold">Bs {decimalFormat.money(row.profit ?? 0)}</td>
+                                        </tr>
+                                    ))}
+                                    {profitBySeller.length === 0 ? <EmptyTableRow colSpan={4} /> : null}
+                                </tbody>
+                            </DataTable>
+                        </Panel>
+                    </div>
+                ) : null}
 
                 <div className="grid gap-6 xl:grid-cols-[1.35fr_1fr]">
                     {profileFeatures.sales ? <Panel title="Ventas recientes">
@@ -243,6 +301,16 @@ function DataTable({ children }) {
 
 function documentType(type) {
     return type === 'quotation' ? 'Cotizacion' : 'Nota de venta';
+}
+
+function EmptyTableRow({ colSpan }) {
+    return (
+        <tr>
+            <td className="px-4 py-6 text-center text-slate-500" colSpan={colSpan}>
+                Sin datos para el rango seleccionado.
+            </td>
+        </tr>
+    );
 }
 
 function productUnitLabel(product) {

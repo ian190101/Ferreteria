@@ -4,12 +4,12 @@ import { Head } from '@inertiajs/react';
 
 export default function Info({ system, runtime, database, hosting }) {
     return (
-        <AuthenticatedLayout header={<h2 className="text-xl font-semibold leading-tight text-slate-800 dark:text-slate-200">Información del sistema</h2>}>
-            <Head title="Información del sistema" />
+        <AuthenticatedLayout header={<h2 className="text-xl font-semibold leading-tight text-slate-800 dark:text-slate-200">Informacion del sistema</h2>}>
+            <Head title="Informacion del sistema" />
 
             <section className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
                 <ModuleHeader
-                    title="Información del sistema"
+                    title="Informacion del sistema"
                     description="Datos clave de version, entorno, infraestructura y componentes activos sin exponer credenciales sensibles."
                 />
 
@@ -19,7 +19,7 @@ export default function Info({ system, runtime, database, hosting }) {
                             <p className="text-xs font-bold uppercase tracking-[0.18em] text-brand-primary">Sistema ERP</p>
                             <h3 className="mt-3 text-3xl font-semibold text-slate-950 dark:text-white">{system.name}</h3>
                             <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-600 dark:text-slate-400">
-                                Versión {system.version}. Sistema desarrollado por <strong className="font-semibold text-slate-900 dark:text-slate-100">{system.developer}</strong> {system.year}.
+                                Version {system.version}. Sistema desarrollado por <strong className="font-semibold text-slate-900 dark:text-slate-100">{system.developer}</strong> {system.year}.
                             </p>
                             <div className="mt-5 flex flex-wrap gap-2">
                                 <Badge label={`Entorno: ${environmentLabel(system.environment)}`} tone={system.environment === 'production' ? 'green' : 'amber'} />
@@ -40,7 +40,7 @@ export default function Info({ system, runtime, database, hosting }) {
                 </div>
 
                 <div className="mt-6 grid gap-6 lg:grid-cols-3">
-                    <InfoCard title="Aplicación" items={[
+                    <InfoCard title="Aplicacion" items={[
                         ['PHP', runtime.php],
                         ['Laravel', runtime.laravel],
                         ['Idioma', runtime.locale],
@@ -51,7 +51,7 @@ export default function Info({ system, runtime, database, hosting }) {
                     ]} />
 
                     <InfoCard title="Base de datos" items={[
-                        ['Conexión', database.connection],
+                        ['Conexion', database.connection],
                         ['Motor', database.driver],
                         ['Base de datos', database.database],
                         ['Servidor', database.server],
@@ -100,17 +100,13 @@ function Badge({ label, tone }) {
         blue: 'bg-sky-100 text-sky-700 ring-sky-200 dark:bg-sky-500/15 dark:text-sky-200 dark:ring-sky-500/20',
     };
 
-    return (
-        <span className={`rounded-full px-3 py-1 text-xs font-semibold ring-1 ${tones[tone] ?? tones.blue}`}>
-            {label}
-        </span>
-    );
+    return <span className={`rounded-full px-3 py-1 text-xs font-semibold ring-1 ${tones[tone] ?? tones.blue}`}>{label}</span>;
 }
 
 function environmentLabel(environment) {
     const labels = {
         local: 'Local',
-        production: 'Producción',
+        production: 'Produccion',
         staging: 'Pruebas',
         testing: 'Testing',
     };

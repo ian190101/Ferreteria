@@ -26,14 +26,24 @@ function settingFormData(setting = {}, branchId = '') {
         clear_token: false,
         certificate_path: setting.certificate_path ?? '',
         certificate_password: '',
-        mock_siat: setting.options?.mock_siat ?? true,
+        mock_siat: setting.options?.mock_siat ?? false,
         is_active: setting.is_active ?? true,
     };
 }
 
-export default function Index({ settings = [], branches = [] }) {
+export default function Index({ settings = [], branches = [], isSystemSuperadmin = false, internalTestPresets = {} }) {
     const first = settings[0] ?? {};
     const form = useForm(settingFormData(first, first.branch_id ?? branches[0]?.id ?? ''));
+    const internalForm = useForm({
+        branch_id: first.branch_id ?? branches[0]?.id ?? '',
+        preset: 'piloto_computarizada_compra_venta',
+        cuis: '',
+        cuis_expires_at: '',
+        cufd: '',
+        control_code: '',
+        cufd_valid_until: '',
+        address: '',
+    });
 
     const submit = (event) => {
         event.preventDefault();
@@ -44,10 +54,13 @@ export default function Index({ settings = [], branches = [] }) {
     const selectedSetting = settings.find((setting) => Number(setting.branch_id) === Number(branchId));
     const isProduction = Number(form.data.environment_code) === 1;
     const isElectronic = Number(form.data.modality_code) === 1;
+    const readiness = selectedSetting?.readiness ?? [];
+    const readyCount = readiness.filter((item) => item.ok).length;
 
     useEffect(() => {
         const current = settings.find((setting) => Number(setting.branch_id) === Number(branchId));
         form.setData(settingFormData(current ?? {}, branchId));
+        internalForm.setData('branch_id', branchId);
     }, [branchId]);
 
     return (
@@ -69,6 +82,7 @@ export default function Index({ settings = [], branches = [] }) {
                             <p>Ambiente: <span className="font-semibold">{isProduction ? 'Produccion' : 'Piloto / pruebas'}</span></p>
                             <p>Token: <span className="font-semibold">{selectedSetting?.has_token ? 'Configurado' : 'Sin configurar'}</span></p>
                             <p>Certificado: <span className="font-semibold">{selectedSetting?.has_certificate_password ? 'Clave guardada' : 'Sin clave guardada'}</span></p>
+                            <p>Checklist: <span className="font-semibold">{readiness.length ? `${readyCount}/${readiness.length}` : 'Sin configurar'}</span></p>
                         </div>
                     </div>
                 </div>
@@ -98,7 +112,7 @@ export default function Index({ settings = [], branches = [] }) {
                             </SelectField>
                             <SelectField label="Modalidad" value={form.data.modality_code} onChange={(event) => form.setData('modality_code', Number(event.target.value))} helpTooltip="Computarizada en linea usa hash. Electronica en linea requiere certificado digital y firma XML.">
                                 <option value={2}>Computarizada en linea</option>
-                                <option value={1}>Electronica en linea</option>
+                                <option value={1}>Electronica en linea (requiere firma XML-DSig)</option>
                             </SelectField>
                             <SelectField label="Tipo de emision" value={form.data.emission_type_code} onChange={(event) => form.setData('emission_type_code', Number(event.target.value))} helpTooltip="Normalmente se usa emision en linea. La emision fuera de linea se usa para contingencias/eventos significativos.">
                                 <option value={1}>En linea</option>
@@ -153,7 +167,7 @@ export default function Index({ settings = [], branches = [] }) {
                     <div className="mt-5 flex flex-wrap gap-3">
                         <label className="flex items-center gap-2 rounded-full bg-slate-100 px-4 py-2 text-sm dark:bg-white/10">
                             <input type="checkbox" checked={form.data.mock_siat} onChange={(event) => form.setData('mock_siat', event.target.checked)} />
-                            Respuestas simuladas para piloto local
+                            Usar respuestas simuladas solo para desarrollo local
                         </label>
                         <label className="flex items-center gap-2 rounded-full bg-slate-100 px-4 py-2 text-sm dark:bg-white/10">
                             <input type="checkbox" checked={form.data.is_active} onChange={(event) => form.setData('is_active', event.target.checked)} />
@@ -168,6 +182,85 @@ export default function Index({ settings = [], branches = [] }) {
                         <button type="button" onClick={() => router.post(route('billing.catalogs.sync'), { branch_id: branchId }, { preserveScroll: true })} className="rounded-full border border-slate-300 px-5 py-2 text-sm font-semibold">Sincronizar catalogos</button>
                     </div>
                 </form>
+
+                <div className="mt-8 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                            <h3 className="font-semibold text-slate-900 dark:text-white">Checklist para pruebas SIN/SIAT</h3>
+                            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Antes de emitir en piloto real, todos los puntos deben estar en correcto. El modo simulado no sirve para certificar.</p>
+                        </div>
+                        <span className={`rounded-full px-3 py-1 text-xs font-semibold ${readiness.length && readyCount === readiness.length ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-200' : 'bg-amber-100 text-amber-700 dark:bg-amber-500/10 dark:text-amber-100'}`}>
+                            {readiness.length && readyCount === readiness.length ? 'Lista para piloto' : 'Faltan pasos'}
+                        </span>
+                    </div>
+                    <div className="mt-4 grid gap-3 md:grid-cols-2">
+                        {readiness.map((item) => (
+                            <div key={item.key} className={`rounded-2xl border p-4 text-sm ${item.ok ? 'border-emerald-200 bg-emerald-50 text-emerald-900 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-100' : 'border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-100'}`}>
+                                <p className="font-semibold">{item.ok ? 'Correcto' : 'Pendiente'}: {item.label}</p>
+                                <p className="mt-1">{item.message}</p>
+                            </div>
+                        ))}
+                        {readiness.length === 0 ? (
+                            <div className="rounded-2xl border border-slate-200 p-4 text-sm text-slate-600 dark:border-slate-800 dark:text-slate-300">
+                                Guarda una configuracion SIAT para ver el checklist.
+                            </div>
+                        ) : null}
+                    </div>
+                </div>
+
+                {isSystemSuperadmin ? (
+                    <div className="mt-8 rounded-2xl border border-indigo-200 bg-indigo-50 p-5 shadow-sm dark:border-indigo-500/20 dark:bg-indigo-500/10">
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                            <div>
+                                <h3 className="font-semibold text-indigo-950 dark:text-indigo-100">Herramientas internas SIAT</h3>
+                                <p className="mt-1 text-sm text-indigo-800 dark:text-indigo-100">
+                                    Solo visible para sistemasuperadmin. Usa esto para cargar datos de casos oficiales piloto, cambiar NIT/token/codigo sistema por cliente o registrar CUIS/CUFD entregados para pruebas controladas.
+                                </p>
+                            </div>
+                            <span className="rounded-full bg-indigo-600 px-3 py-1 text-xs font-semibold text-white">Oculto para cliente</span>
+                        </div>
+                        <div className="mt-5 grid gap-5 lg:grid-cols-2">
+                            <form
+                                onSubmit={(event) => {
+                                    event.preventDefault();
+                                    internalForm.post(route('billing.settings.internal-preset'), { preserveScroll: true });
+                                }}
+                                className="rounded-2xl border border-white/70 bg-white p-4 dark:border-white/10 dark:bg-slate-900"
+                            >
+                                <h4 className="font-semibold text-slate-950 dark:text-white">Aplicar preset de prueba</h4>
+                                <p className="mt-1 text-sm text-slate-500 dark:text-slate-300">Los valores vienen de variables `.env` para no exponer datos fiscales reales en GitHub.</p>
+                                <div className="mt-4 grid gap-4">
+                                    <SelectField label="Sucursal" value={internalForm.data.branch_id} onChange={(event) => internalForm.setData('branch_id', event.target.value)} required>
+                                        {branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
+                                    </SelectField>
+                                    <SelectField label="Preset" value={internalForm.data.preset} onChange={(event) => internalForm.setData('preset', event.target.value)} required>
+                                        {Object.entries(internalTestPresets).map(([key, preset]) => <option key={key} value={key}>{preset.label}</option>)}
+                                    </SelectField>
+                                    <button disabled={internalForm.processing} className="rounded-full bg-indigo-600 px-5 py-2 text-sm font-semibold text-white">Aplicar preset interno</button>
+                                </div>
+                            </form>
+                            <form
+                                onSubmit={(event) => {
+                                    event.preventDefault();
+                                    internalForm.post(route('billing.settings.internal-codes'), { preserveScroll: true });
+                                }}
+                                className="rounded-2xl border border-white/70 bg-white p-4 dark:border-white/10 dark:bg-slate-900"
+                            >
+                                <h4 className="font-semibold text-slate-950 dark:text-white">Registrar CUIS/CUFD manual de prueba</h4>
+                                <p className="mt-1 text-sm text-slate-500 dark:text-slate-300">Usalo solo cuando el caso oficial de pruebas entregue codigos o necesites simular una vigencia exacta.</p>
+                                <div className="mt-4 grid gap-4 md:grid-cols-2">
+                                    <FormField label="CUIS" value={internalForm.data.cuis} onChange={(event) => internalForm.setData('cuis', event.target.value)} error={internalForm.errors.cuis} />
+                                    <FormField label="Vence CUIS" type="datetime-local" value={internalForm.data.cuis_expires_at} onChange={(event) => internalForm.setData('cuis_expires_at', event.target.value)} error={internalForm.errors.cuis_expires_at} />
+                                    <FormField label="CUFD" value={internalForm.data.cufd} onChange={(event) => internalForm.setData('cufd', event.target.value)} error={internalForm.errors.cufd} />
+                                    <FormField label="Codigo control" value={internalForm.data.control_code} onChange={(event) => internalForm.setData('control_code', event.target.value)} error={internalForm.errors.control_code} />
+                                    <FormField label="Vence CUFD" type="datetime-local" value={internalForm.data.cufd_valid_until} onChange={(event) => internalForm.setData('cufd_valid_until', event.target.value)} error={internalForm.errors.cufd_valid_until} />
+                                    <FormField label="Direccion CUFD" value={internalForm.data.address} onChange={(event) => internalForm.setData('address', event.target.value)} error={internalForm.errors.address} />
+                                    <button disabled={internalForm.processing} className="rounded-full bg-indigo-600 px-5 py-2 text-sm font-semibold text-white md:col-span-2">Guardar codigos internos</button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                ) : null}
 
                 <div className="mt-8 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
                     <div className="border-b border-slate-200 p-5 dark:border-slate-800">

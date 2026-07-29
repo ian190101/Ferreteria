@@ -19,6 +19,12 @@ Route::middleware(['auth', 'verified', 'business_feature:billing'])
         Route::middleware('permission:billing.manage')->group(function () {
             Route::get('/settings', [SiatSettingController::class, 'index'])->name('settings.index');
             Route::post('/settings', [SiatSettingController::class, 'store'])->name('settings.store');
+            Route::post('/settings/internal-preset', [SiatSettingController::class, 'applyInternalPreset'])
+                ->middleware('system_superadmin')
+                ->name('settings.internal-preset');
+            Route::post('/settings/internal-codes', [SiatSettingController::class, 'storeInternalCodes'])
+                ->middleware('system_superadmin')
+                ->name('settings.internal-codes');
             Route::post('/codes/cuis', [SiatCodeController::class, 'cuis'])->name('codes.cuis');
             Route::post('/codes/cufd', [SiatCodeController::class, 'cufd'])->name('codes.cufd');
             Route::post('/catalogs/sync', [SiatCodeController::class, 'syncCatalogs'])->name('catalogs.sync');

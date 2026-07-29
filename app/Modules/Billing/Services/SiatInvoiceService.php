@@ -14,6 +14,7 @@ class SiatInvoiceService
     public function __construct(
         private readonly BillingWorkflowPolicy $workflow,
         private readonly SiatConfigurationService $configuration,
+        private readonly SiatCertificationReadinessService $readiness,
         private readonly SiatCufGenerator $cufGenerator,
         private readonly SiatInvoiceXmlBuilder $xmlBuilder,
         private readonly SiatXmlValidator $xmlValidator,
@@ -75,6 +76,7 @@ class SiatInvoiceService
             }
 
             $cufd ??= app(SiatCodeService::class)->requestCufd((int) $sale->branch_id);
+            $setting = $this->readiness->assertReadyForInvoice((int) $sale->branch_id);
             $issuedAt = now();
             $invoiceNumber = $this->nextInvoiceNumber((int) $sale->branch_id);
             $cuf = $this->cufGenerator->generate($setting, $invoiceNumber, $issuedAt, (string) $cufd->control_code);
@@ -118,7 +120,7 @@ class SiatInvoiceService
             $invoice->load(['items', 'branch.siatSetting', 'cufd']);
 
             $xml = $this->xmlBuilder->buildCompraVenta($invoice);
-            $this->xmlValidator->validateWellFormed($xml);
+            $this->xmlValidator->validateCompraVenta($xml);
             $signedXml = $this->xmlSigner->signIfRequired($xml, $setting);
             $compressed = $this->gzip->compress($signedXml);
             $gzipBase64 = base64_encode($compressed);
@@ -309,7 +311,13 @@ class SiatInvoiceService
 
     private function identityDocumentType(?string $document): int
     {
-        return preg_match('/^\d+$/', (string) $document) ? 1 : 5;
+        $value = $this->customerDocument($document);
+
+        if (in_array($value, ['99001', '99002', '99003'], true)) {
+            return 5;
+        }
+
+        return preg_match('/^\d{9,20}$/', $value) ? 5 : 1;
     }
 
     private function customerDocument(?string $document): string

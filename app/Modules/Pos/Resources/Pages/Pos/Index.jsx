@@ -237,6 +237,50 @@ export default function Index({ branches = [], selectedBranchId, saleTypes = [],
         setPendingSales((current) => current.filter((entry) => entry.id !== entryId));
     };
 
+    const printTemporaryReceipt = (entry) => {
+        const win = window.open('', '_blank', 'width=420,height=640');
+        if (!win) {
+            setNotice('El navegador bloqueo la ventana de impresion del recibo temporal.');
+            return;
+        }
+
+        const items = entry.payload.items.map((item) => `
+            <tr>
+                <td>${escapeHtml(item.description)}</td>
+                <td style="text-align:right">${Number(item.display_quantity || 0).toFixed(2)}</td>
+                <td style="text-align:right">${Number(item.unit_price || 0).toFixed(1)}</td>
+                <td style="text-align:right">${Number(item.total || (item.meters * item.unit_price) || 0).toFixed(1)}</td>
+            </tr>
+        `).join('');
+
+        win.document.write(`
+            <html>
+                <head>
+                    <title>Recibo temporal POS</title>
+                    <style>
+                        body { font-family: Arial, sans-serif; font-size: 12px; padding: 12px; }
+                        h1 { font-size: 16px; margin: 0 0 6px; }
+                        table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+                        td, th { border-bottom: 1px solid #ddd; padding: 4px 0; }
+                        .warn { border: 1px solid #d97706; color: #92400e; padding: 8px; margin: 10px 0; }
+                    </style>
+                </head>
+                <body>
+                    <h1>Recibo temporal</h1>
+                    <p>Fecha local: ${new Date(entry.created_at).toLocaleString('es-BO')}</p>
+                    <div class="warn">Este documento no es factura ni nota definitiva. Se debe sincronizar cuando vuelva la conexion.</div>
+                    <table>
+                        <thead><tr><th>Producto</th><th>Cant.</th><th>Precio</th><th>Total</th></tr></thead>
+                        <tbody>${items}</tbody>
+                    </table>
+                    <h2 style="text-align:right">Total Bs ${Number(entry.total || 0).toFixed(1)}</h2>
+                    <script>window.print();</script>
+                </body>
+            </html>
+        `);
+        win.document.close();
+    };
+
     return (
         <AuthenticatedLayout header={<h2 className="text-xl font-semibold leading-tight text-slate-800 dark:text-slate-200">POS rapido</h2>}>
             <Head title="POS rapido" />
@@ -287,6 +331,7 @@ export default function Index({ branches = [], selectedBranchId, saleTypes = [],
                                     </div>
                                     <div className="flex gap-2">
                                         <button type="button" onClick={() => sendPendingSale(entry)} disabled={!isOnline || checkoutProcessing} className="rounded-full bg-brand-primary px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50">Enviar</button>
+                                        <button type="button" onClick={() => printTemporaryReceipt(entry)} className="rounded-full border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 dark:border-slate-700 dark:text-slate-200">Recibo</button>
                                         <button type="button" onClick={() => discardPendingSale(entry.id)} className="rounded-full border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-600">Descartar</button>
                                     </div>
                                 </div>
@@ -454,4 +499,13 @@ function writeStorage(key, value) {
     } catch {
         // Si el navegador bloquea almacenamiento local, el POS sigue funcionando en memoria.
     }
+}
+
+function escapeHtml(value) {
+    return String(value ?? '')
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#039;');
 }

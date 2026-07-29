@@ -23,7 +23,7 @@ class SiatCufGenerator
 
         $payloadWithCheckDigit = $payload.$this->mod11($payload);
 
-        return strtoupper(base_convert($payloadWithCheckDigit, 10, 16)).$controlCode;
+        return strtoupper($this->decimalToHex($payloadWithCheckDigit)).$controlCode;
     }
 
     private function mod11(string $value): int
@@ -44,5 +44,37 @@ class SiatCufGenerator
             11 => 0,
             default => $digit,
         };
+    }
+
+    private function decimalToHex(string $decimal): string
+    {
+        $decimal = ltrim($decimal, '0');
+
+        if ($decimal === '') {
+            return '0';
+        }
+
+        $hex = '';
+        $digits = str_split($decimal);
+
+        while ($digits !== []) {
+            $quotient = [];
+            $remainder = 0;
+
+            foreach ($digits as $digit) {
+                $number = ($remainder * 10) + (int) $digit;
+                $value = intdiv($number, 16);
+                $remainder = $number % 16;
+
+                if ($value > 0 || $quotient !== []) {
+                    $quotient[] = (string) $value;
+                }
+            }
+
+            $hex = '0123456789ABCDEF'[$remainder].$hex;
+            $digits = $quotient;
+        }
+
+        return $hex;
     }
 }

@@ -67,7 +67,11 @@ class SiatEventController extends Controller
             return back()->with('error', 'No hay facturas temporales o de contingencia para empaquetar en este evento.');
         }
 
-        $packages->buildAndSend($event, $invoices);
+        $package = $packages->buildAndSend($event, $invoices);
+
+        if (filled($package->reception_code)) {
+            $packages->validateReception($package);
+        }
 
         return back()->with('success', 'Paquete de contingencia generado y enviado.');
     }

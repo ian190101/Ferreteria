@@ -38,6 +38,8 @@ return [
     'siat' => [
         'pilot_base' => env('SIAT_PILOT_BASE', 'https://pilotosiatservicios.impuestos.gob.bo/v2'),
         'production_base' => env('SIAT_PRODUCTION_BASE', 'https://siatservicios.impuestos.gob.bo/v2'),
+        'pilot_qr_base' => env('SIAT_PILOT_QR_BASE', 'https://pilotosiat.impuestos.gob.bo/consulta/QR'),
+        'production_qr_base' => env('SIAT_PRODUCTION_QR_BASE', 'https://siat.impuestos.gob.bo/consulta/QR'),
     ],
 
 ];

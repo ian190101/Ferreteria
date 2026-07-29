@@ -24,6 +24,10 @@ use App\Modules\Purchases\Models\Purchase;
 use App\Modules\Purchases\Models\Supplier;
 use App\Modules\Sales\Models\DeliveryNote;
 use App\Modules\Sales\Models\Sale;
+use App\Modules\Settings\Models\ApplicationLicense;
+use App\Modules\Settings\Models\ImportBatch;
+use App\Modules\Settings\Models\MaintenanceBackup;
+use App\Modules\Settings\Models\MaintenanceLog;
 use App\Modules\SystemSuperadmin\Services\ActiveBusinessProfile;
 use App\Support\BranchAccess;
 use App\Models\Audit;
@@ -352,6 +356,58 @@ class ExportDatasetService
                     'ip' => 'IP',
                 ],
             ],
+            'maintenance_logs' => [
+                'label' => 'Logs productivos',
+                'description' => 'Eventos tecnicos de produccion, backups, SIAT, importaciones y actualizaciones.',
+                'fields' => [
+                    'date' => 'Fecha',
+                    'user' => 'Usuario',
+                    'channel' => 'Canal',
+                    'level' => 'Nivel',
+                    'event' => 'Evento',
+                    'message' => 'Mensaje',
+                    'ip' => 'IP',
+                ],
+            ],
+            'maintenance_backups' => [
+                'label' => 'Backups',
+                'description' => 'Backups generados, verificacion, formato y tamano.',
+                'fields' => [
+                    'date' => 'Fecha',
+                    'user' => 'Usuario',
+                    'path' => 'Archivo',
+                    'format' => 'Formato',
+                    'status' => 'Estado',
+                    'size' => 'Tamano bytes',
+                ],
+            ],
+            'imports' => [
+                'label' => 'Importaciones',
+                'description' => 'Cargas masivas realizadas y resultado por filas.',
+                'fields' => [
+                    'date' => 'Fecha',
+                    'user' => 'Usuario',
+                    'module' => 'Modulo',
+                    'file' => 'Archivo',
+                    'status' => 'Estado',
+                    'total' => 'Filas',
+                    'created' => 'Creados',
+                    'updated' => 'Actualizados',
+                    'failed' => 'Errores',
+                ],
+            ],
+            'licenses' => [
+                'label' => 'Licencias',
+                'description' => 'Licencias internas de instalacion por cliente.',
+                'fields' => [
+                    'holder' => 'Cliente',
+                    'nit' => 'NIT',
+                    'domain' => 'Dominio',
+                    'support_until' => 'Soporte hasta',
+                    'status' => 'Estado',
+                    'activation_mode' => 'Activacion',
+                ],
+            ],
         ])->filter(fn (array $definition, string $module) => $this->moduleAllowed($module, $request))->all();
     }
 
@@ -444,6 +500,10 @@ class ExportDatasetService
             'branches' => $this->branchRows($request, $branchId),
             'users' => $this->userRows($request, $branchId),
             'audit' => $this->auditRows($request, $from, $to),
+            'maintenance_logs' => $this->maintenanceLogRows($from, $to),
+            'maintenance_backups' => $this->maintenanceBackupRows($from, $to),
+            'imports' => $this->importRows($from, $to),
+            'licenses' => $this->licenseRows($request),
             default => [],
         };
     }
@@ -474,7 +534,7 @@ class ExportDatasetService
             'barcode_templates' => ActiveBusinessProfile::enabled('barcode_labels'),
             'billing_invoices', 'billing_settings', 'billing_products', 'billing_events', 'billing_logs' => $this->billingEnabled(),
             'deliveries' => ActiveBusinessProfile::enabled('deliveries'),
-            'branches', 'users', 'audit' => true,
+            'branches', 'users', 'audit', 'maintenance_logs', 'maintenance_backups', 'imports', 'licenses' => true,
             default => true,
         };
     }
@@ -519,6 +579,9 @@ class ExportDatasetService
             'branches' => $request->user()->can('branches.view'),
             'users' => $request->user()->can('users.view'),
             'audit' => $request->user()->can('audit.view'),
+            'maintenance_logs', 'maintenance_backups' => $request->user()->can('maintenance.view') || $request->user()->can('settings.manage'),
+            'imports' => $request->user()->can('imports.view') || $request->user()->can('settings.manage'),
+            'licenses' => $request->user()->hasRole(SystemRoles::SYSTEM_SUPERADMIN),
             default => true,
         };
     }
@@ -1079,6 +1142,88 @@ class ExportDatasetService
                 'record' => $audit->auditable_id,
                 'description' => "{$this->eventLabel($audit->event)} en {$this->modelLabel($audit->auditable_type)} #{$audit->auditable_id}",
                 'ip' => $audit->ip_address ?? '-',
+            ])
+            ->all();
+    }
+
+    private function maintenanceLogRows(Carbon $from, Carbon $to): array
+    {
+        return MaintenanceLog::query()
+            ->with('user:id,name')
+            ->whereBetween('created_at', [$from, $to])
+            ->latest()
+            ->limit(5000)
+            ->get(['user_id', 'channel', 'level', 'event', 'message', 'ip_address', 'created_at'])
+            ->map(fn (MaintenanceLog $log) => [
+                'date' => $log->created_at?->format('d/m/Y H:i:s'),
+                'user' => $log->user?->name ?? 'Sistema',
+                'channel' => $log->channel,
+                'level' => $log->level,
+                'event' => $log->event,
+                'message' => $log->message,
+                'ip' => $log->ip_address ?? '-',
+            ])
+            ->all();
+    }
+
+    private function maintenanceBackupRows(Carbon $from, Carbon $to): array
+    {
+        return MaintenanceBackup::query()
+            ->with('user:id,name')
+            ->whereBetween('created_at', [$from, $to])
+            ->latest()
+            ->limit(5000)
+            ->get(['user_id', 'path', 'status', 'size_bytes', 'metadata', 'created_at'])
+            ->map(fn (MaintenanceBackup $backup) => [
+                'date' => $backup->created_at?->format('d/m/Y H:i:s'),
+                'user' => $backup->user?->name ?? 'Sistema',
+                'path' => $backup->path,
+                'format' => $backup->metadata['format'] ?? pathinfo($backup->path, PATHINFO_EXTENSION),
+                'status' => $backup->status,
+                'size' => (int) $backup->size_bytes,
+            ])
+            ->all();
+    }
+
+    private function importRows(Carbon $from, Carbon $to): array
+    {
+        return ImportBatch::query()
+            ->with('user:id,name')
+            ->whereBetween('created_at', [$from, $to])
+            ->latest()
+            ->limit(5000)
+            ->get(['user_id', 'module', 'file_name', 'status', 'total_rows', 'created_rows', 'updated_rows', 'failed_rows', 'created_at'])
+            ->map(fn (ImportBatch $batch) => [
+                'date' => $batch->created_at?->format('d/m/Y H:i:s'),
+                'user' => $batch->user?->name ?? 'Sistema',
+                'module' => $batch->module,
+                'file' => $batch->file_name,
+                'status' => $batch->status,
+                'total' => (int) $batch->total_rows,
+                'created' => (int) $batch->created_rows,
+                'updated' => (int) $batch->updated_rows,
+                'failed' => (int) $batch->failed_rows,
+            ])
+            ->all();
+    }
+
+    private function licenseRows(Request $request): array
+    {
+        if (! $request->user()?->hasRole(SystemRoles::SYSTEM_SUPERADMIN)) {
+            return [];
+        }
+
+        return ApplicationLicense::query()
+            ->latest()
+            ->limit(5000)
+            ->get(['holder_name', 'nit', 'domain', 'support_until', 'status', 'activation_mode'])
+            ->map(fn (ApplicationLicense $license) => [
+                'holder' => $license->holder_name,
+                'nit' => $license->nit ?? '-',
+                'domain' => $license->domain ?? '-',
+                'support_until' => $license->support_until?->format('d/m/Y') ?? '-',
+                'status' => $license->status,
+                'activation_mode' => $license->activation_mode,
             ])
             ->all();
     }

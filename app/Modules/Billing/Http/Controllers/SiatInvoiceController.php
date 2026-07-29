@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Modules\Billing\Models\SiatInvoice;
 use App\Modules\Billing\Services\BillingWorkflowPolicy;
 use App\Modules\Billing\Services\SiatInvoiceService;
+use App\Modules\Billing\Services\SiatQrUrlService;
 use App\Modules\Sales\Models\Sale;
 use App\Support\BranchAccess;
 use App\Support\SystemRoles;
@@ -16,14 +17,15 @@ use Inertia\Response;
 
 class SiatInvoiceController extends Controller
 {
-    public function show(SiatInvoice $invoice): Response
+    public function show(SiatInvoice $invoice, SiatQrUrlService $qr): Response
     {
         abort_unless(BranchAccess::canAccess(request()->user(), (int) $invoice->branch_id), 403);
 
-        $invoice->load(['branch:id,name,address', 'sale:id,receipt_number,total', 'items']);
+        $invoice->load(['branch.siatSetting', 'sale:id,receipt_number,total', 'items']);
 
         return Inertia::render('Billing/Invoices/Show', [
             'invoice' => $invoice,
+            'qrUrl' => filled($invoice->cuf) ? $qr->url($invoice) : null,
         ]);
     }
 

@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" elementFormDefault="qualified">
+    <xs:element name="facturaComputarizadaCompraVenta">
+        <xs:complexType>
+            <xs:sequence>
+                <xs:element name="cabecera" type="CabeceraCompraVenta"/>
+                <xs:element name="detalle" type="DetalleCompraVenta" minOccurs="1" maxOccurs="unbounded"/>
+            </xs:sequence>
+        </xs:complexType>
+    </xs:element>
+
+    <xs:complexType name="CabeceraCompraVenta">
+        <xs:sequence>
+            <xs:element name="nitEmisor" type="xs:string"/>
+            <xs:element name="razonSocialEmisor" type="xs:string"/>
+            <xs:element name="municipio" type="xs:string"/>
+            <xs:element name="telefono" type="xs:string" nillable="true"/>
+            <xs:element name="numeroFactura" type="xs:positiveInteger"/>
+            <xs:element name="cuf" type="xs:string"/>
+            <xs:element name="cufd" type="xs:string"/>
+            <xs:element name="codigoSucursal" type="xs:nonNegativeInteger"/>
+            <xs:element name="direccion" type="xs:string"/>
+            <xs:element name="codigoPuntoVenta" type="xs:nonNegativeInteger" nillable="true"/>
+            <xs:element name="fechaEmision" type="xs:dateTime"/>
+            <xs:element name="nombreRazonSocial" type="xs:string" nillable="true"/>
+            <xs:element name="codigoTipoDocumentoIdentidad" type="xs:positiveInteger"/>
+            <xs:element name="numeroDocumento" type="xs:string"/>
+            <xs:element name="complemento" type="xs:string" nillable="true"/>
+            <xs:element name="codigoCliente" type="xs:string"/>
+            <xs:element name="codigoMetodoPago" type="xs:positiveInteger"/>
+            <xs:element name="numeroTarjeta" type="xs:string" nillable="true"/>
+            <xs:element name="montoTotal" type="xs:decimal"/>
+            <xs:element name="montoTotalSujetoIva" type="xs:decimal"/>
+            <xs:element name="montoGiftCard" type="xs:decimal" nillable="true"/>
+            <xs:element name="descuentoAdicional" type="xs:decimal" nillable="true"/>
+            <xs:element name="codigoExcepcion" type="xs:nonNegativeInteger"/>
+            <xs:element name="cafc" type="xs:string" nillable="true"/>
+            <xs:element name="codigoMoneda" type="xs:positiveInteger"/>
+            <xs:element name="tipoCambio" type="xs:decimal"/>
+            <xs:element name="montoTotalMoneda" type="xs:decimal"/>
+            <xs:element name="leyenda" type="xs:string"/>
+            <xs:element name="usuario" type="xs:string"/>
+            <xs:element name="codigoDocumentoSector" type="xs:positiveInteger"/>
+        </xs:sequence>
+    </xs:complexType>
+
+    <xs:complexType name="DetalleCompraVenta">
+        <xs:sequence>
+            <xs:element name="actividadEconomica" type="xs:positiveInteger"/>
+            <xs:element name="codigoProductoSin" type="xs:positiveInteger"/>
+            <xs:element name="codigoProducto" type="xs:string"/>
+            <xs:element name="descripcion" type="xs:string"/>
+            <xs:element name="cantidad" type="xs:decimal"/>
+            <xs:element name="unidadMedida" type="xs:positiveInteger"/>
+            <xs:element name="precioUnitario" type="xs:decimal"/>
+            <xs:element name="montoDescuento" type="xs:decimal" nillable="true"/>
+            <xs:element name="subTotal" type="xs:decimal"/>
+            <xs:element name="numeroSerie" type="xs:string" nillable="true"/>
+            <xs:element name="numeroImei" type="xs:string" nillable="true"/>
+        </xs:sequence>
+    </xs:complexType>
+</xs:schema>

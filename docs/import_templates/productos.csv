@@ -1,0 +1,3 @@
+nombre,sku,barcode,unidad,categoria,stock,precio_compra,precio_venta,stock_minimo
+Casco de seguridad amarillo,CASCO-AMARILLO,775000001,unidad,Seguridad,25,35,55,5
+Calamina azul 0.50 mm,CAL-AZU-050,775000002,m,Calaminas,500,45,55,50

@@ -16,6 +16,7 @@ use App\Support\UiCatalogCache;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -63,6 +64,8 @@ class ReportController extends Controller
                 'expense_count' => $profileFeatures['expenses'] ? $this->expenseQuery($from, $to, $branchId)->count() : 0,
                 'active_coils' => $profileFeatures['inventory_lots'] ? $this->coilQuery($branchId)->where('status', 'available')->count() : 0,
                 'low_stock_count' => $profileFeatures['inventory'] ? $this->lowStockQuery($branchId)->count() : 0,
+                'gross_profit' => $profileFeatures['sales'] ? $this->grossProfit($from, $to, $branchId) : 0.0,
+                'gross_margin_percent' => $profileFeatures['sales'] ? $this->grossMarginPercent($from, $to, $branchId) : 0.0,
             ];
         });
 
@@ -80,6 +83,8 @@ class ReportController extends Controller
             'agingBuckets' => Inertia::defer(fn () => $profileFeatures['payments'] ? Cache::remember($this->sectionCacheKey('aging-buckets', $user->id, $branchId, $from, $to), now()->addSeconds(self::CACHE_SECONDS), fn () => $this->agingBuckets($branchId)) : $this->emptyAgingBuckets(), 'reports-lists'),
             'agingReceivables' => Inertia::defer(fn () => $profileFeatures['payments'] ? $this->agingReceivables($branchId, $request) : Sale::query()->whereRaw('1 = 0')->paginate($request->integer('aging_per_page', 10), ['id'], 'aging_page'), 'reports-lists'),
             'latestMovements' => Inertia::defer(fn () => $profileFeatures['inventory_lots'] ? Cache::remember($this->sectionCacheKey('latest-movements', $user->id, $branchId, $from, $to), now()->addSeconds(self::CACHE_SECONDS), fn () => $this->latestMovements($request, $branchId)) : collect(), 'reports-lists'),
+            'profitByProduct' => Inertia::defer(fn () => $profileFeatures['sales'] ? Cache::remember($this->sectionCacheKey('profit-products', $user->id, $branchId, $from, $to), now()->addSeconds(self::CACHE_SECONDS), fn () => $this->profitByProduct($from, $to, $branchId)) : collect(), 'reports-lists'),
+            'profitBySeller' => Inertia::defer(fn () => $profileFeatures['sales'] ? Cache::remember($this->sectionCacheKey('profit-sellers', $user->id, $branchId, $from, $to), now()->addSeconds(self::CACHE_SECONDS), fn () => $this->profitBySeller($from, $to, $branchId)) : collect(), 'reports-lists'),
         ]);
     }
 
@@ -250,5 +255,75 @@ class ReportController extends Controller
             ->select('product_branch_stocks.*')
             ->when(true, fn ($query) => BranchAccess::apply($query, request()->user(), 'product_branch_stocks.branch_id'))
             ->when($branchId, fn ($query) => $query->where('product_branch_stocks.branch_id', $branchId));
+    }
+
+    private function profitBaseQuery(Carbon $from, Carbon $to, ?int $branchId)
+    {
+        $allowedBranchIds = request()->user()->isSuperAdministrator()
+            ? null
+            : request()->user()->accessibleBranchIds();
+
+        return DB::table('sale_items')
+            ->join('sales', 'sale_items.sale_id', '=', 'sales.id')
+            ->leftJoin('products', 'sale_items.product_id', '=', 'products.id')
+            ->whereBetween('sales.sold_at', [$from, $to])
+            ->where('sales.document_type', 'sale_note')
+            ->whereNotIn('sales.status', ['voided', 'cancelled'])
+            ->when($allowedBranchIds !== null, fn ($query) => $query->whereIn('sales.branch_id', $allowedBranchIds ?: [-1]))
+            ->when($branchId, fn ($query) => $query->where('sales.branch_id', $branchId));
+    }
+
+    private function grossProfit(Carbon $from, Carbon $to, ?int $branchId): float
+    {
+        $row = (clone $this->profitBaseQuery($from, $to, $branchId))
+            ->selectRaw('COALESCE(SUM(sale_items.total - (sale_items.meters * COALESCE(products.purchase_price, 0))), 0) as profit')
+            ->first();
+
+        return round((float) ($row->profit ?? 0), 2);
+    }
+
+    private function grossMarginPercent(Carbon $from, Carbon $to, ?int $branchId): float
+    {
+        $row = (clone $this->profitBaseQuery($from, $to, $branchId))
+            ->selectRaw('COALESCE(SUM(sale_items.total), 0) as sales_total, COALESCE(SUM(sale_items.total - (sale_items.meters * COALESCE(products.purchase_price, 0))), 0) as profit')
+            ->first();
+
+        $salesTotal = (float) ($row->sales_total ?? 0);
+
+        return $salesTotal > 0 ? round(((float) ($row->profit ?? 0) / $salesTotal) * 100, 2) : 0.0;
+    }
+
+    private function profitByProduct(Carbon $from, Carbon $to, ?int $branchId)
+    {
+        return (clone $this->profitBaseQuery($from, $to, $branchId))
+            ->selectRaw('COALESCE(products.name, sale_items.description) as product_name, COALESCE(products.sku, "-") as sku, SUM(sale_items.total) as sales_total, SUM(sale_items.meters * COALESCE(products.purchase_price, 0)) as cost_total, SUM(sale_items.total - (sale_items.meters * COALESCE(products.purchase_price, 0))) as profit')
+            ->groupBy('products.name', 'products.sku', 'sale_items.description')
+            ->orderByDesc('profit')
+            ->limit(8)
+            ->get()
+            ->map(fn ($row) => [
+                'product' => $row->product_name,
+                'sku' => $row->sku,
+                'sales_total' => round((float) $row->sales_total, 2),
+                'cost_total' => round((float) $row->cost_total, 2),
+                'profit' => round((float) $row->profit, 2),
+            ]);
+    }
+
+    private function profitBySeller(Carbon $from, Carbon $to, ?int $branchId)
+    {
+        return (clone $this->profitBaseQuery($from, $to, $branchId))
+            ->leftJoin('users', 'sales.user_id', '=', 'users.id')
+            ->selectRaw('COALESCE(users.name, "Sin usuario") as seller, COUNT(DISTINCT sales.id) as sales_count, SUM(sale_items.total) as sales_total, SUM(sale_items.total - (sale_items.meters * COALESCE(products.purchase_price, 0))) as profit')
+            ->groupBy('users.name')
+            ->orderByDesc('profit')
+            ->limit(8)
+            ->get()
+            ->map(fn ($row) => [
+                'seller' => $row->seller,
+                'sales_count' => (int) $row->sales_count,
+                'sales_total' => round((float) $row->sales_total, 2),
+                'profit' => round((float) $row->profit, 2),
+            ]);
     }
 }

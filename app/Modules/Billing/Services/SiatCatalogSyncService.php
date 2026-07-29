@@ -3,6 +3,7 @@
 namespace App\Modules\Billing\Services;
 
 use App\Modules\Billing\Models\SiatCatalogItem;
+use Illuminate\Validation\ValidationException;
 
 class SiatCatalogSyncService
 {
@@ -15,6 +16,7 @@ class SiatCatalogSyncService
     {
         $setting = $this->configuration->settingForBranch($branchId);
         $cuis = $this->configuration->activeCuis($branchId) ?? app(SiatCodeService::class)->requestCuis($branchId);
+        $allowFallback = app()->environment('testing') || (bool) ($setting->options['mock_siat'] ?? false);
 
         $catalogs = [
             'identity_document_types' => ['method' => 'sincronizarParametricaTipoDocumentoIdentidad', 'fallback' => ['1' => 'CI - CEDULA DE IDENTIDAD', '5' => 'NIT']],
@@ -43,7 +45,19 @@ class SiatCatalogSyncService
 
                 $items = $this->extractItems($response);
             } catch (\Throwable) {
+                if (! $allowFallback) {
+                    throw ValidationException::withMessages([
+                        'billing' => "No se pudo sincronizar el catalogo {$type} desde SIAT. Corrige la conexion/token antes de emitir facturas.",
+                    ]);
+                }
+
                 $items = collect($definition['fallback'])->map(fn ($description, $code) => ['codigoClasificador' => $code, 'descripcion' => $description])->values()->all();
+            }
+
+            if (! $allowFallback && count($items) === 0) {
+                throw ValidationException::withMessages([
+                    'billing' => "SIAT respondio el catalogo {$type}, pero no se detectaron items validos.",
+                ]);
             }
 
             foreach ($items as $item) {
