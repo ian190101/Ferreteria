@@ -21,8 +21,6 @@ use Illuminate\Support\Facades\Cache;
 
 class UiCatalogCache
 {
-    private const CATALOG_TTL_MINUTES = 10;
-
     public static function activeBranches(array $columns = ['id', 'name'])
     {
         return self::remember('branches:'.SystemCacheInvalidator::operationalVersion().':'.implode(',', $columns), fn () => Branch::query()
@@ -196,7 +194,7 @@ class UiCatalogCache
 
     public static function availableCoils(int $limit = 500)
     {
-        return Cache::remember('ui-catalog:available-coils:'.SystemCacheInvalidator::operationalVersion().":{$limit}", now()->addSeconds(30), fn () => ProductCoil::query()
+        return Cache::remember('ui-catalog:available-coils:'.SystemCacheInvalidator::operationalVersion().":{$limit}", now()->addSeconds(self::coilsTtlSeconds()), fn () => ProductCoil::query()
             ->where('status', 'available')
             ->orderByDesc('id')
             ->limit($limit)
@@ -264,7 +262,7 @@ class UiCatalogCache
 
     public static function recentCustomers(int $limit = 100)
     {
-        return Cache::remember('ui-catalog:recent-customers:'.SystemCacheInvalidator::operationalVersion().":{$limit}", now()->addMinutes(5), fn () => Customer::query()
+        return Cache::remember('ui-catalog:recent-customers:'.SystemCacheInvalidator::operationalVersion().":{$limit}", now()->addMinutes(self::recentCustomersTtlMinutes()), fn () => Customer::query()
             ->where('is_active', true)
             ->with('type:id,name')
             ->orderBy('name')
@@ -304,6 +302,21 @@ class UiCatalogCache
 
     private static function remember(string $key, callable $callback)
     {
-        return Cache::remember("ui-catalog:{$key}", now()->addMinutes(self::CATALOG_TTL_MINUTES), $callback);
+        return Cache::remember("ui-catalog:{$key}", now()->addMinutes(self::catalogTtlMinutes()), $callback);
+    }
+
+    private static function catalogTtlMinutes(): int
+    {
+        return max(5, (int) config('performance.ui_catalog_cache_minutes', 30));
+    }
+
+    private static function recentCustomersTtlMinutes(): int
+    {
+        return max(5, (int) config('performance.ui_recent_customers_cache_minutes', 15));
+    }
+
+    private static function coilsTtlSeconds(): int
+    {
+        return max(30, (int) config('performance.ui_coils_cache_seconds', 90));
     }
 }

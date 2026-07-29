@@ -272,3 +272,21 @@ it('entra y descarta la demo completa con base temporal aislada', function () {
 
     expect(collect(DB::select("SHOW DATABASES LIKE '{$session->database_name}'"))->isEmpty())->toBeTrue();
 });
+
+it('bloquea el configurador maestro dentro de la demo completa para evitar demos anidadas', function () {
+    $user = businessProfileUser(systemSuperadmin: true);
+    $session = BusinessProfileSandboxSession::query()->create([
+        'user_id' => $user->id,
+        'name' => 'Demo completa QA',
+        'payload' => [],
+        'status' => 'active',
+        'expires_at' => now()->addHour(),
+        'last_activity_at' => now(),
+    ]);
+
+    $this->actingAs($user)
+        ->withSession(['business_full_sandbox_id' => $session->id])
+        ->get(route('system-superadmin.business-profiles.index'))
+        ->assertRedirect(route('dashboard'))
+        ->assertSessionHas('warning', 'El configurador maestro no esta disponible dentro de la demo completa. Sal de la demo para cambiar la configuracion del negocio.');
+});

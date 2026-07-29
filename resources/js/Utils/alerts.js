@@ -83,3 +83,41 @@ export async function infoAction({
         confirmButtonColor: brandColor(),
     });
 }
+
+export async function chooseAction({
+    title = 'Selecciona una opcion',
+    text = '',
+    confirmButtonText = 'Continuar',
+    denyButtonText = 'Otra opcion',
+    cancelButtonText = 'Cancelar',
+    icon = 'question',
+    confirmValue = true,
+    denyValue = false,
+} = {}) {
+    const result = await Swal.fire({
+        title,
+        text,
+        icon,
+        showCancelButton: true,
+        showDenyButton: true,
+        confirmButtonText,
+        denyButtonText,
+        cancelButtonText,
+        reverseButtons: true,
+        background: isDarkMode() ? '#0f172a' : '#ffffff',
+        color: isDarkMode() ? '#e2e8f0' : '#0f172a',
+        confirmButtonColor: brandColor(),
+        denyButtonColor: isDarkMode() ? '#475569' : '#64748b',
+        cancelButtonColor: isDarkMode() ? '#334155' : '#94a3b8',
+    });
+
+    if (result.isConfirmed) {
+        return confirmValue;
+    }
+
+    if (result.isDenied) {
+        return denyValue;
+    }
+
+    return null;
+}

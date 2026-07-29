@@ -103,6 +103,12 @@ class BusinessProfileController extends Controller
 
     public function enterFullSandbox(Request $request, BusinessProfileSandboxService $sandbox): RedirectResponse
     {
+        if ($request->session()->has('business_full_sandbox_id')) {
+            return redirect()
+                ->route('dashboard')
+                ->with('warning', 'Ya estas dentro de una demo completa. Sal de la demo actual antes de iniciar otra.');
+        }
+
         $session = $sandbox->sessionFor($request->user()->id);
 
         try {

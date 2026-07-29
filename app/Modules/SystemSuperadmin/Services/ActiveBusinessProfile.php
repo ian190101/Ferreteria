@@ -13,7 +13,8 @@ class ActiveBusinessProfile
         return Cache::remember(self::cacheKey(), now()->addMinutes(30), function () {
             $profile = BusinessProfile::query()
                 ->where('status', 'active')
-                ->latest('applied_at')
+                ->orderByDesc('applied_at')
+                ->orderByDesc('id')
                 ->first();
 
             $configuration = BusinessProfileConfiguration::normalized($profile?->configuration ?? []);
@@ -38,6 +39,19 @@ class ActiveBusinessProfile
                 'ux' => $configuration['ux'] ?? [],
             ];
         });
+    }
+
+    public static function navigationPayload(): array
+    {
+        $payload = self::payload();
+
+        return [
+            'id' => $payload['id'] ?? null,
+            'name' => $payload['name'] ?? 'Ferreteria con cotizacion y nota de venta',
+            'businessType' => $payload['businessType'] ?? 'hardware_store',
+            'status' => $payload['status'] ?? 'active',
+            'modules' => $payload['modules'] ?? [],
+        ];
     }
 
     public static function enabled(string $feature): bool

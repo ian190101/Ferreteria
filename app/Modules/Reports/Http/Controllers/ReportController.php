@@ -22,8 +22,6 @@ use Inertia\Response;
 
 class ReportController extends Controller
 {
-    private const CACHE_SECONDS = 60;
-
     public function index(Request $request): Response
     {
         $user = $request->user();
@@ -53,7 +51,7 @@ class ReportController extends Controller
             'payments' => ActiveBusinessProfile::enabled('sales_notes'),
         ];
 
-        $metrics = Cache::remember($cacheKey.':'.md5(json_encode($profileFeatures)), now()->addSeconds(self::CACHE_SECONDS), function () use ($from, $to, $branchId, $profileFeatures) {
+        $metrics = Cache::remember($cacheKey.':'.md5(json_encode($profileFeatures)), now()->addSeconds($this->cacheSeconds()), function () use ($from, $to, $branchId, $profileFeatures) {
             return [
                 'sales_total' => $profileFeatures['sales'] ? (float) $this->salesQuery($from, $to, $branchId)->sum('total') : 0.0,
                 'sales_count' => $profileFeatures['sales'] ? $this->salesQuery($from, $to, $branchId)->count() : 0,
@@ -78,13 +76,13 @@ class ReportController extends Controller
             'branches' => UiCatalogCache::activeBranchesForUser($request->user()),
             'metrics' => $metrics,
             'profileFeatures' => $profileFeatures,
-            'recentSales' => Inertia::defer(fn () => $profileFeatures['sales'] ? Cache::remember($this->sectionCacheKey('recent-sales', $user->id, $branchId, $from, $to), now()->addSeconds(self::CACHE_SECONDS), fn () => $this->recentSales($from, $to, $branchId)) : collect(), 'reports-lists'),
-            'lowStocks' => Inertia::defer(fn () => $profileFeatures['inventory'] ? Cache::remember($this->sectionCacheKey('low-stocks', $user->id, $branchId, $from, $to), now()->addSeconds(self::CACHE_SECONDS), fn () => $this->lowStocks($branchId)) : collect(), 'reports-lists'),
-            'agingBuckets' => Inertia::defer(fn () => $profileFeatures['payments'] ? Cache::remember($this->sectionCacheKey('aging-buckets', $user->id, $branchId, $from, $to), now()->addSeconds(self::CACHE_SECONDS), fn () => $this->agingBuckets($branchId)) : $this->emptyAgingBuckets(), 'reports-lists'),
+            'recentSales' => Inertia::defer(fn () => $profileFeatures['sales'] ? Cache::remember($this->sectionCacheKey('recent-sales', $user->id, $branchId, $from, $to), now()->addSeconds($this->cacheSeconds()), fn () => $this->recentSales($from, $to, $branchId)) : collect(), 'reports-lists'),
+            'lowStocks' => Inertia::defer(fn () => $profileFeatures['inventory'] ? Cache::remember($this->sectionCacheKey('low-stocks', $user->id, $branchId, $from, $to), now()->addSeconds($this->cacheSeconds()), fn () => $this->lowStocks($branchId)) : collect(), 'reports-lists'),
+            'agingBuckets' => Inertia::defer(fn () => $profileFeatures['payments'] ? Cache::remember($this->sectionCacheKey('aging-buckets', $user->id, $branchId, $from, $to), now()->addSeconds($this->cacheSeconds()), fn () => $this->agingBuckets($branchId)) : $this->emptyAgingBuckets(), 'reports-lists'),
             'agingReceivables' => Inertia::defer(fn () => $profileFeatures['payments'] ? $this->agingReceivables($branchId, $request) : Sale::query()->whereRaw('1 = 0')->paginate($request->integer('aging_per_page', 10), ['id'], 'aging_page'), 'reports-lists'),
-            'latestMovements' => Inertia::defer(fn () => $profileFeatures['inventory_lots'] ? Cache::remember($this->sectionCacheKey('latest-movements', $user->id, $branchId, $from, $to), now()->addSeconds(self::CACHE_SECONDS), fn () => $this->latestMovements($request, $branchId)) : collect(), 'reports-lists'),
-            'profitByProduct' => Inertia::defer(fn () => $profileFeatures['sales'] ? Cache::remember($this->sectionCacheKey('profit-products', $user->id, $branchId, $from, $to), now()->addSeconds(self::CACHE_SECONDS), fn () => $this->profitByProduct($from, $to, $branchId)) : collect(), 'reports-lists'),
-            'profitBySeller' => Inertia::defer(fn () => $profileFeatures['sales'] ? Cache::remember($this->sectionCacheKey('profit-sellers', $user->id, $branchId, $from, $to), now()->addSeconds(self::CACHE_SECONDS), fn () => $this->profitBySeller($from, $to, $branchId)) : collect(), 'reports-lists'),
+            'latestMovements' => Inertia::defer(fn () => $profileFeatures['inventory_lots'] ? Cache::remember($this->sectionCacheKey('latest-movements', $user->id, $branchId, $from, $to), now()->addSeconds($this->cacheSeconds()), fn () => $this->latestMovements($request, $branchId)) : collect(), 'reports-lists'),
+            'profitByProduct' => Inertia::defer(fn () => $profileFeatures['sales'] ? Cache::remember($this->sectionCacheKey('profit-products', $user->id, $branchId, $from, $to), now()->addSeconds($this->cacheSeconds()), fn () => $this->profitByProduct($from, $to, $branchId)) : collect(), 'reports-lists'),
+            'profitBySeller' => Inertia::defer(fn () => $profileFeatures['sales'] ? Cache::remember($this->sectionCacheKey('profit-sellers', $user->id, $branchId, $from, $to), now()->addSeconds($this->cacheSeconds()), fn () => $this->profitBySeller($from, $to, $branchId)) : collect(), 'reports-lists'),
         ]);
     }
 
@@ -129,6 +127,11 @@ class ReportController extends Controller
             Cache::get('expenses:summary_version', 1),
             Cache::get('cash:summary_version', 1),
         ]);
+    }
+
+    private function cacheSeconds(): int
+    {
+        return max(60, (int) config('performance.reports_cache_seconds', 180));
     }
 
     private function salesQuery(Carbon $from, Carbon $to, ?int $branchId)

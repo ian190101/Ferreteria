@@ -141,6 +141,14 @@ Probar en navegador real:
 - Reportes/exportaciones.
 - Facturacion.
 
+Auditoria automatizada recomendada:
+
+```bash
+PLAYWRIGHT_BASE_URL=https://tu-dominio.com E2E_EMAIL=usuario.qa@dominio.com E2E_PASSWORD=clave-segura npm run test:e2e
+```
+
+Usar un usuario QA con datos controlados. Si falla, revisar capturas, video y trace generados por Playwright.
+
 Probar impresoras:
 
 - Carta.

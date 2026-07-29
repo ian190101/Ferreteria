@@ -38,7 +38,7 @@ class HandleInertiaRequests extends Middleware
             ...parent::share($request),
             'auth' => $this->auth($request),
             'branding' => $this->branding($request),
-            'businessProfile' => ActiveBusinessProfile::payload(),
+            'businessProfile' => ActiveBusinessProfile::navigationPayload(),
             'decimalPrecision' => DecimalPrecision::config(),
             'sandboxMode' => $this->sandboxMode($request),
         ];

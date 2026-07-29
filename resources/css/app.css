@@ -2,6 +2,20 @@
 @tailwind components;
 @tailwind utilities;
 
+@keyframes loading-bar {
+    0% {
+        transform: translateX(-110%);
+    }
+
+    50% {
+        transform: translateX(120%);
+    }
+
+    100% {
+        transform: translateX(320%);
+    }
+}
+
 :root {
     --color-primary: 37 99 235;
     --color-secondary: 15 23 42;
@@ -117,6 +131,68 @@
         @apply transition-colors hover:bg-white/70 dark:hover:bg-white/5;
     }
 
+    .ticket-paper,
+    .ticket-paper * {
+        color: #000 !important;
+    }
+
+    .ticket-paper {
+        background: #fff !important;
+        color-scheme: light !important;
+    }
+
+    .ticket-paper table {
+        border-collapse: collapse !important;
+        border-spacing: 0 !important;
+        min-width: 0 !important;
+        width: 100% !important;
+    }
+
+    .ticket-paper thead,
+    .ticket-paper thead tr,
+    .ticket-paper tbody tr,
+    .dark .ticket-paper thead,
+    .dark .ticket-paper thead tr,
+    .dark .ticket-paper tbody tr {
+        background: transparent !important;
+    }
+
+    .ticket-paper th:first-child,
+    .ticket-paper th:last-child {
+        border-radius: 0 !important;
+    }
+
+    .ticket-paper tbody tr:hover {
+        background: transparent !important;
+    }
+
+    .dark .ticket-paper,
+    .dark .ticket-paper :where(h1, h2, h3, p, span, strong, small, table, thead, tbody, tr, th, td, div, pre) {
+        background-color: transparent !important;
+        color: #000 !important;
+        border-color: #111827 !important;
+    }
+
+    .dark .ticket-paper {
+        background-color: #fff !important;
+    }
+
+    .dark .ticket-paper :where(th, td) {
+        color: #000 !important;
+    }
+
+    .pos-checkout-control,
+    .dark .pos-checkout-control {
+        background-color: #fff !important;
+        color: #0f172a !important;
+    }
+
+    .pos-checkout-control option,
+    .dark .pos-checkout-control option {
+        background-color: #fff !important;
+        color: #0f172a !important;
+    }
+
     input,
     select,
     textarea {
@@ -213,6 +289,17 @@
 
         .dark main :where(.overflow-hidden, .overflow-x-auto):has(table) thead th:first-child {
             background-color: rgb(30 41 59 / 0.98);
+        }
+
+        .ticket-preview-shell .ticket-paper :where(th:first-child, td:first-child) {
+            position: static !important;
+            left: auto !important;
+            z-index: auto !important;
+            max-width: none !important;
+            background-color: transparent !important;
+            border-right: 0 !important;
+            box-shadow: none !important;
+            white-space: normal !important;
         }
     }
 }

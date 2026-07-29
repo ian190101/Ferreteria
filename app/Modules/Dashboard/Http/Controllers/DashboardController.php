@@ -26,8 +26,6 @@ use Inertia\Response;
 
 class DashboardController extends Controller
 {
-    private const CACHE_SECONDS = 30;
-
     public function __invoke(Request $request): Response
     {
         $user = $request->user();
@@ -60,28 +58,28 @@ class DashboardController extends Controller
         ];
 
         $payload['metrics'] = Inertia::defer(
-            fn () => Cache::remember($this->sectionCacheKey('metrics', $user->id, $branchId, $from, $to), now()->addSeconds(self::CACHE_SECONDS), fn () => $this->metrics($permissions, $branchId, $allowedBranchIds, $from, $to, $today)),
+            fn () => Cache::remember($this->sectionCacheKey('metrics', $user->id, $branchId, $from, $to), now()->addSeconds($this->cacheSeconds()), fn () => $this->metrics($permissions, $branchId, $allowedBranchIds, $from, $to, $today)),
             'dashboard-metrics',
         );
 
         $payload['recentSales'] = Inertia::defer(
-            fn () => Cache::remember($this->sectionCacheKey('recent-sales', $user->id, $branchId, $from, $to), now()->addSeconds(self::CACHE_SECONDS), fn () => $this->recentSales($user, $branchId, $allowedBranchIds, $from, $to)),
+            fn () => Cache::remember($this->sectionCacheKey('recent-sales', $user->id, $branchId, $from, $to), now()->addSeconds($this->cacheSeconds()), fn () => $this->recentSales($user, $branchId, $allowedBranchIds, $from, $to)),
             'dashboard-lists',
         );
         $payload['pendingReceivables'] = Inertia::defer(
-            fn () => Cache::remember($this->sectionCacheKey('pending-receivables', $user->id, $branchId, $from, $to), now()->addSeconds(self::CACHE_SECONDS), fn () => $this->pendingReceivables($user, $branchId, $allowedBranchIds, $from, $to)),
+            fn () => Cache::remember($this->sectionCacheKey('pending-receivables', $user->id, $branchId, $from, $to), now()->addSeconds($this->cacheSeconds()), fn () => $this->pendingReceivables($user, $branchId, $allowedBranchIds, $from, $to)),
             'dashboard-lists',
         );
         $payload['lowStocks'] = Inertia::defer(
-            fn () => Cache::remember($this->sectionCacheKey('low-stocks', $user->id, $branchId, $from, $to), now()->addSeconds(self::CACHE_SECONDS), fn () => $this->lowStocks($user, $branchId, $allowedBranchIds)),
+            fn () => Cache::remember($this->sectionCacheKey('low-stocks', $user->id, $branchId, $from, $to), now()->addSeconds($this->cacheSeconds()), fn () => $this->lowStocks($user, $branchId, $allowedBranchIds)),
             'dashboard-lists',
         );
         $payload['openCashSessions'] = Inertia::defer(
-            fn () => Cache::remember($this->sectionCacheKey('open-cash', $user->id, $branchId, $from, $to), now()->addSeconds(self::CACHE_SECONDS), fn () => $this->openCashSessions($user, $branchId, $allowedBranchIds)),
+            fn () => Cache::remember($this->sectionCacheKey('open-cash', $user->id, $branchId, $from, $to), now()->addSeconds($this->cacheSeconds()), fn () => $this->openCashSessions($user, $branchId, $allowedBranchIds)),
             'dashboard-lists',
         );
         $payload['charts'] = Inertia::defer(
-            fn () => Cache::remember($this->sectionCacheKey('charts', $user->id, $branchId, $from, $to), now()->addSeconds(self::CACHE_SECONDS), fn () => $this->charts($user, $branchId, $allowedBranchIds, $from, $to, $today)),
+            fn () => Cache::remember($this->sectionCacheKey('charts', $user->id, $branchId, $from, $to), now()->addSeconds($this->cacheSeconds()), fn () => $this->charts($user, $branchId, $allowedBranchIds, $from, $to, $today)),
             'dashboard-charts',
         );
         $payload['branches'] = $branches;
@@ -706,6 +704,11 @@ class DashboardController extends Controller
             Cache::get('expenses:summary_version', 1),
             Cache::get('cash:summary_version', 1),
         ]);
+    }
+
+    private function cacheSeconds(): int
+    {
+        return max(30, (int) config('performance.dashboard_cache_seconds', 120));
     }
 
     private function can(array $permissions, string $permission): bool

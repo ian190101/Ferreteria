@@ -182,7 +182,10 @@ export default function Form({ branches = [], suppliers = [], units = [], catego
             ...payload,
             items: payload.items.map((item) => preparePurchaseItem(item, products, decimalFormat, units, categories, thicknesses)),
         }));
-        post(route('purchases.store'), { preserveScroll: true });
+        post(route('purchases.store'), {
+            preserveScroll: true,
+            preserveState: false,
+        });
     };
 
     return (
@@ -382,7 +385,7 @@ export default function Form({ branches = [], suppliers = [], units = [], catego
 
                     <div className="flex items-center gap-3">
                         <PrimaryButton disabled={processing || !catalogsReady}>
-                            {catalogsReady ? 'Registrar compra' : 'Cargando catalogos...'}
+                            {processing ? 'Registrando compra...' : (catalogsReady ? 'Registrar compra' : 'Cargando catalogos...')}
                         </PrimaryButton>
                         <Link href={route('purchases.index')} className="text-sm text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white">Cancelar</Link>
                     </div>

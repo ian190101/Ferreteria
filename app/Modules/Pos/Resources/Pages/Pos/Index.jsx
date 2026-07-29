@@ -206,6 +206,7 @@ export default function Index({ branches = [], selectedBranchId, saleTypes = [],
         setCheckoutErrors({});
         router.post(route('sales.store'), payload, {
             preserveScroll: true,
+            preserveState: false,
             onStart: () => setCheckoutProcessing(true),
             onFinish: () => setCheckoutProcessing(false),
             onSuccess: () => {
@@ -346,6 +347,12 @@ export default function Index({ branches = [], selectedBranchId, saleTypes = [],
                             <input
                                 value={query}
                                 onChange={(event) => setQuery(event.target.value)}
+                                onKeyDown={(event) => {
+                                    if (event.key === 'Enter') {
+                                        event.preventDefault();
+                                        addByBarcode(query.trim());
+                                    }
+                                }}
                                 placeholder="Buscar por nombre, SKU o codigo de barras"
                                 className="h-12 rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm outline-none transition focus:border-brand-primary focus:ring-4 focus:ring-brand-primary/10 dark:border-slate-800 dark:bg-slate-950"
                             />
@@ -415,20 +422,20 @@ export default function Index({ branches = [], selectedBranchId, saleTypes = [],
                             ))}
                         </div>
 
-                        <div className="mt-5 rounded-2xl bg-slate-950 p-5 text-white dark:bg-white dark:text-slate-950">
+                        <div className="mt-5 rounded-2xl bg-slate-950 p-5 text-white shadow-sm dark:bg-slate-950 dark:text-white">
                             <p className="text-sm opacity-70">Total estimado</p>
                             <p className="mt-1 text-4xl font-black">Bs {money(total)}</p>
-                            <div className="mt-5 space-y-3 rounded-2xl bg-white/10 p-3 dark:bg-slate-900/10">
-                                <label className="block text-xs font-semibold uppercase tracking-[0.14em] opacity-70">Metodo de pago</label>
-                                <select value={paymentMethodId} onChange={(event) => setPaymentMethodId(event.target.value)} className="h-11 w-full rounded-xl border border-white/20 bg-white px-3 text-sm font-semibold text-slate-950 outline-none dark:border-slate-300 dark:bg-white">
+                            <div className="mt-5 space-y-3 rounded-2xl bg-white/10 p-3">
+                                <label className="block text-xs font-semibold uppercase tracking-[0.14em] text-slate-100">Metodo de pago</label>
+                                <select value={paymentMethodId} onChange={(event) => setPaymentMethodId(event.target.value)} className="pos-checkout-control h-11 w-full rounded-xl border border-white/20 bg-white px-3 text-sm font-semibold text-slate-950 outline-none dark:bg-white dark:text-slate-950">
                                     {paymentMethods.map((method) => <option key={method.id} value={method.id}>{method.name}</option>)}
                                 </select>
-                                <label className="block text-xs font-semibold uppercase tracking-[0.14em] opacity-70">Monto cobrado</label>
-                                <input value={paymentAmount} onChange={(event) => setPaymentAmount(event.target.value)} placeholder={money(total)} type="number" min="0" step="0.1" className="h-11 w-full rounded-xl border border-white/20 bg-white px-3 text-sm font-semibold text-slate-950 outline-none dark:border-slate-300 dark:bg-white" />
+                                <label className="block text-xs font-semibold uppercase tracking-[0.14em] text-slate-100">Monto cobrado</label>
+                                <input value={paymentAmount} onChange={(event) => setPaymentAmount(event.target.value)} placeholder={money(total)} type="number" min="0" step="0.1" className="pos-checkout-control h-11 w-full rounded-xl border border-white/20 bg-white px-3 text-sm font-semibold text-slate-950 outline-none placeholder:text-slate-500 dark:bg-white dark:text-slate-950" />
                                 {selectedPaymentMethod?.requires_reference ? (
                                     <>
-                                        <label className="block text-xs font-semibold uppercase tracking-[0.14em] opacity-70">Referencia</label>
-                                        <input value={paymentReference} onChange={(event) => setPaymentReference(event.target.value)} placeholder="QR, transferencia o comprobante" className="h-11 w-full rounded-xl border border-white/20 bg-white px-3 text-sm font-semibold text-slate-950 outline-none dark:border-slate-300 dark:bg-white" />
+                                        <label className="block text-xs font-semibold uppercase tracking-[0.14em] text-slate-100">Referencia</label>
+                                        <input value={paymentReference} onChange={(event) => setPaymentReference(event.target.value)} placeholder="QR, transferencia o comprobante" className="pos-checkout-control h-11 w-full rounded-xl border border-white/20 bg-white px-3 text-sm font-semibold text-slate-950 outline-none placeholder:text-slate-500 dark:bg-white dark:text-slate-950" />
                                     </>
                                 ) : null}
                             </div>

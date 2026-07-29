@@ -3,7 +3,7 @@ import { assetUrl } from '@/Utils/assets';
 import FormField from '../../../../Shared/Resources/Components/FormField';
 import SelectField from '../../../../Shared/Resources/Components/SelectField';
 import { Head, Link, router, useForm, usePage } from '@inertiajs/react';
-import { confirmAction, promptAction } from '@/Utils/alerts';
+import { chooseAction, promptAction } from '@/Utils/alerts';
 import { decimalStep, useDecimalFormatter } from '@/Utils/formatters';
 import { useEffect, useRef, useState } from 'react';
 
@@ -54,6 +54,7 @@ export default function Show({ sale, template, documentPolicy = {}, billingPolic
     const previewShellRef = useRef(null);
     const previewPaperRef = useRef(null);
     const [previewFrame, setPreviewFrame] = useState({ scale: 1, width: null, height: null });
+    const [converting, setConverting] = useState(false);
     const paymentForm = useForm({
         sale_id: sale.id,
         payment_method_id: paymentMethods[0]?.id ?? '',
@@ -118,7 +119,10 @@ export default function Show({ sale, template, documentPolicy = {}, billingPolic
 
     const submitPayment = (event) => {
         event.preventDefault();
-        paymentForm.post(route('payments.store'), { preserveScroll: true });
+        paymentForm.post(route('payments.store'), {
+            preserveScroll: true,
+            preserveState: false,
+        });
     };
 
     const renderSection = (section) => {
@@ -154,13 +158,13 @@ export default function Show({ sale, template, documentPolicy = {}, billingPolic
                     <button onClick={() => window.print()} className="rounded-md bg-brand-primary px-4 py-2 text-sm font-semibold text-white">Imprimir</button>
                     {canManageSales && sale.document_type === 'quotation' && sale.status === 'quoted' ? (
                         <button
-                            onClick={() => convertQuotation(sale)}
-                            disabled={!canConvertQuotation}
+                            onClick={() => convertQuotation(sale, setConverting)}
+                            disabled={!canConvertQuotation || converting}
                             className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-400"
                             type="button"
                             title={canConvertQuotation ? `Convertir a ${String(documentPolicy.saleNoteLabel ?? 'nota de venta').toLowerCase()}` : 'No hay stock libre suficiente para convertir'}
                         >
-                            Convertir a {documentPolicy.saleNoteLabel ?? 'nota'}
+                            {converting ? 'Convirtiendo...' : `Convertir a ${documentPolicy.saleNoteLabel ?? 'nota'}`}
                         </button>
                     ) : null}
                     <Link href={route('sales.templates.index')} className="rounded-md border border-slate-300 px-4 py-2 text-sm dark:border-slate-700">Editar plantillas</Link>
@@ -338,7 +342,7 @@ export default function Show({ sale, template, documentPolicy = {}, billingPolic
                                 </div>
                                 <FormField label="Referencia" name="reference" value={paymentForm.data.reference} onChange={(event) => paymentForm.setData('reference', event.target.value)} error={paymentForm.errors.reference} />
                                 <button disabled={paymentForm.processing || !paymentMethods.length} className="rounded-md bg-brand-primary px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60" type="submit">
-                                    Guardar pago
+                                    {paymentForm.processing ? 'Guardando pago...' : 'Guardar pago'}
                                 </button>
                             </form>
                         </section>
@@ -758,7 +762,7 @@ function numberToWords(value) {
     return `${millions === 1 ? 'un millon' : `${numberToWords(millions)} millones`}${rest ? ` ${numberToWords(rest)}` : ''}`;
 }
 
-async function convertQuotation(sale) {
+async function convertQuotation(sale, setConverting) {
     const receiptNumber = await promptAction({
         title: 'Convertir cotizacion',
         text: `Numero de nota de venta para ${sale.receipt_number}. Deja vacio para automatico.`,
@@ -772,14 +776,22 @@ async function convertQuotation(sale) {
         return;
     }
 
-    const requiresDelivery = await confirmAction({
+    const requiresDelivery = await chooseAction({
         title: 'Tipo de entrega',
         text: 'Selecciona si esta nota de venta debe pasar al modulo de despachos.',
         confirmButtonText: 'Requiere despacho',
-        cancelButtonText: 'Entrega inmediata',
+        denyButtonText: 'Entrega inmediata',
+        cancelButtonText: 'Cancelar',
         icon: 'question',
+        confirmValue: true,
+        denyValue: false,
     });
 
+    if (requiresDelivery === null) {
+        return;
+    }
+
+    setConverting(true);
     router.post(route('sales.convert', sale.id), {
         receipt_number: receiptNumber,
         sold_at: null,
@@ -787,5 +799,6 @@ async function convertQuotation(sale) {
     }, {
         preserveScroll: true,
         preserveState: false,
+        onFinish: () => setConverting(false),
     });
 }

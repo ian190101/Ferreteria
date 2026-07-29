@@ -38,8 +38,6 @@ use Inertia\Response;
 
 class SaleController extends Controller
 {
-    private const CACHE_SECONDS = 30;
-
     public function index(Request $request): Response
     {
         $workflow = app(SalesWorkflowPolicy::class);
@@ -653,7 +651,7 @@ class SaleController extends Controller
 
     private function availableCoils(Request $request)
     {
-        return Cache::remember('sales-available-coils:v2:'.SystemCacheInvalidator::operationalVersion().":{$request->user()->id}", now()->addSeconds(self::CACHE_SECONDS), fn () => ProductCoil::query()
+        return Cache::remember('sales-available-coils:v2:'.SystemCacheInvalidator::operationalVersion().":{$request->user()->id}", now()->addSeconds($this->coilsCacheSeconds()), fn () => ProductCoil::query()
             ->when(true, fn ($query) => BranchAccess::apply($query, $request->user()))
             ->where('status', 'available')
             ->orderByDesc('id')
@@ -750,7 +748,7 @@ class SaleController extends Controller
         $profileColumnSignature = md5(implode('|', $profileColumns));
         $cacheKey = 'receipt-template:v'.$version.':'.SystemCacheInvalidator::operationalVersion().":{$profileColumnSignature}:{$sale->branch_id}:{$sale->document_type}";
 
-        return Cache::remember($cacheKey, now()->addSeconds(self::CACHE_SECONDS), function () use ($sale, $profileColumns) {
+        return Cache::remember($cacheKey, now()->addSeconds($this->templateCacheSeconds()), function () use ($sale, $profileColumns) {
             $template = ReceiptTemplate::query()
                 ->where('is_active', true)
                 ->where(function ($query) use ($sale) {
@@ -782,6 +780,16 @@ class SaleController extends Controller
                 'layout' => $this->layoutWithProfileColumns(array_replace_recursive(ReceiptTemplate::defaultLayout(), $template->layout ?? []), $profileColumns),
             ];
         });
+    }
+
+    private function coilsCacheSeconds(): int
+    {
+        return max(30, (int) config('performance.ui_coils_cache_seconds', 90));
+    }
+
+    private function templateCacheSeconds(): int
+    {
+        return max(60, (int) config('performance.reports_cache_seconds', 180));
     }
 
     private function layoutWithProfileColumns(array $layout, array $profileColumns): array

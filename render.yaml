@@ -25,5 +25,9 @@ services:
         value: file
       - key: DB_PERSISTENT
         value: true
+      - key: RUN_STARTUP_MIGRATIONS
+        value: true
+      - key: RUN_STARTUP_CACHE_WARM
+        value: true
       - key: FILESYSTEM_DISK
         value: local

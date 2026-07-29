@@ -19,6 +19,7 @@ export default function AppearanceSwitch({ mode, onModeChange }) {
                     {isDark ? 'OS' : 'CL'}
                 </span>
             </button>
+            <span className="sr-only">{isDark ? 'Modo oscuro activo' : 'Modo claro activo'}</span>
         </div>
     );
 }

@@ -53,7 +53,10 @@ export default function Index({ payments, receivables, branches, methods, method
 
     const submitPayment = (event) => {
         event.preventDefault();
-        paymentForm.post(route('payments.store'), { preserveScroll: true });
+        paymentForm.post(route('payments.store'), {
+            preserveScroll: true,
+            preserveState: false,
+        });
     };
 
     const submitMethod = (event) => {
@@ -162,7 +165,7 @@ export default function Index({ payments, receivables, branches, methods, method
                                     <textarea id="notes" rows="3" value={paymentForm.data.notes} onChange={(event) => paymentForm.setData('notes', event.target.value)} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-brand-primary focus:ring-brand-primary dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300" />
                                 </label>
                                 <button disabled={paymentForm.processing || !methods.length} className="rounded-md bg-brand-primary px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60" type="submit">
-                                    Guardar pago
+                                    {paymentForm.processing ? 'Guardando pago...' : 'Guardar pago'}
                                 </button>
                             </form>
                         </Panel>

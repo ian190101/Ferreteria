@@ -8,7 +8,9 @@
 /storage/app/**/backups
 /storage/framework/testing
 /storage/logs/*.log
+/storage/qa
 /storage/pail
+/test-results
 /vendor
 .env
 .env.backup

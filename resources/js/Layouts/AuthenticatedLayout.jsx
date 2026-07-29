@@ -3,7 +3,7 @@ import AppearanceSwitch from '@/Components/AppearanceSwitch';
 import IconGlyph from '@/Components/Icon';
 import { assetUrl } from '@/Utils/assets';
 import { applyBranding } from '@/Utils/branding';
-import { Link, usePage } from '@inertiajs/react';
+import { Link, router, usePage } from '@inertiajs/react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { roleLabel } from '../../../app/Modules/Users/Resources/Utils/permissionLabels';
 
@@ -28,6 +28,7 @@ export default function AuthenticatedLayout({ header, children }) {
     const user = auth.user;
     const permissions = auth.permissions;
     const [sidebarOpen, setSidebarOpen] = useState(false);
+    const [navigating, setNavigating] = useState(false);
     const [appearance, setAppearance] = useState(() => {
         const savedMode = localStorage.getItem('appearance-mode');
 
@@ -39,7 +40,10 @@ export default function AuthenticatedLayout({ header, children }) {
     });
 
     const isSystemSuperadmin = auth.roles?.includes('sistemasuperadmin');
-    const navigation = useMemo(() => buildNavigation(permissions, isSystemSuperadmin, businessProfile?.modules ?? {}), [permissions, isSystemSuperadmin, businessProfile?.modules]);
+    const navigation = useMemo(
+        () => buildNavigation(permissions, isSystemSuperadmin, businessProfile?.modules ?? {}, Boolean(sandboxMode?.active)),
+        [permissions, isSystemSuperadmin, businessProfile?.modules, sandboxMode?.active],
+    );
     const activeItem = navigation
         .flatMap((section) => section.items)
         .find((item) => item.active);
@@ -58,22 +62,49 @@ export default function AuthenticatedLayout({ header, children }) {
         applyBranding(branding, { applyAppearance: false });
     }, [branding?.primary, branding?.primaryRgb, branding?.secondary, branding?.secondaryRgb, branding?.logoPath]);
 
+    useEffect(() => {
+        let timer = null;
+        const start = () => {
+            timer = window.setTimeout(() => setNavigating(true), 180);
+        };
+        const finish = () => {
+            window.clearTimeout(timer);
+            setNavigating(false);
+        };
+
+        const removeStart = router.on('start', start);
+        const removeFinish = router.on('finish', finish);
+        const removeError = router.on('error', finish);
+
+        return () => {
+            window.clearTimeout(timer);
+            removeStart();
+            removeFinish();
+            removeError();
+        };
+    }, []);
+
     return (
         <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,rgb(var(--color-primary)/0.10),transparent_34rem),linear-gradient(180deg,#f8fafc,#eef2f7)] text-slate-900 dark:bg-[radial-gradient(circle_at_top_left,rgb(var(--color-primary)/0.22),transparent_32rem),linear-gradient(180deg,#020617,#0f172a)] dark:text-slate-100">
             <aside className="app-surface fixed inset-y-0 left-0 z-40 hidden w-72 border-r border-white/60 bg-white/80 shadow-[0_20px_60px_rgb(15_23_42/0.08)] backdrop-blur-2xl dark:border-white/10 dark:bg-slate-950/80 lg:flex lg:flex-col">
-                <SidebarContent navigation={navigation} user={user} branding={branding} />
+                <SidebarContent navigation={navigation} user={user} branding={branding} sandboxActive={Boolean(sandboxMode?.active)} />
             </aside>
 
             {sidebarOpen ? (
                 <div className="fixed inset-0 z-50 lg:hidden">
                     <button aria-label="Cerrar menu" className="absolute inset-0 bg-slate-950/50" type="button" onClick={() => setSidebarOpen(false)} />
                     <aside className="app-surface relative flex h-full w-[min(20rem,86vw)] flex-col border-r border-white/60 bg-white/90 shadow-xl backdrop-blur-2xl dark:border-white/10 dark:bg-slate-950/90">
-                        <SidebarContent navigation={navigation} user={user} branding={branding} onNavigate={() => setSidebarOpen(false)} />
+                        <SidebarContent navigation={navigation} user={user} branding={branding} sandboxActive={Boolean(sandboxMode?.active)} onNavigate={() => setSidebarOpen(false)} />
                     </aside>
                 </div>
             ) : null}
 
             <div className="lg:pl-72">
+                {navigating ? (
+                    <div className="fixed inset-x-0 top-0 z-[80] h-1 overflow-hidden bg-brand-primary/15">
+                        <div className="h-full w-1/3 animate-[loading-bar_1s_ease-in-out_infinite] rounded-full bg-brand-primary" />
+                    </div>
+                ) : null}
                 {sandboxMode?.active ? (
                     <div className="sticky top-0 z-50 flex flex-wrap items-center justify-between gap-3 border-b border-amber-300 bg-amber-100 px-4 py-2 text-sm font-semibold text-amber-950 shadow-sm lg:px-8">
                         <span>Modo demo completo activo: no afecta produccion.</span>
@@ -138,7 +169,7 @@ export default function AuthenticatedLayout({ header, children }) {
     );
 }
 
-function SidebarContent({ navigation, user, branding, onNavigate }) {
+function SidebarContent({ navigation, user, branding, sandboxActive = false, onNavigate }) {
     const navRef = useRef(null);
 
     useEffect(() => {
@@ -176,12 +207,14 @@ function SidebarContent({ navigation, user, branding, onNavigate }) {
             </div>
 
             <nav ref={navRef} className="flex-1 space-y-6 overflow-y-auto px-4 py-5">
-                {navigation.map((section) => (
+                {navigation
+                    .filter((section) => !(sandboxActive && section.label === 'Sistema maestro'))
+                    .map((section) => (
                     <div key={section.label}>
                         <p className="mb-2 px-3 text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400 dark:text-slate-500">{section.label}</p>
                         <div className="space-y-1">
                             {section.items.map((item) => (
-                                <SidebarLink key={item.label} item={item} onNavigate={onNavigate} />
+                                <SidebarLink key={item.label} item={item} sandboxActive={sandboxActive} onNavigate={onNavigate} />
                             ))}
                         </div>
                     </div>
@@ -214,12 +247,12 @@ function BrandLogo({ logoPath }) {
     return <ApplicationLogo className="h-7 w-7 fill-current" />;
 }
 
-function SidebarLink({ item, onNavigate }) {
+function SidebarLink({ item, sandboxActive = false, onNavigate }) {
     return (
         <Link
             href={item.href}
-            prefetch
-            cacheFor="30s"
+            prefetch={!sandboxActive}
+            cacheFor={sandboxActive ? undefined : '30s'}
             onClick={onNavigate}
             className={[
                 'group flex items-center gap-3 rounded-2xl px-3 py-2.5 text-sm font-semibold transition',
@@ -249,16 +282,18 @@ function Icon({ path }) {
     );
 }
 
-function buildNavigation(permissions, isSystemSuperadmin = false, modules = {}) {
+function buildNavigation(permissions, isSystemSuperadmin = false, modules = {}, sandboxActive = false) {
     const can = (permission) => permissions.includes(permission);
-    const moduleEnabled = (module) => isSystemSuperadmin || modules[module] === true;
+    const effectiveSystemSuperadmin = isSystemSuperadmin && !sandboxActive;
+    const moduleEnabled = (module) => effectiveSystemSuperadmin || modules[module] === true;
+    const canShowSystemMaster = effectiveSystemSuperadmin;
     const item = (condition, section, label, href, active, icon) => condition ? { section, label, href, active, icon } : null;
 
     return [
         {
             label: 'Sistema maestro',
             items: [
-                item(isSystemSuperadmin, 'Sistema maestro', 'Configuracion de negocio', route('system-superadmin.business-profiles.index'), route().current('system-superadmin.business-profiles.*'), 'configuracion'),
+                item(canShowSystemMaster, 'Sistema maestro', 'Configuracion de negocio', route('system-superadmin.business-profiles.index'), route().current('system-superadmin.business-profiles.*'), 'configuracion'),
             ].filter(Boolean),
         },
         {

@@ -16,8 +16,10 @@ use App\Modules\Settings\Services\ProductionLogService;
 use App\Modules\Settings\Services\ProductionAlertService;
 use App\Modules\Settings\Services\ProductionUpdateService;
 use App\Modules\Settings\Services\SystemHealthService;
+use App\Modules\SystemSuperadmin\Services\ActiveBusinessProfile;
 use App\Support\AuthSessionCache;
 use App\Support\SystemRoles;
+use App\Support\UiCatalogCache;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
@@ -301,10 +303,48 @@ Artisan::command('production:readiness-check', function (SystemHealthService $he
     return $failed ? Command::FAILURE : Command::SUCCESS;
 })->purpose('Ejecuta checklist tecnico final de produccion.');
 
+Artisan::command('performance:warm-operational-cache', function () {
+    try {
+        ActiveBusinessProfile::payload();
+        ActiveBusinessProfile::navigationPayload();
+        UiCatalogCache::activeBranches();
+        UiCatalogCache::productCategories();
+        UiCatalogCache::productUnits();
+        UiCatalogCache::activeThicknesses();
+        UiCatalogCache::activeProductsWithThickness();
+        UiCatalogCache::activePaymentMethods();
+        UiCatalogCache::saleTypes();
+        UiCatalogCache::currencies();
+        UiCatalogCache::advanceOptions();
+        UiCatalogCache::activeBankAccounts();
+        UiCatalogCache::activeExpenseCategories();
+        UiCatalogCache::activeSuppliers();
+        UiCatalogCache::recentCustomers();
+
+        app(ProductionLogService::class)->record('performance', 'info', 'operational_cache_warmed', 'Cache operativa precargada correctamente.');
+        $this->info('Cache operativa precargada correctamente.');
+
+        return Command::SUCCESS;
+    } catch (\Throwable $exception) {
+        try {
+            app(ProductionLogService::class)->record('performance', 'warning', 'operational_cache_warm_failed', 'No se pudo precargar la cache operativa.', [
+                'error' => $exception->getMessage(),
+            ]);
+        } catch (\Throwable) {
+            // Si la base de datos esta caida, el comando debe reportar el fallo original sin encadenar otro error.
+        }
+
+        $this->error($exception->getMessage());
+
+        return Command::FAILURE;
+    }
+})->purpose('Precarga catalogos y configuraciones frecuentes para reducir latencia percibida.');
+
 app(Schedule::class)->command('production:backup-scheduled')->dailyAt('02:00')->withoutOverlapping();
 app(Schedule::class)->command('siat:daily-maintenance')->dailyAt('03:00')->withoutOverlapping();
 app(Schedule::class)->command('production:health-check')->hourly()->withoutOverlapping();
 app(Schedule::class)->command('production:cleanup')->dailyAt('04:00')->withoutOverlapping();
+app(Schedule::class)->command('performance:warm-operational-cache')->everyThirtyMinutes()->withoutOverlapping();
 
 if (! function_exists('production_maintenance_settings')) {
     function production_maintenance_settings(): array

@@ -39,6 +39,12 @@ class SandboxContext
         app(BusinessProfileSandboxService::class)->activateConnection($session);
         app()->instance('business_full_sandbox', $session);
 
+        if ($this->isSystemMasterRoute($request)) {
+            return redirect()
+                ->route('dashboard')
+                ->with('warning', 'El configurador maestro no esta disponible dentro de la demo completa. Sal de la demo para cambiar la configuracion del negocio.');
+        }
+
         return $next($request);
     }
 
@@ -52,5 +58,11 @@ class SandboxContext
             'reset-password/*',
             'system-superadmin/business-profiles/sandbox-full/*'
         );
+    }
+
+    private function isSystemMasterRoute(Request $request): bool
+    {
+        return $request->is('system-superadmin/business-profiles')
+            || $request->is('system-superadmin/business-profiles/*');
     }
 }

@@ -44,6 +44,7 @@ use App\Modules\Sales\Models\Sale;
 use App\Modules\Sales\Models\SaleReturn;
 use App\Modules\Sales\Models\SaleType;
 use App\Modules\Settings\Models\SystemSetting;
+use App\Modules\SystemSuperadmin\Models\BusinessProfile;
 use App\Modules\Sales\Events\SaleNoteIssued;
 use App\Modules\Sales\Listeners\ProcessSaleNoteIssued;
 use App\Support\AuthSessionCache;
@@ -101,6 +102,7 @@ class AppServiceProvider extends ServiceProvider
             ...$this->salesCacheModels(),
             Branch::class,
             BranchSetting::class,
+            BusinessProfile::class,
             Supplier::class,
             SystemSetting::class,
         ])->unique()->values()->all();

@@ -223,7 +223,10 @@ export default function Form({
             ...payload,
             items: payload.items.map((item) => prepareSaleItem(item, products, decimalFormat, units)),
         }));
-        post(route('sales.store'), { preserveScroll: true });
+        post(route('sales.store'), {
+            preserveScroll: true,
+            preserveState: false,
+        });
     };
 
     return (
@@ -480,7 +483,7 @@ export default function Form({
 
                     <div className="flex items-center gap-3">
                         <PrimaryButton disabled={processing || !catalogsReady}>
-                            {catalogsReady ? 'Guardar documento' : 'Cargando productos...'}
+                            {processing ? 'Guardando documento...' : (catalogsReady ? 'Guardar documento' : 'Cargando productos...')}
                         </PrimaryButton>
                         <Link href={route('sales.index')} className="text-sm text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white">Cancelar</Link>
                     </div>
