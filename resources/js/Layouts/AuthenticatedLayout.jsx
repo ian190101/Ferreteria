@@ -64,7 +64,14 @@ export default function AuthenticatedLayout({ header, children }) {
 
     useEffect(() => {
         let timer = null;
-        const start = () => {
+        const start = (event) => {
+            const visit = event?.detail?.visit;
+            const partialData = visit?.only ?? [];
+
+            if (Array.isArray(partialData) && partialData.length > 0) {
+                return;
+            }
+
             timer = window.setTimeout(() => setNavigating(true), 180);
         };
         const finish = () => {
