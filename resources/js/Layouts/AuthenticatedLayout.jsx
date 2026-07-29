@@ -68,6 +68,10 @@ export default function AuthenticatedLayout({ header, children }) {
             const visit = event?.detail?.visit;
             const partialData = visit?.only ?? [];
 
+            if (visit?.prefetch || visit?.prefetching) {
+                return;
+            }
+
             if (Array.isArray(partialData) && partialData.length > 0) {
                 return;
             }
@@ -258,8 +262,6 @@ function SidebarLink({ item, sandboxActive = false, onNavigate }) {
     return (
         <Link
             href={item.href}
-            prefetch={!sandboxActive}
-            cacheFor={sandboxActive ? undefined : '30s'}
             onClick={onNavigate}
             className={[
                 'group flex items-center gap-3 rounded-2xl px-3 py-2.5 text-sm font-semibold transition',
