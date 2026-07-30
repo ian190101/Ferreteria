@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Middleware\EnsureBusinessFeatureEnabled;
+use App\Http\Middleware\EnsureBusinessCapabilityEnabled;
 use App\Http\Middleware\EnsurePasswordWasChanged;
 use App\Http\Middleware\EnsureSystemSuperadmin;
 use App\Http\Middleware\ForceHttpsForProxy;
@@ -33,9 +34,13 @@ return Application::configure(basePath: dirname(__DIR__))
             __DIR__.'/../app/Modules/HumanResources/routes/web.php',
             __DIR__.'/../app/Modules/Payments/routes/web.php',
             __DIR__.'/../app/Modules/Pos/routes/web.php',
+            __DIR__.'/../app/Modules/Printing/routes/web.php',
             __DIR__.'/../app/Modules/Production/routes/web.php',
             __DIR__.'/../app/Modules/Purchases/routes/web.php',
+            __DIR__.'/../app/Modules/Restaurant/routes/web.php',
+            __DIR__.'/../app/Modules/Reservations/routes/web.php',
             __DIR__.'/../app/Modules/Sales/routes/web.php',
+            __DIR__.'/../app/Modules/ServiceOrders/routes/web.php',
             __DIR__.'/../app/Modules/Settings/routes/web.php',
             __DIR__.'/../app/Modules/SystemSuperadmin/routes/web.php',
             __DIR__.'/../app/Modules/Users/routes/web.php',
@@ -74,6 +79,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'permission' => PermissionMiddleware::class,
             'role_or_permission' => RoleOrPermissionMiddleware::class,
             'business_feature' => EnsureBusinessFeatureEnabled::class,
+            'business_capability' => EnsureBusinessCapabilityEnabled::class,
             'system_superadmin' => EnsureSystemSuperadmin::class,
         ]);
     })

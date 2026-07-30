@@ -10,17 +10,22 @@ const booleanLabels = {
     false: 'No',
 };
 const configSteps = [
+    ['identity', 'Identidad'],
     ['sales', 'Ventas'],
     ['billing', 'Facturacion'],
     ['purchases', 'Compras'],
     ['cash', 'Caja/Bancos'],
     ['inventory', 'Inventario'],
+    ['documents', 'Documentos'],
+    ['policies', 'Politicas'],
+    ['capabilities', 'Capacidades'],
     ['human_resources', 'Trabajadores'],
     ['pos', 'POS/Productos'],
     ['modules', 'Modulos'],
+    ['summary', 'Resumen final'],
 ];
 
-export default function Index({ activeProfile, drafts, versions, presets = [], options, defaultConfiguration, sandboxSession = null }) {
+export default function Index({ activeProfile, drafts, versions, presets = [], options, defaultConfiguration, sandboxSession = null, capabilitiesCatalog = {}, capabilitiesMatrix = {} }) {
     const [selectedDraftId, setSelectedDraftId] = useState(drafts[0]?.id ?? null);
     const selectedDraft = drafts.find((draft) => draft.id === selectedDraftId) ?? null;
     const baseConfiguration = selectedDraft?.configuration ?? activeProfile?.configuration ?? defaultConfiguration;
@@ -31,7 +36,7 @@ export default function Index({ activeProfile, drafts, versions, presets = [], o
     });
     const [mode, setMode] = useState('edit');
     const [activeDemoStep, setActiveDemoStep] = useState(0);
-    const [activeConfigStep, setActiveConfigStep] = useState('sales');
+    const [activeConfigStep, setActiveConfigStep] = useState('identity');
 
     const comparison = useMemo(() => buildComparison(activeProfile?.configuration ?? defaultConfiguration, form.data.configuration, options), [activeProfile, form.data.configuration, options]);
     const demo = useMemo(() => buildDemo(form.data.business_type, form.data.configuration, options, sandboxSession?.payload ?? {}), [form.data.business_type, form.data.configuration, options, sandboxSession]);
@@ -175,12 +180,17 @@ export default function Index({ activeProfile, drafts, versions, presets = [], o
                                         {[
                                             ['hardware', 'Ferreteria cotizacion'],
                                             ['hardware_pos', 'Ferreteria POS'],
-                                            ['store_pos', 'Tienda general'],
+                                            ['restaurant_full', 'Restaurante completo'],
+                                            ['fast_food', 'Comida rapida/cafeteria'],
+                                            ['technical_service', 'Taller tecnico'],
                                             ['supermarket', 'Supermercado'],
                                             ['bookstore', 'Libreria'],
                                             ['stationery', 'Papeleria'],
+                                            ['clothing_store', 'Tienda/ropa'],
                                             ['factory', 'Fabrica simple'],
                                             ['services', 'Servicios'],
+                                            ['rentals', 'Alquileres'],
+                                            ['store_pos', 'Tienda general'],
                                             ['mixed', 'Mixto'],
                                         ].map(([preset, label]) => (
                                             <button key={preset} type="button" onClick={() => applyPreset(preset)} className="rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:border-brand-primary hover:text-brand-primary dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200">
@@ -215,6 +225,28 @@ export default function Index({ activeProfile, drafts, versions, presets = [], o
                                         ))}
                                     </div>
                                 </div>
+
+                                {activeConfigStep === 'identity' ? <Section
+                                    title="Identidad y alcance del negocio"
+                                    description="Define el rubro real y que piezas estructurales existen. Estos datos ayudan a que los presets, la demo y las reglas backend se comporten segun el tipo de negocio."
+                                >
+                                    <FormField label="Nombre comercial" name="commercial_name" value={form.data.configuration.identity?.commercial_name ?? ''} onChange={(event) => setConfig('identity', 'commercial_name', event.target.value)} />
+                                    <FormField label="Rubro especifico" name="specific_industry" value={form.data.configuration.identity?.specific_industry ?? ''} onChange={(event) => setConfig('identity', 'specific_industry', event.target.value)} helpTooltip="Ejemplo: ferreteria industrial, restaurante parrillero, taller de motos, alquiler de equipos." />
+                                    <SelectField label="Contabilidad base" name="accounting_mode" value={form.data.configuration.finance?.accounting_mode ?? 'cash_and_banks'} onChange={(event) => setConfig('finance', 'accounting_mode', event.target.value)} helpTooltip="Define si el negocio solo usara caja/bancos o tambien cuentas por cobrar, pagar y centros de costo.">
+                                        {Object.entries(options.accountingModes ?? {}).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                                    </SelectField>
+                                    <Toggle label="Usa imagenes en productos" checked={form.data.configuration.identity?.uses_product_images ?? false} onChange={(value) => {
+                                        setConfig('identity', 'uses_product_images', value);
+                                        setConfig('products', 'images_enabled', value);
+                                    }} helpTooltip="Activa imagen principal para catalogos visuales, restaurantes, ropa, tiendas y POS con botones." />
+                                    <Toggle label="Usa variantes" checked={form.data.configuration.identity?.uses_product_variants ?? false} onChange={(value) => {
+                                        setConfig('identity', 'uses_product_variants', value);
+                                        setConfig('products', 'variants_enabled', value);
+                                    }} helpTooltip="Permite manejar talla, color, sabor, presentacion, marca o modelo como variantes comerciales." />
+                                    <Toggle label="Usa sucursales" checked={form.data.configuration.identity?.uses_branches ?? true} onChange={(value) => setConfig('identity', 'uses_branches', value)} />
+                                    <Toggle label="Usa puntos POS" checked={form.data.configuration.identity?.uses_pos_points ?? true} onChange={(value) => setConfig('identity', 'uses_pos_points', value)} />
+                                    <Toggle label="Usa almacenes internos" checked={form.data.configuration.identity?.uses_internal_warehouses ?? false} onChange={(value) => setConfig('identity', 'uses_internal_warehouses', value)} helpTooltip="Para negocios con varios depositos dentro de una misma sucursal." />
+                                </Section> : null}
 
                                 {activeConfigStep === 'sales' ? <Section title="Ventas">
                                     <SelectField label="Uso de cotizacion" name="quotation_mode" value={form.data.configuration.sales.quotation_mode} onChange={(event) => setConfig('sales', 'quotation_mode', event.target.value)}>
@@ -348,6 +380,7 @@ export default function Index({ activeProfile, drafts, versions, presets = [], o
                                     <Toggle label="Compra rapida con barcode" checked={form.data.configuration.purchases.barcode_entry} onChange={(value) => setConfig('purchases', 'barcode_entry', value)} />
                                     <Toggle label="Crear producto desde compra" checked={form.data.configuration.purchases.allow_create_product} onChange={(value) => setConfig('purchases', 'allow_create_product', value)} />
                                     <Toggle label="Registrar compra pagada como egreso" checked={form.data.configuration.purchases.register_expense_when_paid} onChange={(value) => setConfig('purchases', 'register_expense_when_paid', value)} />
+                                    <Toggle label="Cuentas por pagar" checked={form.data.configuration.finance?.uses_accounts_payable ?? true} onChange={(value) => setConfig('finance', 'uses_accounts_payable', value)} helpTooltip="Mantiene saldos pendientes por proveedor cuando una compra no se paga completa." />
                                 </Section> : null}
 
                                 {activeConfigStep === 'cash' ? <Section title="Caja y bancos">
@@ -361,6 +394,10 @@ export default function Index({ activeProfile, drafts, versions, presets = [], o
                                     <Toggle label="Conciliar bancos/QR con caja" checked={form.data.configuration.cash.bank_reconciliation} onChange={(value) => setConfig('cash', 'bank_reconciliation', value)} />
                                     <Toggle label="Cuenta bancaria por sucursal" checked={form.data.configuration.banks.require_branch_account} onChange={(value) => setConfig('banks', 'require_branch_account', value)} />
                                     <Toggle label="Permitir efectivo offline en POS" checked={form.data.configuration.cash.allow_offline_cash_sales} onChange={(value) => setConfig('cash', 'allow_offline_cash_sales', value)} />
+                                    <Toggle label="Cuentas por cobrar" checked={form.data.configuration.finance?.uses_accounts_receivable ?? true} onChange={(value) => setConfig('finance', 'uses_accounts_receivable', value)} />
+                                    <Toggle label="Centros de costo por sucursal" checked={form.data.configuration.finance?.uses_cost_centers ?? false} onChange={(value) => setConfig('finance', 'uses_cost_centers', value)} />
+                                    <Toggle label="Reporte de utilidad" checked={form.data.configuration.finance?.profit_report_enabled ?? true} onChange={(value) => setConfig('finance', 'profit_report_enabled', value)} />
+                                    <Toggle label="Reporte fiscal/contable" checked={form.data.configuration.finance?.fiscal_report_enabled ?? false} onChange={(value) => setConfig('finance', 'fiscal_report_enabled', value)} />
                                 </Section> : null}
 
                                 {activeConfigStep === 'inventory' ? <Section title="Inventario y despachos">
@@ -372,6 +409,64 @@ export default function Index({ activeProfile, drafts, versions, presets = [], o
                                     <Toggle label="Equivalencias de unidades" checked={form.data.configuration.inventory.unit_conversions} onChange={(value) => setConfig('inventory', 'unit_conversions', value)} />
                                     <Toggle label="Conductor obligatorio" checked={form.data.configuration.deliveries.driver_required} onChange={(value) => setConfig('deliveries', 'driver_required', value)} />
                                     <Toggle label="Camion obligatorio" checked={form.data.configuration.deliveries.truck_required} onChange={(value) => setConfig('deliveries', 'truck_required', value)} />
+                                    <Toggle label="Inventario solo informativo" checked={form.data.configuration.inventory.informational_only ?? false} onChange={(value) => setConfig('inventory', 'informational_only', value)} helpTooltip="Muestra stock y reportes, pero evita que el perfil descuente automaticamente hasta conectar una regla de flujo." />
+                                </Section> : null}
+
+                                {activeConfigStep === 'documents' ? <Section
+                                    title="Documentos, numeracion y modo fiscal"
+                                    description="Define que documentos existen para este negocio y como se numeran internamente. La numeracion fiscal SIAT se mantiene separada cuando facturacion esta activa."
+                                >
+                                    <Checklist title="Documentos activos" options={options.documentTypes ?? {}} values={form.data.configuration.documents?.active ?? []} onToggle={(value) => toggleConfigArray('documents', 'active', value)} />
+                                    <Toggle label="Serie por sucursal" checked={form.data.configuration.documents?.numbering?.by_branch ?? true} onChange={(value) => setNestedConfig('documents', 'numbering', 'by_branch', value)} />
+                                    <Toggle label="Serie por punto POS" checked={form.data.configuration.documents?.numbering?.by_pos_point ?? false} onChange={(value) => setNestedConfig('documents', 'numbering', 'by_pos_point', value)} />
+                                    <Toggle label="Reinicio anual opcional" checked={form.data.configuration.documents?.numbering?.annual_reset ?? false} onChange={(value) => setNestedConfig('documents', 'numbering', 'annual_reset', value)} />
+                                    <Toggle label="Numeracion fiscal separada" checked={form.data.configuration.documents?.numbering?.fiscal_separate ?? true} onChange={(value) => setNestedConfig('documents', 'numbering', 'fiscal_separate', value)} helpTooltip="Recomendado: nunca mezclar numeracion interna con numeracion fiscal SIAT." />
+                                </Section> : null}
+
+                                {activeConfigStep === 'policies' ? <Section
+                                    title="Politicas de datos, anulaciones y modo degradado"
+                                    description="Estas reglas definen que datos son sensibles, como se anula/devuelve y que pasa si un modulo queda desactivado con historial existente."
+                                >
+                                    <Checklist title="Datos sensibles del negocio" options={options.sensitiveDataFields ?? {}} values={form.data.configuration.policies?.data?.sensitive_fields ?? []} onToggle={(value) => toggleNestedConfigArray('policies', 'data', 'sensitive_fields', value)} />
+                                    <Toggle label="Exportar solo con permiso" checked={form.data.configuration.policies?.data?.export_requires_permission ?? true} onChange={(value) => setNestedConfig('policies', 'data', 'export_requires_permission', value)} />
+                                    <FormField label="Permiso para ver costos" name="show_costs_permission" value={form.data.configuration.policies?.data?.show_costs_permission ?? ''} onChange={(event) => setNestedConfig('policies', 'data', 'show_costs_permission', event.target.value)} />
+                                    <FormField label="Permiso para reportes financieros" name="show_financial_reports_permission" value={form.data.configuration.policies?.data?.show_financial_reports_permission ?? ''} onChange={(event) => setNestedConfig('policies', 'data', 'show_financial_reports_permission', event.target.value)} />
+                                    <Toggle label="Anulacion requiere permiso" checked={form.data.configuration.policies?.voids_returns?.requires_permission ?? true} onChange={(value) => setNestedConfig('policies', 'voids_returns', 'requires_permission', value)} />
+                                    <FormField label="Horas maximas para anular" name="max_hours_after_sale" type="number" min="0" value={form.data.configuration.policies?.voids_returns?.max_hours_after_sale ?? 24} onChange={(event) => setNestedConfig('policies', 'voids_returns', 'max_hours_after_sale', event.target.value)} />
+                                    <Toggle label="Devolucion devuelve stock" checked={form.data.configuration.policies?.voids_returns?.return_stock ?? true} onChange={(value) => setNestedConfig('policies', 'voids_returns', 'return_stock', value)} />
+                                    <Toggle label="Afecta caja" checked={form.data.configuration.policies?.voids_returns?.affects_cash ?? true} onChange={(value) => setNestedConfig('policies', 'voids_returns', 'affects_cash', value)} />
+                                    <Toggle label="Motivo obligatorio" checked={form.data.configuration.policies?.voids_returns?.requires_reason ?? true} onChange={(value) => setNestedConfig('policies', 'voids_returns', 'requires_reason', value)} />
+                                    <Toggle label="Genera nota de credito fiscal" checked={form.data.configuration.policies?.voids_returns?.fiscal_credit_note ?? false} onChange={(value) => setNestedConfig('policies', 'voids_returns', 'fiscal_credit_note', value)} />
+                                    <Toggle label="Modulo inactivo queda solo lectura" checked={form.data.configuration.policies?.degraded_mode?.inactive_modules_read_only_history ?? true} onChange={(value) => setNestedConfig('policies', 'degraded_mode', 'inactive_modules_read_only_history', value)} />
+                                    <Toggle label="Bloquear nuevos registros en modulo inactivo" checked={form.data.configuration.policies?.degraded_mode?.block_new_records ?? true} onChange={(value) => setNestedConfig('policies', 'degraded_mode', 'block_new_records', value)} />
+                                    <Toggle label="Permitir reportes historicos" checked={form.data.configuration.policies?.degraded_mode?.allow_historical_reports ?? true} onChange={(value) => setNestedConfig('policies', 'degraded_mode', 'allow_historical_reports', value)} />
+                                </Section> : null}
+
+                                {activeConfigStep === 'capabilities' ? <Section
+                                    title="Capacidades del perfil"
+                                    description="Las capacidades son reglas finas que usaran los modulos nuevos: restaurantes, servicios, reservas, impresion por area, campos personalizados y politicas futuras. El backend recalcula algunas desde modulos para evitar inconsistencias."
+                                >
+                                    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-white/5 md:col-span-2 xl:col-span-3">
+                                        <p className="text-sm font-semibold text-slate-950 dark:text-white">Recomendadas para {options.businessTypes[form.data.business_type] ?? form.data.business_type}</p>
+                                        <div className="mt-3 flex flex-wrap gap-2">
+                                            {(capabilitiesMatrix[form.data.business_type] ?? []).map((capability) => (
+                                                <span key={capability} className="rounded-full bg-brand-primary/10 px-3 py-1 text-xs font-semibold text-brand-primary">
+                                                    {capabilitiesCatalog[capability]?.name ?? capability}
+                                                </span>
+                                            ))}
+                                        </div>
+                                    </div>
+                                    {Object.entries(capabilitiesCatalog).map(([key, capability]) => (
+                                        <Toggle
+                                            key={key}
+                                            label={capability.name}
+                                            checked={form.data.configuration.capabilities?.[key] ?? false}
+                                            onChange={(value) => setConfig('capabilities', key, value)}
+                                            helpTooltip={`${capability.group}: ${capability.description}`}
+                                            enableText={`Activar capacidad ${capability.name}`}
+                                            disableText={`Desactivar capacidad ${capability.name}`}
+                                        />
+                                    ))}
                                 </Section> : null}
 
                                 {activeConfigStep === 'pos' ? <Section title="POS y productos">
@@ -388,11 +483,16 @@ export default function Index({ activeProfile, drafts, versions, presets = [], o
                                         {Object.entries(options.productCreationContexts).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
                                     </SelectField>
                                     <Toggle label="Barcode obligatorio en productos" checked={form.data.configuration.products.barcode_required} onChange={(value) => setConfig('products', 'barcode_required', value)} />
+                                    <Toggle label="Imagen principal en producto" checked={form.data.configuration.products.images_enabled ?? false} onChange={(value) => setConfig('products', 'images_enabled', value)} />
+                                    <Toggle label="Galeria de imagenes" checked={form.data.configuration.products.gallery_enabled ?? false} onChange={(value) => setConfig('products', 'gallery_enabled', value)} />
+                                    <Toggle label="Variantes de producto" checked={form.data.configuration.products.variants_enabled ?? false} onChange={(value) => setConfig('products', 'variants_enabled', value)} />
+                                    <Toggle label="Campos personalizados en producto" checked={form.data.configuration.products.custom_fields_enabled ?? false} onChange={(value) => setConfig('products', 'custom_fields_enabled', value)} />
                                     <Toggle label="Impresion de etiquetas barcode" checked={form.data.configuration.products.barcode_labels} onChange={(value) => {
                                         setConfig('products', 'barcode_labels', value);
                                         setConfig('modules', 'barcode_labels', value);
                                     }} helpTooltip="Permite imprimir etiquetas de codigo de barras desde la ficha del producto y editar su formato de papel/tamano." />
                                     <Toggle label="Permitir items de servicio" checked={form.data.configuration.products.allow_service_items} onChange={(value) => setConfig('products', 'allow_service_items', value)} />
+                                    <Checklist title="Tipos de item permitidos" options={options.itemTypes ?? {}} values={form.data.configuration.products.item_types ?? []} onToggle={(value) => toggleConfigArray('products', 'item_types', value)} />
                                 </Section> : null}
 
                                 {activeConfigStep === 'human_resources' ? <Section title="Trabajadores y sueldos">
@@ -438,6 +538,13 @@ export default function Index({ activeProfile, drafts, versions, presets = [], o
                                             disableText={`Desactivar caracteristica ${uxLabel(key)}`}
                                         />
                                     ))}
+                                </Section> : null}
+
+                                {activeConfigStep === 'summary' ? <Section
+                                    title="Resumen final antes de guardar"
+                                    description="Revisa el impacto completo del perfil. Guardar crea o actualiza un borrador; aplicar se hace despues desde la tarjeta de borradores y el backend vuelve a validar reglas de compatibilidad."
+                                >
+                                    <WizardActivationChecklist configuration={form.data.configuration} demo={demo} options={options} comparison={comparison} />
                                 </Section> : null}
 
                                 <ImpactSummary demo={demo} comparison={comparison} />
@@ -595,6 +702,108 @@ function ImpactSummary({ demo, comparison }) {
             ) : (
                 <p className="mt-3">No hay advertencias criticas para este borrador.</p>
             )}
+        </div>
+    );
+}
+
+function WizardActivationChecklist({ configuration, demo, options, comparison }) {
+    const requirements = configuration.activation_checklist?.minimum_requirements ?? [];
+    const changed = comparison.filter((row) => row.changed);
+    const hiddenModules = demo.navigation.filter((item) => !item.enabled).slice(0, 10);
+    const activeDocuments = configuration.documents?.active ?? [];
+    const checklistLabels = {
+        branch: 'Sucursal configurada',
+        currency: 'Moneda base definida',
+        cash: 'Caja configurada',
+        products: 'Productos o servicios cargados',
+        units: 'Unidades de medida listas',
+        receipt_template: 'Plantilla de documento revisada',
+        tables: 'Mesas o salones definidos',
+        menu: 'Menu o catalogo visual listo',
+        recipes: 'Recetas/insumos cargados',
+        printer_profiles: 'Impresoras por area configuradas',
+        customers: 'Clientes base cargados',
+        services: 'Servicios creados',
+        service_states: 'Estados de servicio definidos',
+        technicians: 'Tecnicos/trabajadores creados',
+        barcodes: 'Codigos de barras cargados',
+        pos_terminal: 'Punto POS configurado',
+        variants: 'Variantes configuradas',
+        bom: 'Formula/BOM creada',
+        suppliers: 'Proveedores cargados',
+        delivery_resources: 'Recursos de despacho listos',
+        resources: 'Recursos reservables creados',
+        calendar: 'Calendario activo',
+        deposit_policy: 'Politica de garantia definida',
+    };
+
+    return (
+        <div className="space-y-4 md:col-span-2 xl:col-span-3">
+            <div className="grid gap-4 lg:grid-cols-3">
+                <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-950">
+                    <h4 className="font-semibold text-slate-950 dark:text-white">Checklist minimo</h4>
+                    <div className="mt-3 space-y-2">
+                        {requirements.length === 0 ? <p className="text-sm text-slate-500">Este preset no tiene requisitos minimos definidos.</p> : null}
+                        {requirements.map((requirement) => (
+                            <div key={requirement} className="flex items-center gap-2 rounded-xl bg-slate-50 px-3 py-2 text-sm text-slate-700 dark:bg-white/5 dark:text-slate-200">
+                                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-amber-100 text-xs font-bold text-amber-700 dark:bg-amber-500/20 dark:text-amber-100">!</span>
+                                {checklistLabels[requirement] ?? requirement}
+                            </div>
+                        ))}
+                    </div>
+                </div>
+
+                <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-950">
+                    <h4 className="font-semibold text-slate-950 dark:text-white">Documentos activos</h4>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                        {activeDocuments.length === 0 ? <p className="text-sm text-red-500">No hay documentos activos.</p> : null}
+                        {activeDocuments.map((document) => (
+                            <span key={document} className="rounded-full bg-brand-primary/10 px-3 py-1 text-xs font-semibold text-brand-primary">
+                                {options.documentTypes?.[document] ?? document}
+                            </span>
+                        ))}
+                    </div>
+                </div>
+
+                <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-950">
+                    <h4 className="font-semibold text-slate-950 dark:text-white">Cambios principales</h4>
+                    <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">{changed.length} diferencias contra el perfil activo.</p>
+                    <div className="mt-3 space-y-2">
+                        {changed.slice(0, 5).map((row) => (
+                            <div key={row.section} className="rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-600 dark:bg-white/5 dark:text-slate-300">
+                                <span className="font-semibold">{row.label}:</span> {row.current} {'->'} {row.next}
+                            </div>
+                        ))}
+                        {changed.length > 5 ? <p className="text-xs text-slate-500">Hay mas cambios en la pestana Comparar.</p> : null}
+                    </div>
+                </div>
+            </div>
+
+            <div className="grid gap-4 lg:grid-cols-2">
+                <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-950">
+                    <h4 className="font-semibold text-slate-950 dark:text-white">Menu que se ocultara</h4>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                        {hiddenModules.length === 0 ? <p className="text-sm text-emerald-600 dark:text-emerald-300">No hay modulos ocultos en esta vista previa.</p> : null}
+                        {hiddenModules.map((item) => (
+                            <span key={item.label} className="rounded-full bg-slate-200 px-3 py-1 text-xs font-semibold text-slate-600 line-through dark:bg-slate-800 dark:text-slate-300">
+                                {item.label}
+                            </span>
+                        ))}
+                    </div>
+                </div>
+
+                <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-950">
+                    <h4 className="font-semibold text-slate-950 dark:text-white">Flujo resultante</h4>
+                    <ol className="mt-3 space-y-2">
+                        {demo.steps.slice(0, 5).map((step, index) => (
+                            <li key={step} className="flex gap-2 text-sm text-slate-600 dark:text-slate-300">
+                                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-brand-primary text-xs font-bold text-white">{index + 1}</span>
+                                {step}
+                            </li>
+                        ))}
+                    </ol>
+                </div>
+            </div>
         </div>
     );
 }
@@ -1580,6 +1789,10 @@ function PresetPanel({ presets }) {
 
 function buildComparison(current, next, options) {
     const rows = [
+        ['Identidad', 'Nombre comercial', current.identity?.commercial_name, next.identity?.commercial_name],
+        ['Identidad', 'Rubro especifico', current.identity?.specific_industry, next.identity?.specific_industry],
+        ['Identidad', 'Imagenes en productos', booleanLabels[String(Boolean(current.products?.images_enabled))], booleanLabels[String(Boolean(next.products?.images_enabled))]],
+        ['Identidad', 'Variantes de productos', booleanLabels[String(Boolean(current.products?.variants_enabled))], booleanLabels[String(Boolean(next.products?.variants_enabled))]],
         ['Ventas', 'Flujo de venta', options.salesWorkflows[current.sales.workflow], options.salesWorkflows[next.sales.workflow]],
         ['Ventas', 'Uso de cotizacion', options.quotationModes[current.sales.quotation_mode], options.quotationModes[next.sales.quotation_mode]],
         ['Ventas', 'Documento principal', options.documents[current.sales.document_main], options.documents[next.sales.document_main]],
@@ -1609,6 +1822,17 @@ function buildComparison(current, next, options) {
         ['Inventario', 'Despachos', options.deliveryModes[current.deliveries.mode], options.deliveryModes[next.deliveries.mode]],
         ['Compras', 'Proveedores en compra', options.entityModes[current.purchases.supplier_mode], options.entityModes[next.purchases.supplier_mode]],
         ['Compras', 'Compra rapida', booleanLabels[String(Boolean(current.purchases.barcode_entry))], booleanLabels[String(Boolean(next.purchases.barcode_entry))]],
+        ['Documentos', 'Documentos activos', (current.documents?.active ?? []).join(', '), (next.documents?.active ?? []).join(', ')],
+        ['Documentos', 'Serie por sucursal', booleanLabels[String(Boolean(current.documents?.numbering?.by_branch))], booleanLabels[String(Boolean(next.documents?.numbering?.by_branch))]],
+        ['Documentos', 'Serie por punto POS', booleanLabels[String(Boolean(current.documents?.numbering?.by_pos_point))], booleanLabels[String(Boolean(next.documents?.numbering?.by_pos_point))]],
+        ['Documentos', 'Numeracion fiscal separada', booleanLabels[String(Boolean(current.documents?.numbering?.fiscal_separate))], booleanLabels[String(Boolean(next.documents?.numbering?.fiscal_separate))]],
+        ['Politicas', 'Datos sensibles', (current.policies?.data?.sensitive_fields ?? []).join(', '), (next.policies?.data?.sensitive_fields ?? []).join(', ')],
+        ['Politicas', 'Motivo obligatorio al anular', booleanLabels[String(Boolean(current.policies?.voids_returns?.requires_reason))], booleanLabels[String(Boolean(next.policies?.voids_returns?.requires_reason))]],
+        ['Politicas', 'Horas maximas para anular', current.policies?.voids_returns?.max_hours_after_sale, next.policies?.voids_returns?.max_hours_after_sale],
+        ['Politicas', 'Modulo inactivo solo lectura', booleanLabels[String(Boolean(current.policies?.degraded_mode?.inactive_modules_read_only_history))], booleanLabels[String(Boolean(next.policies?.degraded_mode?.inactive_modules_read_only_history))]],
+        ['Finanzas', 'Contabilidad base', options.accountingModes?.[current.finance?.accounting_mode], options.accountingModes?.[next.finance?.accounting_mode]],
+        ['Finanzas', 'Cuentas por cobrar', booleanLabels[String(Boolean(current.finance?.uses_accounts_receivable))], booleanLabels[String(Boolean(next.finance?.uses_accounts_receivable))]],
+        ['Finanzas', 'Cuentas por pagar', booleanLabels[String(Boolean(current.finance?.uses_accounts_payable))], booleanLabels[String(Boolean(next.finance?.uses_accounts_payable))]],
     ];
 
     return rows.map(([group, label, currentValue, nextValue]) => ({
@@ -1655,6 +1879,12 @@ function buildDemo(businessType, configuration, options, sandboxSnapshot = {}) {
         { label: 'Sueldos', enabled: Boolean(configuration.modules.payroll) },
         { label: 'Trabajadores', enabled: Boolean(configuration.modules.workers) },
         { label: 'Produccion', enabled: Boolean(configuration.modules.production) },
+        { label: 'Servicios', enabled: Boolean(configuration.modules.services) },
+        { label: 'Ordenes de servicio', enabled: Boolean(configuration.modules.service_orders) },
+        { label: 'Mesas', enabled: Boolean(configuration.modules.restaurant_tables) },
+        { label: 'Comandas', enabled: Boolean(configuration.modules.kitchen_orders) },
+        { label: 'Recetas', enabled: Boolean(configuration.modules.recipes) },
+        { label: 'Alquileres', enabled: Boolean(configuration.modules.rentals) },
         { label: 'Exportaciones', enabled: Boolean(configuration.modules.exports) },
         { label: 'Etiquetas barcode', enabled: Boolean(configuration.modules.barcode_labels) },
     ];
@@ -1829,6 +2059,11 @@ function buildDemo(businessType, configuration, options, sandboxSnapshot = {}) {
         configuration.billing?.mode === 'electronic_online' ? 'La modalidad electronica requiere certificado digital seguro en servidor, no en el navegador.' : null,
         billingEnabled && configuration.billing?.require_product_mapping ? 'Todo producto facturable debe estar homologado con codigo SIN, actividad economica y unidad SIAT.' : null,
         billingEnabled && configuration.billing?.offline_behavior === 'temporary_receipt' ? 'En contingencia se emitira recibo temporal y luego debera enviarse paquete SIAT.' : null,
+        (configuration.documents?.active ?? []).length === 0 ? 'No hay documentos activos; el negocio no tendra comprobantes internos configurados.' : null,
+        configuration.documents?.numbering?.by_pos_point && !configuration.identity?.uses_pos_points ? 'La numeracion por punto POS esta activa, pero el perfil indica que no usa puntos POS.' : null,
+        configuration.policies?.degraded_mode?.inactive_modules_read_only_history ? 'Los modulos desactivados conservaran lectura historica para no perder trazabilidad.' : null,
+        configuration.policies?.voids_returns?.fiscal_credit_note && !billingEnabled ? 'La nota de credito fiscal esta activa, pero facturacion SIAT esta desactivada.' : null,
+        configuration.products?.variants_enabled ? 'Las ventas y compras futuras deberan contemplar variante exacta cuando aplique.' : null,
         !configuration.modules.expenses ? 'Gastos quedara oculto; los egresos operativos deberan gestionarse por otro flujo activo.' : null,
         !configuration.modules.payroll ? 'Pago de sueldos quedara oculto aunque existan trabajadores registrados.' : null,
         !configuration.modules.workers ? 'Trabajadores quedara oculto y no se podra gestionar personal desde el sistema.' : null,
@@ -1933,6 +2168,13 @@ function businessPreset(preset, current, defaults) {
         billing: { ...(defaults.billing ?? {}), ...(current.billing ?? {}) },
         pos: { ...(defaults.pos ?? {}), ...(current.pos ?? {}) },
         products: { ...(defaults.products ?? {}), ...(current.products ?? {}) },
+        contacts: { ...(defaults.contacts ?? {}), ...(current.contacts ?? {}) },
+        reservations: { ...(defaults.reservations ?? {}), ...(current.reservations ?? {}) },
+        restaurant: { ...(defaults.restaurant ?? {}), ...(current.restaurant ?? {}) },
+        services: { ...(defaults.services ?? {}), ...(current.services ?? {}) },
+        rentals: { ...(defaults.rentals ?? {}), ...(current.rentals ?? {}) },
+        production_flow: { ...(defaults.production_flow ?? {}), ...(current.production_flow ?? {}) },
+        documents: { ...(defaults.documents ?? {}), ...(current.documents ?? {}) },
         cash: { ...(defaults.cash ?? {}), ...(current.cash ?? {}) },
         inventory: { ...(defaults.inventory ?? {}), ...(current.inventory ?? {}) },
         ux: { ...(defaults.ux ?? {}), ...(current.ux ?? {}) },
@@ -1969,6 +2211,34 @@ function businessPreset(preset, current, defaults) {
                 cash: { ...base.cash, required_to_sell: true, scope: 'pos_terminal', bank_reconciliation: true },
             },
         },
+        restaurant_full: {
+            businessType: 'restaurant',
+            configuration: {
+                ...base,
+                modules: { ...base.modules, quotes: false, sales_notes: true, pos: true, purchases: true, quick_purchases: false, cash: true, banks: true, inventory: true, deliveries: true, customers: true, suppliers: true, restaurant_tables: true, kitchen_orders: true, recipes: true, reservations: true },
+                submodules: { ...base.submodules, tips: true, delivery: true, split_payments: true, thermal_printing: true },
+                capabilities: { ...base.capabilities, uses_inventory: true, uses_recipes: true, uses_reservations: true, uses_reservable_resources: true, uses_tables: true, uses_waiters: true, uses_kitchen_orders: true, uses_tips: true, uses_split_payments: true, uses_delivery: true, requires_customer: false, allows_direct_sale: true, uses_pos: true, requires_cash_session: true, uses_cash: true, uses_banks: true, uses_commissions: true, uses_custom_statuses: true, uses_printer_profiles: true },
+                sales: { ...base.sales, workflow: 'restaurant_table', quotation_mode: 'disabled', document_main: 'ticket', customer_mode: 'optional', customer_required: false, inventory_discount_timing: 'payment' },
+                pos: { ...base.pos, scanner_mode: 'optional', offline_mode: 'disabled', payment_flow: 'single_or_mixed', customer_prompt: 'optional' },
+                products: { ...base.products, catalog_mode: 'restaurant_menu', item_types: ['prepared_product', 'internal_supply', 'combo'], images_enabled: true, gallery_enabled: true, variants_enabled: true },
+                reservations: { ...base.reservations, calendar_enabled: true, resource_required: true, advance_mode: 'optional' },
+                restaurant: { ...base.restaurant, mode: 'full', tables_enabled: true, waiters_enabled: true, kitchen_areas: ['cocina', 'barra', 'caja'], discount_inventory_at: 'sale_close', tips_mode: 'optional', split_bill_enabled: true },
+                documents: { ...base.documents, active: ['ticket_pos', 'kitchen_order', 'cash_closing', 'reservation_receipt'] },
+            },
+        },
+        fast_food: {
+            businessType: 'fast_food',
+            configuration: {
+                ...base,
+                modules: { ...base.modules, quotes: false, sales_notes: true, pos: true, purchases: true, cash: true, banks: true, inventory: true, deliveries: true, restaurant_tables: false, kitchen_orders: true, recipes: true, reservations: false },
+                capabilities: { ...base.capabilities, uses_inventory: true, uses_recipes: true, uses_kitchen_orders: true, uses_tips: true, uses_delivery: true, requires_customer: false, allows_direct_sale: true, uses_pos: true, requires_cash_session: true, uses_cash: true, uses_banks: true, uses_printer_profiles: true },
+                sales: { ...base.sales, workflow: 'restaurant_counter', quotation_mode: 'disabled', document_main: 'ticket', customer_mode: 'optional', customer_required: false, inventory_discount_timing: 'payment' },
+                pos: { ...base.pos, scanner_mode: 'optional', customer_prompt: 'optional' },
+                products: { ...base.products, catalog_mode: 'restaurant_menu', item_types: ['prepared_product', 'internal_supply', 'combo'], images_enabled: true },
+                restaurant: { ...base.restaurant, mode: 'fast_food', tables_enabled: false, waiters_enabled: false, kitchen_areas: ['cocina', 'barra'], tips_mode: 'optional', split_bill_enabled: false },
+                documents: { ...base.documents, active: ['ticket_pos', 'kitchen_order', 'cash_closing'] },
+            },
+        },
         store_pos: {
             businessType: 'store',
             configuration: {
@@ -1988,12 +2258,12 @@ function businessPreset(preset, current, defaults) {
             configuration: {
                 ...base,
                 modules: { ...base.modules, quotes: false, sales_notes: true, pos: true, purchases: true, quick_purchases: true, cash: true, banks: true, billing: true, inventory: true, deliveries: false, customers: false, suppliers: true, offline_pos: true },
-                sales: { ...base.sales, workflow: 'pos', quotation_mode: 'disabled', document_main: 'invoice_direct', customer_mode: 'hidden', customer_required: false, allow_price_override: 'permission', inventory_discount_timing: 'sale_note', allow_negative_stock: false },
+                sales: { ...base.sales, workflow: 'pos', quotation_mode: 'disabled', document_main: 'invoice_direct', customer_mode: 'optional', customer_required: false, allow_price_override: 'permission', inventory_discount_timing: 'sale_note', allow_negative_stock: false },
                 billing: { ...base.billing, enabled: true, invoice_flow: 'direct_invoice', issue_from: 'pos', issue_timing: 'automatic_direct' },
                 purchases: { ...base.purchases, workflow: 'barcode_purchase', barcode_entry: true, allow_create_product: true, supplier_mode: 'optional' },
                 deliveries: { ...base.deliveries, mode: 'disabled', driver_required: false, truck_required: false },
                 banks: { ...base.banks, reconciliation_mode: 'automatic', require_branch_account: true },
-                pos: { ...base.pos, scanner_mode: 'required', offline_mode: 'local_queue', payment_flow: 'single_or_mixed', customer_prompt: 'hidden' },
+                pos: { ...base.pos, scanner_mode: 'required', offline_mode: 'local_queue', payment_flow: 'single_or_mixed', customer_prompt: 'optional' },
                 products: { ...base.products, catalog_mode: 'barcode_retail', barcode_required: true, unit_equivalences: true, allow_service_items: false, creation_context: 'inventory_and_purchase' },
                 cash: { ...base.cash, required_to_sell: true, scope: 'pos_terminal', bank_reconciliation: true, allow_offline_cash_sales: true },
             },
@@ -2026,6 +2296,17 @@ function businessPreset(preset, current, defaults) {
                 cash: { ...base.cash, required_to_sell: true, scope: 'user_branch', bank_reconciliation: true },
             },
         },
+        clothing_store: {
+            businessType: 'clothing_store',
+            configuration: {
+                ...base,
+                modules: { ...base.modules, quotes: false, sales_notes: true, pos: true, purchases: true, quick_purchases: true, cash: true, banks: true, inventory: true, deliveries: true, customers: true, returns: true },
+                capabilities: { ...base.capabilities, uses_inventory: true, requires_customer: false, allows_direct_sale: true, uses_pos: true, uses_barcode_scanner: true, requires_cash_session: true, uses_cash: true, uses_banks: true, uses_delivery: true, uses_custom_fields: true, uses_price_lists: true, uses_printer_profiles: true },
+                sales: { ...base.sales, workflow: 'pos', quotation_mode: 'disabled', document_main: 'ticket', customer_mode: 'optional', customer_required: false, price_policy: 'mixed', discount_policy: 'role_limit', max_discount_percent: 10 },
+                products: { ...base.products, catalog_mode: 'variants', item_types: ['physical'], images_enabled: true, gallery_enabled: true, variants_enabled: true, barcode_required: true },
+                deliveries: { ...base.deliveries, mode: 'optional' },
+            },
+        },
         factory: {
             businessType: 'factory',
             configuration: {
@@ -2040,6 +2321,19 @@ function businessPreset(preset, current, defaults) {
                 cash: { ...base.cash, required_to_sell: false, scope: 'branch', bank_reconciliation: true },
             },
         },
+        technical_service: {
+            businessType: 'technical_service',
+            configuration: {
+                ...base,
+                modules: { ...base.modules, quotes: true, sales_notes: true, pos: false, purchases: true, inventory: true, deliveries: false, customers: true, suppliers: true, services: true, service_orders: true, reservations: true, workers: true, payroll: true },
+                capabilities: { ...base.capabilities, uses_inventory: true, uses_services: true, uses_service_orders: true, uses_reservations: true, uses_reservable_resources: true, requires_customer: true, allows_direct_sale: true, requires_cash_session: false, uses_cash: true, uses_banks: true, uses_commissions: true, uses_custom_fields: true, uses_custom_statuses: true },
+                sales: { ...base.sales, workflow: 'service_sale', quotation_mode: 'optional', document_main: 'receipt', customer_mode: 'required', customer_required: true, inventory_discount_timing: 'manual' },
+                products: { ...base.products, catalog_mode: 'mixed_inventory', item_types: ['service', 'physical', 'internal_supply'], allow_service_items: true, images_enabled: true },
+                reservations: { ...base.reservations, calendar_enabled: true, resource_required: true, advance_mode: 'optional' },
+                services: { ...base.services, mode: 'technical', orders_enabled: true, technician_required: true, evidence_enabled: true, warranty_enabled: true, signature_enabled: true },
+                documents: { ...base.documents, active: ['quotation', 'service_order', 'advance_receipt', 'delivery_receipt'] },
+            },
+        },
         services: {
             businessType: 'services',
             configuration: {
@@ -2052,6 +2346,19 @@ function businessPreset(preset, current, defaults) {
                 pos: { ...base.pos, scanner_mode: 'disabled', offline_mode: 'disabled', payment_flow: 'single_or_mixed', customer_prompt: 'required' },
                 products: { ...base.products, catalog_mode: 'services', barcode_required: false, unit_equivalences: false, allow_service_items: true, creation_context: 'restricted' },
                 cash: { ...base.cash, required_to_sell: false, scope: 'user_branch', bank_reconciliation: true },
+            },
+        },
+        rentals: {
+            businessType: 'rentals',
+            configuration: {
+                ...base,
+                modules: { ...base.modules, quotes: true, sales_notes: true, pos: false, purchases: true, inventory: true, deliveries: true, reservations: true, rentals: true, customers: true, suppliers: true, cash: true, banks: true },
+                capabilities: { ...base.capabilities, uses_inventory: true, uses_reservations: true, uses_reservable_resources: true, uses_rentals: true, uses_custom_fields: true, uses_custom_statuses: true, requires_customer: true, allows_direct_sale: true, requires_cash_session: true, uses_cash: true, uses_banks: true },
+                sales: { ...base.sales, workflow: 'rental_flow', quotation_mode: 'optional', document_main: 'receipt', customer_mode: 'required', customer_required: true, inventory_discount_timing: 'delivery' },
+                products: { ...base.products, catalog_mode: 'rentals', item_types: ['rental', 'physical'], images_enabled: true, gallery_enabled: true },
+                reservations: { ...base.reservations, calendar_enabled: true, resource_required: true, advance_mode: 'required', expiration_enabled: true },
+                rentals: { ...base.rentals, enabled: true, deposit_required: true, late_penalty_enabled: true, condition_check_required: true },
+                documents: { ...base.documents, active: ['quotation', 'reservation_receipt', 'simple_contract', 'delivery_receipt'] },
             },
         },
         mixed: {
@@ -2100,6 +2407,13 @@ function moduleLabel(key) {
         reservations: 'Reservas',
         transfers: 'Transferencias',
         offline_pos: 'POS offline',
+        services: 'Servicios',
+        service_orders: 'Ordenes de servicio',
+        restaurant_tables: 'Mesas',
+        kitchen_orders: 'Comandas cocina/barra',
+        recipes: 'Recetas',
+        combos: 'Combos',
+        rentals: 'Alquileres',
     }[key] ?? key;
 }
 
@@ -2130,6 +2444,13 @@ function moduleToggleHelp(key) {
         reservations: 'Desactivar este submodulo oculta reservas de inventario.',
         transfers: 'Desactivar este submodulo oculta transferencias entre sucursales.',
         offline_pos: 'Desactivar esta caracteristica impide usar el POS en modo offline o contingencia.',
+        services: 'Desactivar este modulo oculta servicios sin inventario y venta por mano de obra.',
+        service_orders: 'Desactivar este modulo bloquea ordenes de servicio, diagnosticos y asignacion de tecnicos.',
+        restaurant_tables: 'Desactivar este modulo oculta mesas y salones; el restaurante queda como venta directa o comida rapida.',
+        kitchen_orders: 'Desactivar este modulo evita enviar comandas a cocina, barra u otra area.',
+        recipes: 'Desactivar este modulo evita descontar insumos por recetas.',
+        combos: 'Desactivar este modulo oculta combos o paquetes configurables.',
+        rentals: 'Desactivar este modulo bloquea alquileres, garantias, penalidades y devoluciones de recursos.',
     }[key] ?? 'Desactivar esta opcion la oculta del perfil de negocio y bloquea sus acciones relacionadas cuando corresponda.';
 }
 

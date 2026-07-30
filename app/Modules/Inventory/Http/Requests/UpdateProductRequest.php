@@ -7,6 +7,7 @@ use App\Modules\Inventory\Models\ProductCategory;
 use App\Modules\Inventory\Models\ProductUnit;
 use App\Modules\Inventory\Services\ProductWorkflowPolicy;
 use App\Modules\Inventory\Support\ProductCodeGenerator;
+use App\Modules\SystemSuperadmin\Models\ProductVariant;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
@@ -33,6 +34,15 @@ class UpdateProductRequest extends FormRequest
             'barcode' => [app(ProductWorkflowPolicy::class)->barcodeRequired() ? 'required' : 'nullable', 'string', 'max:80', Rule::unique('products', 'barcode')->ignore($productId)],
             'inventory_tracking_mode' => ['required', Rule::in([Product::TRACKING_GLOBAL, Product::TRACKING_COIL])],
             'base_unit' => ['required', 'string', 'max:24'],
+            'item_type' => ['required', 'string', Rule::in(app(ProductWorkflowPolicy::class)->allowedItemTypes())],
+            'is_sellable' => ['required', 'boolean'],
+            'is_purchasable' => ['required', 'boolean'],
+            'is_inventory_item' => ['required', 'boolean'],
+            'is_consumable' => ['required', 'boolean'],
+            'is_prepared' => ['required', 'boolean'],
+            'is_digital' => ['required', 'boolean'],
+            'duration_minutes' => ['nullable', 'integer', 'min:0', 'max:525600'],
+            'preparation_minutes' => ['nullable', 'integer', 'min:0', 'max:10080'],
             'attributes' => ['nullable', 'array'],
             'custom_attributes' => ['nullable', 'array'],
             'custom_attributes.*.code' => ['nullable', 'string', 'max:80'],
@@ -54,6 +64,22 @@ class UpdateProductRequest extends FormRequest
             'branch_scope' => ['required', Rule::in(['global', 'specific'])],
             'branch_ids' => ['nullable', 'array'],
             'branch_ids.*' => ['integer', 'exists:branches,id'],
+            'images' => ['nullable', 'array'],
+            'images.*.id' => ['nullable', 'integer', 'exists:product_images,id'],
+            'images.*.url' => ['nullable', 'url', 'max:2048'],
+            'images.*.path' => ['nullable', 'string', 'max:512'],
+            'images.*.alt_text' => ['nullable', 'string', 'max:180'],
+            'images.*.is_primary' => ['nullable', 'boolean'],
+            'images.*.sort_order' => ['nullable', 'integer', 'min:0', 'max:10000'],
+            'variants' => ['nullable', 'array'],
+            'variants.*.id' => ['nullable', 'integer', 'exists:product_variants,id'],
+            'variants.*.sku' => ['nullable', 'string', 'max:160'],
+            'variants.*.barcode' => ['nullable', 'string', 'max:160'],
+            'variants.*.name' => ['required_with:variants', 'string', 'max:180'],
+            'variants.*.attributes' => ['nullable', 'array'],
+            'variants.*.cost_price' => ['nullable', 'numeric', 'min:0', 'max:999999999999.9999'],
+            'variants.*.sale_price' => ['nullable', 'numeric', 'min:0', 'max:999999999999.9999'],
+            'variants.*.is_active' => ['nullable', 'boolean'],
         ];
     }
 
@@ -61,6 +87,7 @@ class UpdateProductRequest extends FormRequest
     {
         $validator->after(function (Validator $validator) {
             $this->validateBranchScope($validator);
+            $this->validateFlexibleCatalog($validator);
         });
     }
 
@@ -78,11 +105,30 @@ class UpdateProductRequest extends FormRequest
             'category' => $category?->name ?? ($this->filled('category') ? $this->input('category') : 'Ferreteria general'),
             'base_unit' => $unit?->symbol ?? ($this->filled('base_unit') ? $this->input('base_unit') : 'unidad'),
             'product_unit_id' => $unit?->id ?? $this->input('product_unit_id'),
+            'item_type' => $this->normalizedItemType(),
+            'is_sellable' => $this->boolean('is_sellable', true),
+            'is_purchasable' => $this->boolean('is_purchasable', true),
+            'is_inventory_item' => $this->boolean('is_inventory_item', $this->normalizedItemType() !== 'service' && $this->normalizedItemType() !== 'digital'),
+            'is_consumable' => $this->boolean('is_consumable', $this->normalizedItemType() === 'internal_supply'),
+            'is_prepared' => $this->boolean('is_prepared', in_array($this->normalizedItemType(), ['prepared_product', 'finished_product'], true)),
+            'is_digital' => $this->boolean('is_digital', $this->normalizedItemType() === 'digital'),
+            'duration_minutes' => $this->filled('duration_minutes') ? $this->integer('duration_minutes') : null,
+            'preparation_minutes' => $this->filled('preparation_minutes') ? $this->integer('preparation_minutes') : null,
             'attributes' => $this->normalizedAttributes(),
             'custom_attributes' => $this->normalizedCustomAttributes(),
             'unit_conversions' => app(ProductWorkflowPolicy::class)->unitEquivalencesEnabled() ? $this->normalizedUnitConversions($unit?->id) : [],
             'allowed_units' => app(ProductWorkflowPolicy::class)->unitEquivalencesEnabled() ? $this->normalizedAllowedUnits($unit?->symbol) : array_values(array_filter([$unit?->symbol])),
+            'images' => $this->normalizedImages(),
+            'variants' => $this->normalizedVariants(),
         ]);
+    }
+
+    private function normalizedItemType(): string
+    {
+        $allowed = app(ProductWorkflowPolicy::class)->allowedItemTypes();
+        $requested = (string) ($this->input('item_type') ?: 'physical');
+
+        return $this->filled('item_type') ? $requested : ($allowed[0] ?? 'physical');
     }
 
     private function normalizedAttributes(): array
@@ -161,6 +207,51 @@ class UpdateProductRequest extends FormRequest
             ->all();
     }
 
+    private function normalizedImages(): array
+    {
+        if (! app(ProductWorkflowPolicy::class)->imagesEnabled()) {
+            return [];
+        }
+
+        return collect($this->input('images', []))
+            ->filter(fn ($row) => is_array($row) && (filled($row['url'] ?? null) || filled($row['path'] ?? null)))
+            ->take(app(ProductWorkflowPolicy::class)->galleryEnabled() ? 12 : 1)
+            ->values()
+            ->map(fn (array $row, int $index) => [
+                'id' => isset($row['id']) ? (int) $row['id'] : null,
+                'url' => is_string($row['url'] ?? null) ? trim($row['url']) : null,
+                'path' => is_string($row['path'] ?? null) ? trim($row['path']) : null,
+                'alt_text' => is_string($row['alt_text'] ?? null) ? trim($row['alt_text']) : null,
+                'is_primary' => $index === 0 || filter_var($row['is_primary'] ?? false, FILTER_VALIDATE_BOOLEAN),
+                'sort_order' => (int) ($row['sort_order'] ?? $index),
+            ])
+            ->all();
+    }
+
+    private function normalizedVariants(): array
+    {
+        if (! app(ProductWorkflowPolicy::class)->variantsEnabled()) {
+            return [];
+        }
+
+        return collect($this->input('variants', []))
+            ->filter(fn ($row) => is_array($row) && filled($row['name'] ?? null))
+            ->map(fn (array $row) => [
+                'id' => isset($row['id']) ? (int) $row['id'] : null,
+                'sku' => is_string($row['sku'] ?? null) ? trim($row['sku']) : null,
+                'barcode' => is_string($row['barcode'] ?? null) ? trim($row['barcode']) : null,
+                'name' => trim((string) $row['name']),
+                'attributes' => collect($row['attributes'] ?? [])
+                    ->mapWithKeys(fn ($value, $key) => [Str::slug((string) $key, '_') => is_string($value) ? trim($value) : $value])
+                    ->all(),
+                'cost_price' => $row['cost_price'] ?? null,
+                'sale_price' => $row['sale_price'] ?? null,
+                'is_active' => filter_var($row['is_active'] ?? true, FILTER_VALIDATE_BOOLEAN),
+            ])
+            ->values()
+            ->all();
+    }
+
     private function validateBranchScope(Validator $validator): void
     {
         $branchIds = collect($this->input('branch_ids', []))
@@ -182,6 +273,43 @@ class UpdateProductRequest extends FormRequest
 
         if ($unauthorized->isNotEmpty()) {
             $validator->errors()->add('branch_ids', 'Solo puede asignar el producto a sus sucursales permitidas.');
+        }
+    }
+
+    private function validateFlexibleCatalog(Validator $validator): void
+    {
+        $policy = app(ProductWorkflowPolicy::class);
+
+        if (! $policy->imagesEnabled() && collect($this->input('images', []))->filter(fn ($row) => filled($row['url'] ?? null) || filled($row['path'] ?? null))->isNotEmpty()) {
+            $validator->errors()->add('images', 'Las imagenes de producto estan desactivadas para este perfil de negocio.');
+        }
+
+        if (! $policy->variantsEnabled() && collect($this->input('variants', []))->filter(fn ($row) => filled($row['name'] ?? null))->isNotEmpty()) {
+            $validator->errors()->add('variants', 'Las variantes de producto estan desactivadas para este perfil de negocio.');
+        }
+
+        if ($this->input('item_type') === 'service' && ! $policy->allowServiceItems()) {
+            $validator->errors()->add('item_type', 'Este perfil no permite crear servicios dentro del catalogo de productos.');
+        }
+
+        $variantSkus = collect($this->input('variants', []))->pluck('sku')->filter()->map(fn ($value) => trim((string) $value));
+        if ($variantSkus->count() !== $variantSkus->unique()->count()) {
+            $validator->errors()->add('variants', 'No puede repetir el mismo SKU en variantes del producto.');
+        }
+
+        $variantBarcodes = collect($this->input('variants', []))->pluck('barcode')->filter()->map(fn ($value) => trim((string) $value));
+        if ($variantBarcodes->count() !== $variantBarcodes->unique()->count()) {
+            $validator->errors()->add('variants', 'No puede repetir el mismo barcode en variantes del producto.');
+        }
+
+        $currentVariantIds = collect($this->input('variants', []))->pluck('id')->filter()->map(fn ($id) => (int) $id)->all();
+
+        if ($variantSkus->isNotEmpty() && ProductVariant::query()->whereIn('sku', $variantSkus)->whereNotIn('id', $currentVariantIds ?: [-1])->exists()) {
+            $validator->errors()->add('variants', 'Uno de los SKU de variante ya existe en otro producto.');
+        }
+
+        if ($variantBarcodes->isNotEmpty() && ProductVariant::query()->whereIn('barcode', $variantBarcodes)->whereNotIn('id', $currentVariantIds ?: [-1])->exists()) {
+            $validator->errors()->add('variants', 'Uno de los barcode de variante ya existe en otro producto.');
         }
     }
 }

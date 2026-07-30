@@ -20,14 +20,18 @@ use App\Modules\Inventory\Models\BarcodeLabelTemplate;
 use App\Modules\Inventory\Models\ProductBranchStock;
 use App\Modules\Payments\Models\PurchasePayment;
 use App\Modules\Payments\Models\SalePayment;
+use App\Modules\Production\Models\ProductionOrder;
 use App\Modules\Purchases\Models\Purchase;
 use App\Modules\Purchases\Models\Supplier;
+use App\Modules\Reservations\Models\BusinessReservation;
+use App\Modules\Restaurant\Models\KitchenOrder;
 use App\Modules\Sales\Models\DeliveryNote;
 use App\Modules\Sales\Models\Sale;
 use App\Modules\Settings\Models\ApplicationLicense;
 use App\Modules\Settings\Models\ImportBatch;
 use App\Modules\Settings\Models\MaintenanceBackup;
 use App\Modules\Settings\Models\MaintenanceLog;
+use App\Modules\ServiceOrders\Models\ServiceOrder;
 use App\Modules\SystemSuperadmin\Services\ActiveBusinessProfile;
 use App\Support\BranchAccess;
 use App\Models\Audit;
@@ -315,6 +319,70 @@ class ExportDatasetService
                     'notes' => 'Notas',
                 ],
             ],
+            'restaurant_summary' => [
+                'label' => 'Restaurante',
+                'description' => 'Comandas, areas de preparacion, meseros, mesa/canal y estado dentro del rango.',
+                'fields' => [
+                    'date' => 'Fecha',
+                    'branch' => 'Sucursal',
+                    'order' => 'Comanda',
+                    'table' => 'Mesa/canal',
+                    'area' => 'Area',
+                    'waiter' => 'Mesero',
+                    'status' => 'Estado',
+                    'total' => 'Total',
+                ],
+            ],
+            'service_orders_summary' => [
+                'label' => 'Ordenes de servicio',
+                'description' => 'Servicios, tecnicos, estados, mano de obra, materiales y total.',
+                'fields' => [
+                    'date' => 'Fecha',
+                    'branch' => 'Sucursal',
+                    'order' => 'Orden',
+                    'service' => 'Servicio',
+                    'customer' => 'Cliente',
+                    'worker' => 'Tecnico',
+                    'status' => 'Estado',
+                    'labor' => 'Mano de obra',
+                    'materials' => 'Materiales',
+                    'total' => 'Total',
+                ],
+            ],
+            'reservations_summary' => [
+                'label' => 'Reservas y alquileres',
+                'description' => 'Reservas, alquileres, recursos, anticipos, garantias y penalidades.',
+                'fields' => [
+                    'start' => 'Inicio',
+                    'end' => 'Fin',
+                    'branch' => 'Sucursal',
+                    'number' => 'Numero',
+                    'type' => 'Tipo',
+                    'resource' => 'Recurso',
+                    'customer' => 'Cliente',
+                    'status' => 'Estado',
+                    'advance' => 'Anticipo',
+                    'deposit' => 'Garantia',
+                    'penalty' => 'Penalidad',
+                    'total' => 'Total',
+                ],
+            ],
+            'production_summary' => [
+                'label' => 'Produccion',
+                'description' => 'Ordenes de produccion, producto terminado, merma y costos.',
+                'fields' => [
+                    'date' => 'Fecha',
+                    'branch' => 'Sucursal',
+                    'order' => 'Orden',
+                    'product' => 'Producto terminado',
+                    'status' => 'Estado',
+                    'quantity' => 'Cantidad producida',
+                    'waste' => 'Merma',
+                    'input_cost' => 'Costo insumos',
+                    'total_cost' => 'Costo total',
+                    'unit_cost' => 'Costo unitario',
+                ],
+            ],
             'branches' => [
                 'label' => 'Sucursales',
                 'description' => 'Datos generales de sucursales y puntos de venta.',
@@ -497,6 +565,10 @@ class ExportDatasetService
             'billing_events' => $this->billingEventRows($request, $from, $to, $branchId),
             'billing_logs' => $this->billingLogRows($request, $from, $to, $branchId),
             'deliveries' => $this->deliveryRows($request, $from, $to, $branchId),
+            'restaurant_summary' => $this->restaurantRows($request, $from, $to, $branchId),
+            'service_orders_summary' => $this->serviceOrderRows($request, $from, $to, $branchId),
+            'reservations_summary' => $this->reservationRows($request, $from, $to, $branchId),
+            'production_summary' => $this->productionRows($request, $from, $to, $branchId),
             'branches' => $this->branchRows($request, $branchId),
             'users' => $this->userRows($request, $branchId),
             'audit' => $this->auditRows($request, $from, $to),
@@ -534,6 +606,17 @@ class ExportDatasetService
             'barcode_templates' => ActiveBusinessProfile::enabled('barcode_labels'),
             'billing_invoices', 'billing_settings', 'billing_products', 'billing_events', 'billing_logs' => $this->billingEnabled(),
             'deliveries' => ActiveBusinessProfile::enabled('deliveries'),
+            'restaurant_summary' => ActiveBusinessProfile::enabled('restaurant_tables')
+                || ActiveBusinessProfile::capable('uses_tables')
+                || ActiveBusinessProfile::capable('uses_kitchen_orders'),
+            'service_orders_summary' => ActiveBusinessProfile::enabled('service_orders')
+                || ActiveBusinessProfile::capable('uses_service_orders'),
+            'reservations_summary' => ActiveBusinessProfile::enabled('reservations')
+                || ActiveBusinessProfile::enabled('rentals')
+                || ActiveBusinessProfile::capable('uses_reservations')
+                || ActiveBusinessProfile::capable('uses_rentals'),
+            'production_summary' => ActiveBusinessProfile::enabled('production')
+                || ActiveBusinessProfile::capable('uses_production'),
             'branches', 'users', 'audit', 'maintenance_logs', 'maintenance_backups', 'imports', 'licenses' => true,
             default => true,
         };
@@ -576,6 +659,10 @@ class ExportDatasetService
             'barcode_templates' => $request->user()->can('barcode-labels.view'),
             'billing_invoices', 'billing_settings', 'billing_products', 'billing_events', 'billing_logs' => $request->user()->can('billing.view'),
             'deliveries' => $request->user()->can('sales.deliveries.view'),
+            'restaurant_summary' => $request->user()->can('restaurant.view'),
+            'service_orders_summary' => $request->user()->can('service-orders.view'),
+            'reservations_summary' => $request->user()->can('reservations.view') || $request->user()->can('rentals.view'),
+            'production_summary' => $request->user()->can('production.view'),
             'branches' => $request->user()->can('branches.view'),
             'users' => $request->user()->can('users.view'),
             'audit' => $request->user()->can('audit.view'),
@@ -967,6 +1054,109 @@ class ExportDatasetService
             ->all();
     }
 
+    private function restaurantRows(Request $request, Carbon $from, Carbon $to, ?int $branchId): array
+    {
+        return KitchenOrder::query()
+            ->with(['branch:id,name', 'table:id,name,area_name', 'waiter:id,name'])
+            ->when(true, fn ($query) => BranchAccess::apply($query, $request->user()))
+            ->when($branchId, fn ($query) => $query->where('branch_id', $branchId))
+            ->whereBetween('sent_at', [$from, $to])
+            ->latest('sent_at')
+            ->limit(5000)
+            ->get(['id', 'branch_id', 'restaurant_table_id', 'waiter_user_id', 'order_number', 'channel', 'preparation_area', 'status', 'subtotal', 'sent_at'])
+            ->map(fn (KitchenOrder $order) => [
+                'date' => $order->sent_at?->format('d/m/Y H:i'),
+                'branch' => $order->branch?->name,
+                'order' => $order->order_number,
+                'table' => $order->table?->name ?? $order->channel ?? '-',
+                'area' => $order->preparation_area ?? '-',
+                'waiter' => $order->waiter?->name ?? '-',
+                'status' => $this->businessStatusLabel($order->status),
+                'total' => (float) $order->subtotal,
+            ])
+            ->all();
+    }
+
+    private function serviceOrderRows(Request $request, Carbon $from, Carbon $to, ?int $branchId): array
+    {
+        return ServiceOrder::query()
+            ->with(['branch:id,name', 'worker:id,name'])
+            ->when(true, fn ($query) => BranchAccess::apply($query, $request->user()))
+            ->when($branchId, fn ($query) => $query->where('branch_id', $branchId))
+            ->where(function ($query) use ($from, $to) {
+                $query->whereBetween('scheduled_at', [$from, $to])
+                    ->orWhereBetween('created_at', [$from, $to]);
+            })
+            ->latest('created_at')
+            ->limit(5000)
+            ->get(['id', 'branch_id', 'worker_id', 'order_number', 'customer_name', 'title', 'service_type', 'status', 'scheduled_at', 'labor_amount', 'materials_amount', 'total_amount'])
+            ->map(fn (ServiceOrder $order) => [
+                'date' => $order->scheduled_at?->format('d/m/Y H:i') ?? $order->created_at?->format('d/m/Y H:i'),
+                'branch' => $order->branch?->name,
+                'order' => $order->order_number,
+                'service' => $order->title,
+                'customer' => $order->customer_name ?? '-',
+                'worker' => $order->worker?->name ?? '-',
+                'status' => $this->businessStatusLabel($order->status),
+                'labor' => (float) $order->labor_amount,
+                'materials' => (float) $order->materials_amount,
+                'total' => (float) $order->total_amount,
+            ])
+            ->all();
+    }
+
+    private function reservationRows(Request $request, Carbon $from, Carbon $to, ?int $branchId): array
+    {
+        return BusinessReservation::query()
+            ->with(['branch:id,name', 'resource:id,name,type'])
+            ->when(true, fn ($query) => BranchAccess::apply($query, $request->user()))
+            ->when($branchId, fn ($query) => $query->where('branch_id', $branchId))
+            ->whereBetween('start_at', [$from, $to])
+            ->oldest('start_at')
+            ->limit(5000)
+            ->get(['id', 'branch_id', 'reservable_resource_id', 'reservation_number', 'type', 'customer_name', 'title', 'status', 'start_at', 'end_at', 'advance_amount', 'deposit_amount', 'penalty_amount', 'total_amount'])
+            ->map(fn (BusinessReservation $reservation) => [
+                'start' => $reservation->start_at?->format('d/m/Y H:i'),
+                'end' => $reservation->end_at?->format('d/m/Y H:i'),
+                'branch' => $reservation->branch?->name,
+                'number' => $reservation->reservation_number,
+                'type' => $reservation->type === BusinessReservation::TYPE_RENTAL ? 'Alquiler' : 'Reserva',
+                'resource' => $reservation->resource?->name ?? '-',
+                'customer' => $reservation->customer_name ?? $reservation->title,
+                'status' => $this->businessStatusLabel($reservation->status),
+                'advance' => (float) $reservation->advance_amount,
+                'deposit' => (float) $reservation->deposit_amount,
+                'penalty' => (float) $reservation->penalty_amount,
+                'total' => (float) $reservation->total_amount,
+            ])
+            ->all();
+    }
+
+    private function productionRows(Request $request, Carbon $from, Carbon $to, ?int $branchId): array
+    {
+        return ProductionOrder::query()
+            ->with(['branch:id,name', 'outputProduct:id,name,sku'])
+            ->when(true, fn ($query) => BranchAccess::apply($query, $request->user()))
+            ->when($branchId, fn ($query) => $query->where('branch_id', $branchId))
+            ->whereBetween('produced_at', [$from, $to])
+            ->latest('produced_at')
+            ->limit(5000)
+            ->get(['id', 'branch_id', 'output_product_id', 'order_number', 'produced_at', 'actual_output_quantity', 'waste_meters', 'input_cost', 'total_cost', 'unit_cost', 'status'])
+            ->map(fn (ProductionOrder $order) => [
+                'date' => $order->produced_at?->format('d/m/Y H:i'),
+                'branch' => $order->branch?->name,
+                'order' => $order->order_number,
+                'product' => $order->outputProduct?->name ?? '-',
+                'status' => $this->businessStatusLabel($order->status),
+                'quantity' => (float) $order->actual_output_quantity,
+                'waste' => (float) $order->waste_meters,
+                'input_cost' => (float) $order->input_cost,
+                'total_cost' => (float) $order->total_cost,
+                'unit_cost' => (float) $order->unit_cost,
+            ])
+            ->all();
+    }
+
     private function billingInvoiceRows(Request $request, Carbon $from, Carbon $to, ?int $branchId): array
     {
         return SiatInvoice::query()
@@ -1322,6 +1512,25 @@ class ExportDatasetService
             'contingency' => 'Contingencia',
             'temporary' => 'Recibo temporal',
             'voided' => 'Anulada',
+        ][$status] ?? ($status ?: '-');
+    }
+
+    private function businessStatusLabel(?string $status): string
+    {
+        return [
+            'pending' => 'Pendiente',
+            'in_progress' => 'En proceso',
+            'finished' => 'Terminado',
+            'delivered' => 'Entregado',
+            'cancelled' => 'Cancelado',
+            'sent' => 'Enviado',
+            'preparing' => 'En preparacion',
+            'ready' => 'Listo',
+            'closed' => 'Cerrado',
+            'confirmed' => 'Confirmado',
+            'completed' => 'Finalizado',
+            'no_show' => 'No asistio',
+            'rescheduled' => 'Reprogramado',
         ][$status] ?? ($status ?: '-');
     }
 

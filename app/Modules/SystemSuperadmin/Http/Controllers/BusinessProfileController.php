@@ -8,13 +8,18 @@ use App\Modules\SystemSuperadmin\Models\BusinessProfileDraft;
 use App\Modules\SystemSuperadmin\Models\BusinessProfilePreset;
 use App\Modules\SystemSuperadmin\Models\BusinessProfileSandboxSession;
 use App\Modules\SystemSuperadmin\Models\BusinessProfileVersion;
+use App\Modules\SystemSuperadmin\Services\BusinessCapabilityCatalog;
+use App\Modules\SystemSuperadmin\Services\BusinessProfileCompatibilityValidator;
 use App\Modules\SystemSuperadmin\Services\BusinessProfileConfiguration;
+use App\Modules\SystemSuperadmin\Services\BusinessProfileDiffService;
+use App\Modules\SystemSuperadmin\Services\BusinessProfileMigrationMapper;
 use App\Modules\SystemSuperadmin\Services\BusinessProfileSandboxService;
 use App\Support\SystemCacheInvalidator;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -48,13 +53,23 @@ class BusinessProfileController extends Controller
 
         $sandboxSession = $sandbox->sessionFor($request->user()->id);
 
+        $diffService = app(BusinessProfileDiffService::class);
+
         return Inertia::render('SystemSuperadmin/BusinessProfiles/Index', [
             'activeProfile' => $activeProfile,
             'drafts' => $drafts,
             'versions' => $versions,
+            'versionComparisons' => $versions
+                ->mapWithKeys(fn (BusinessProfileVersion $version) => [
+                    $version->id => $activeProfile
+                        ? $diffService->compare($version->configuration ?? [], $activeProfile->configuration ?? [])
+                        : [],
+                ]),
             'presets' => $presets,
             'options' => BusinessProfileConfiguration::options(),
             'defaultConfiguration' => BusinessProfileConfiguration::defaults(),
+            'capabilitiesCatalog' => BusinessCapabilityCatalog::all(),
+            'capabilitiesMatrix' => BusinessCapabilityCatalog::matrix(),
             'sandboxSession' => [
                 'id' => $sandboxSession->id,
                 'name' => $sandboxSession->name,
@@ -178,6 +193,8 @@ class BusinessProfileController extends Controller
 
     public function apply(Request $request, BusinessProfileDraft $draft): RedirectResponse
     {
+        $this->validateDraftBeforeApply($draft);
+
         DB::transaction(function () use ($request, $draft) {
             $activeProfile = BusinessProfile::query()
                 ->where('status', 'active')
@@ -297,8 +314,18 @@ class BusinessProfileController extends Controller
             'name' => ['required', 'string', 'max:120'],
             'business_type' => ['required', 'string', Rule::in(array_keys($options['businessTypes']))],
             'configuration' => ['required', 'array'],
+            'configuration.schema_version' => ['nullable', 'integer', 'min:2', 'max:2'],
+            'configuration.identity' => ['nullable', 'array'],
+            'configuration.identity.business_type' => ['nullable', 'string', Rule::in(array_keys($options['businessTypes']))],
+            'configuration.identity.commercial_name' => ['nullable', 'string', 'max:160'],
+            'configuration.identity.specific_industry' => ['nullable', 'string', 'max:160'],
+            'configuration.identity.*' => ['nullable'],
             'configuration.modules' => ['required', 'array'],
             'configuration.modules.*' => ['boolean'],
+            'configuration.submodules' => ['nullable', 'array'],
+            'configuration.submodules.*' => ['boolean'],
+            'configuration.capabilities' => ['nullable', 'array'],
+            'configuration.capabilities.*' => ['boolean'],
             'configuration.sales' => ['required', 'array'],
             'configuration.sales.workflow' => ['required', 'string', Rule::in(array_keys($options['salesWorkflows']))],
             'configuration.sales.quotation_mode' => ['required', 'string', Rule::in(array_keys($options['quotationModes']))],
@@ -342,6 +369,11 @@ class BusinessProfileController extends Controller
             'configuration.purchases.allow_create_product' => ['boolean'],
             'configuration.purchases.supplier_mode' => ['required', 'string', Rule::in(array_keys($options['entityModes']))],
             'configuration.purchases.register_expense_when_paid' => ['boolean'],
+            'configuration.contacts' => ['nullable', 'array'],
+            'configuration.contacts.customer_mode' => ['nullable', 'string', Rule::in(array_keys($options['entityModes']))],
+            'configuration.contacts.supplier_mode' => ['nullable', 'string', Rule::in(array_keys($options['entityModes']))],
+            'configuration.contacts.delivery_address_mode' => ['nullable', 'string', Rule::in(array_keys($options['entityModes']))],
+            'configuration.contacts.*' => ['nullable'],
             'configuration.deliveries' => ['required', 'array'],
             'configuration.deliveries.mode' => ['required', 'string', Rule::in(array_keys($options['deliveryModes']))],
             'configuration.deliveries.driver_required' => ['boolean'],
@@ -349,6 +381,9 @@ class BusinessProfileController extends Controller
             'configuration.banks' => ['required', 'array'],
             'configuration.banks.reconciliation_mode' => ['required', 'string', Rule::in(array_keys($options['bankReconciliationModes']))],
             'configuration.banks.require_branch_account' => ['boolean'],
+            'configuration.finance' => ['nullable', 'array'],
+            'configuration.finance.accounting_mode' => ['nullable', 'string', Rule::in(array_keys($options['accountingModes']))],
+            'configuration.finance.*' => ['nullable'],
             'configuration.billing' => ['required', 'array'],
             'configuration.billing.enabled' => ['boolean'],
             'configuration.billing.mode' => ['required', 'string', Rule::in(['computerized_online', 'electronic_online'])],
@@ -371,11 +406,45 @@ class BusinessProfileController extends Controller
             'configuration.pos.customer_prompt' => ['required', 'string', Rule::in(['hidden', 'optional', 'required'])],
             'configuration.products' => ['required', 'array'],
             'configuration.products.catalog_mode' => ['required', 'string', Rule::in(array_keys($options['catalogModes']))],
+            'configuration.products.item_types' => ['nullable', 'array'],
+            'configuration.products.item_types.*' => ['string', Rule::in(array_keys($options['itemTypes']))],
+            'configuration.products.images_enabled' => ['boolean'],
+            'configuration.products.gallery_enabled' => ['boolean'],
+            'configuration.products.variants_enabled' => ['boolean'],
+            'configuration.products.custom_fields_enabled' => ['boolean'],
             'configuration.products.barcode_required' => ['boolean'],
             'configuration.products.barcode_labels' => ['boolean'],
             'configuration.products.unit_equivalences' => ['boolean'],
             'configuration.products.allow_service_items' => ['boolean'],
             'configuration.products.creation_context' => ['required', 'string', Rule::in(array_keys($options['productCreationContexts']))],
+            'configuration.reservations' => ['nullable', 'array'],
+            'configuration.reservations.*' => ['nullable'],
+            'configuration.restaurant' => ['nullable', 'array'],
+            'configuration.restaurant.mode' => ['nullable', 'string', Rule::in(array_keys($options['restaurantModes']))],
+            'configuration.restaurant.*' => ['nullable'],
+            'configuration.services' => ['nullable', 'array'],
+            'configuration.services.mode' => ['nullable', 'string', Rule::in(array_keys($options['serviceModes']))],
+            'configuration.services.*' => ['nullable'],
+            'configuration.rentals' => ['nullable', 'array'],
+            'configuration.rentals.*' => ['nullable'],
+            'configuration.production_flow' => ['nullable', 'array'],
+            'configuration.production_flow.*' => ['nullable'],
+            'configuration.documents' => ['nullable', 'array'],
+            'configuration.documents.active' => ['nullable', 'array'],
+            'configuration.documents.active.*' => ['string', Rule::in(array_keys($options['documentTypes']))],
+            'configuration.documents.numbering' => ['nullable', 'array'],
+            'configuration.documents.numbering.*' => ['boolean'],
+            'configuration.policies' => ['nullable', 'array'],
+            'configuration.policies.data' => ['nullable', 'array'],
+            'configuration.policies.data.sensitive_fields' => ['nullable', 'array'],
+            'configuration.policies.data.sensitive_fields.*' => ['string', Rule::in(array_keys($options['sensitiveDataFields']))],
+            'configuration.policies.data.*' => ['nullable'],
+            'configuration.policies.voids_returns' => ['nullable', 'array'],
+            'configuration.policies.voids_returns.*' => ['nullable'],
+            'configuration.policies.degraded_mode' => ['nullable', 'array'],
+            'configuration.policies.degraded_mode.*' => ['boolean'],
+            'configuration.compatibility' => ['nullable', 'array'],
+            'configuration.activation_checklist' => ['nullable', 'array'],
             'configuration.human_resources' => ['nullable', 'array'],
             'configuration.human_resources.workers_mode' => ['nullable', 'string', Rule::in(['disabled', 'optional', 'required'])],
             'configuration.human_resources.payroll_enabled' => ['boolean'],
@@ -391,7 +460,12 @@ class BusinessProfileController extends Controller
             'configuration.ux.*' => ['boolean'],
         ]);
 
-        $data['configuration'] = BusinessProfileConfiguration::normalized($data['configuration']);
+        $data['configuration'] = app(BusinessProfileMigrationMapper::class)
+            ->toVersionTwo($data['business_type'], $data['configuration']);
+        $data['configuration']['identity']['business_type'] = $data['business_type'];
+        $data['configuration']['contacts']['customer_mode'] = $data['configuration']['sales']['customer_mode'] ?? 'required';
+        $data['configuration']['contacts']['supplier_mode'] = $data['configuration']['purchases']['supplier_mode'] ?? 'optional';
+        $data['configuration']['contacts']['tax_data_required_for_billing'] = (bool) ($data['configuration']['billing']['require_customer_tax_data'] ?? true);
         $data['configuration']['sales']['customer_required'] = ($data['configuration']['sales']['customer_mode'] ?? 'required') === 'required';
         $data['configuration']['sales']['allow_negative_stock'] = ($data['configuration']['sales']['negative_stock_policy'] ?? 'never') !== 'never';
         $data['configuration']['modules']['customers'] = ($data['configuration']['sales']['customer_mode'] ?? 'required') !== 'hidden'
@@ -426,11 +500,55 @@ class BusinessProfileController extends Controller
             $data['configuration']['billing']['issue_timing'] = 'automatic_direct';
         }
 
+        $data['configuration']['capabilities']['uses_inventory'] = (bool) ($data['configuration']['modules']['inventory'] ?? false);
+        $data['configuration']['capabilities']['uses_pos'] = (bool) ($data['configuration']['modules']['pos'] ?? false);
+        $data['configuration']['capabilities']['uses_billing'] = (bool) ($data['configuration']['modules']['billing'] ?? false);
+        $data['configuration']['capabilities']['uses_cash'] = (bool) ($data['configuration']['modules']['cash'] ?? false);
+        $data['configuration']['capabilities']['uses_banks'] = (bool) ($data['configuration']['modules']['banks'] ?? false);
+        $data['configuration']['capabilities']['uses_delivery'] = (bool) ($data['configuration']['modules']['deliveries'] ?? false);
+        $data['configuration']['capabilities']['uses_services'] = (bool) ($data['configuration']['modules']['services'] ?? false);
+        $data['configuration']['capabilities']['uses_service_orders'] = (bool) ($data['configuration']['modules']['service_orders'] ?? false);
+        $data['configuration']['capabilities']['uses_tables'] = (bool) ($data['configuration']['modules']['restaurant_tables'] ?? false);
+        $data['configuration']['capabilities']['uses_kitchen_orders'] = (bool) ($data['configuration']['modules']['kitchen_orders'] ?? false);
+        $data['configuration']['capabilities']['uses_recipes'] = (bool) ($data['configuration']['modules']['recipes'] ?? false);
+        $data['configuration']['capabilities']['uses_rentals'] = (bool) ($data['configuration']['modules']['rentals'] ?? false);
+        $data['configuration']['capabilities']['uses_production'] = (bool) ($data['configuration']['modules']['production'] ?? false);
+        $data['configuration']['capabilities']['requires_cash_session'] = (bool) ($data['configuration']['cash']['required_to_sell'] ?? false);
+        $data['configuration']['capabilities']['requires_customer'] = ($data['configuration']['sales']['customer_mode'] ?? 'required') === 'required';
+        $data['configuration']['capabilities']['allows_quote_to_sale'] = (bool) ($data['configuration']['modules']['quotes'] ?? false);
+        $data['configuration']['capabilities']['allows_direct_sale'] = in_array($data['configuration']['sales']['workflow'] ?? '', ['direct_sale', 'pos', 'optional_quotation', 'restaurant_counter'], true);
+
+        $compatibility = app(BusinessProfileCompatibilityValidator::class)->validate($data['business_type'], $data['configuration']);
+
+        if (! $compatibility['valid']) {
+            throw ValidationException::withMessages([
+                'configuration' => $compatibility['errors'],
+            ]);
+        }
+
+        $data['configuration']['compatibility']['last_warnings'] = $compatibility['warnings'];
+        $data['configuration']['compatibility']['last_checked_at'] = now()->toIso8601String();
+
         return $data;
     }
 
     private function nextVersionNumber(): int
     {
         return ((int) BusinessProfileVersion::query()->max('version_number')) + 1;
+    }
+
+    private function validateDraftBeforeApply(BusinessProfileDraft $draft): void
+    {
+        $configuration = BusinessProfileConfiguration::normalized($draft->configuration ?? []);
+        $compatibility = app(BusinessProfileCompatibilityValidator::class)->validate($draft->business_type, $configuration);
+
+        if (! $compatibility['valid']) {
+            throw ValidationException::withMessages([
+                'configuration' => array_merge(
+                    ['No se puede aplicar este borrador porque tiene reglas incompatibles. Corrigelo y vuelve a guardarlo.'],
+                    $compatibility['errors'],
+                ),
+            ]);
+        }
     }
 }

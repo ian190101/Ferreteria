@@ -19,6 +19,7 @@ const iconPaths = {
     pagos: 'M4 6h16v12H4V6Zm2 3v6h12V9H6Zm3 1h6v4H9v-4Z',
     reportes: 'M5 3h14v18H5V3Zm3 4h8V5H8v2Zm0 4h8V9H8v2Zm0 4h5v-2H8v2Z',
     exportaciones: 'M5 20h14v-2H5v2Zm7-17-5 5h3v6h4V8h3l-5-5Z',
+    impresion: 'M6 9V4h12v5h-2V6H8v3H6Zm0 9H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2v-2h2v-5H4v5h2v2Zm2-4h8v6H8v-6Zm2 2v2h4v-2h-4Z',
     configuracion: 'M12 8a4 4 0 1 1 0 8 4 4 0 0 1 0-8Zm8.5 4a7.7 7.7 0 0 0-.1-1l2-1.5-2-3.5-2.4 1a8.2 8.2 0 0 0-1.8-1L15.8 3h-4l-.4 3a8.2 8.2 0 0 0-1.8 1l-2.4-1-2 3.5 2 1.5a7.7 7.7 0 0 0 0 2l-2 1.5 2 3.5 2.4-1a8.2 8.2 0 0 0 1.8 1l.4 3h4l.4-3a8.2 8.2 0 0 0 1.8-1l2.4 1 2-3.5-2-1.5c.1-.3.1-.7.1-1Z',
     informacion: 'M11 10h2v7h-2v-7Zm0-3h2v2h-2V7Zm1-5a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm0 18a8 8 0 1 1 0-16 8 8 0 0 1 0 16Z',
 };
@@ -41,8 +42,8 @@ export default function AuthenticatedLayout({ header, children }) {
 
     const isSystemSuperadmin = auth.roles?.includes('sistemasuperadmin');
     const navigation = useMemo(
-        () => buildNavigation(permissions, isSystemSuperadmin, businessProfile?.modules ?? {}, Boolean(sandboxMode?.active)),
-        [permissions, isSystemSuperadmin, businessProfile?.modules, sandboxMode?.active],
+        () => buildNavigation(permissions, isSystemSuperadmin, businessProfile?.modules ?? {}, businessProfile?.capabilities ?? {}, Boolean(sandboxMode?.active)),
+        [permissions, isSystemSuperadmin, businessProfile?.modules, businessProfile?.capabilities, sandboxMode?.active],
     );
     const activeItem = navigation
         .flatMap((section) => section.items)
@@ -291,10 +292,11 @@ function Icon({ path }) {
     );
 }
 
-function buildNavigation(permissions, isSystemSuperadmin = false, modules = {}, sandboxActive = false) {
+function buildNavigation(permissions, isSystemSuperadmin = false, modules = {}, capabilities = {}, sandboxActive = false) {
     const can = (permission) => permissions.includes(permission);
     const effectiveSystemSuperadmin = isSystemSuperadmin && !sandboxActive;
     const moduleEnabled = (module) => effectiveSystemSuperadmin || modules[module] === true;
+    const capabilityEnabled = (capability) => effectiveSystemSuperadmin || capabilities[capability] === true;
     const canShowSystemMaster = effectiveSystemSuperadmin;
     const item = (condition, section, label, href, active, icon) => condition ? { section, label, href, active, icon } : null;
 
@@ -303,6 +305,7 @@ function buildNavigation(permissions, isSystemSuperadmin = false, modules = {}, 
             label: 'Sistema maestro',
             items: [
                 item(canShowSystemMaster, 'Sistema maestro', 'Configuracion de negocio', route('system-superadmin.business-profiles.index'), route().current('system-superadmin.business-profiles.*'), 'configuracion'),
+                item(canShowSystemMaster, 'Sistema maestro', 'Configuracion transversal', route('system-superadmin.transversal-config.index'), route().current('system-superadmin.transversal-config.*'), 'configuracion'),
             ].filter(Boolean),
         },
         {
@@ -317,6 +320,9 @@ function buildNavigation(permissions, isSystemSuperadmin = false, modules = {}, 
             label: 'Comercial',
             items: [
                 item(moduleEnabled('pos') && can('sales.manage'), 'Comercial', 'POS rapido', route('pos.index'), route().current('pos.*'), 'ventas'),
+                item((moduleEnabled('restaurant_tables') || moduleEnabled('kitchen_orders') || moduleEnabled('recipes')) && can('restaurant.view'), 'Comercial', 'Restaurante', route('restaurant.index'), route().current('restaurant.*'), 'ventas'),
+                item((moduleEnabled('services') || moduleEnabled('service_orders')) && can('service-orders.view'), 'Comercial', 'Ordenes de servicio', route('service-orders.index'), route().current('service-orders.*'), 'ventas'),
+                item((capabilityEnabled('uses_reservations') || capabilityEnabled('uses_reservable_resources') || capabilityEnabled('uses_rentals')) && can('reservations.view'), 'Comercial', 'Reservas y alquileres', route('reservations.index'), route().current('reservations.*'), 'ventas'),
                 item(moduleEnabled('sales_notes') && can('sales.view'), 'Comercial', 'Ventas', route('sales.index'), route().current('sales.index') || route().current('sales.create') || route().current('sales.show') || route().current('sales.settings.*') || route().current('sales.templates.*'), 'ventas'),
                 item(moduleEnabled('deliveries') && can('sales.deliveries.view'), 'Comercial', 'Despachos', route('sales.deliveries.index'), route().current('sales.deliveries.*'), 'ventas'),
                 item(moduleEnabled('returns') && can('sales.returns.view'), 'Comercial', 'Devoluciones', route('sales.returns.index'), route().current('sales.returns.*'), 'ventas'),
@@ -354,6 +360,7 @@ function buildNavigation(permissions, isSystemSuperadmin = false, modules = {}, 
             label: 'Administracion',
             items: [
                 item(moduleEnabled('production') && can('production.view'), 'Administracion', 'Produccion', route('production.index'), route().current('production.*'), 'produccion'),
+                item(capabilityEnabled('uses_printer_profiles') && can('printing.view'), 'Administracion', 'Impresion', route('printing.index'), route().current('printing.*'), 'impresion'),
                 item(moduleEnabled('workers') && can('workers.view'), 'Administracion', 'Trabajadores', route('human-resources.workers.index'), route().current('human-resources.workers.*'), 'trabajadores'),
                 item(can('users.view'), 'Administracion', 'Usuarios', route('users.index'), route().current('users.*'), 'configuracion'),
                 item(can('branches.view'), 'Administracion', 'Sucursales', route('branches.index'), route().current('branches.*'), 'configuracion'),

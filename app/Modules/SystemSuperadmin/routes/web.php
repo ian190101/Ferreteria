@@ -1,6 +1,7 @@
 <?php
 
 use App\Modules\SystemSuperadmin\Http\Controllers\BusinessProfileController;
+use App\Modules\SystemSuperadmin\Http\Controllers\BusinessTransversalController;
 use Illuminate\Support\Facades\Route;
 
 Route::middleware(['auth', 'verified', 'system_superadmin'])
@@ -21,4 +22,14 @@ Route::middleware(['auth', 'verified', 'system_superadmin'])
         Route::post('/sandbox-full/enter', [BusinessProfileController::class, 'enterFullSandbox'])->name('sandbox-full.enter');
         Route::post('/sandbox-full/leave', [BusinessProfileController::class, 'leaveFullSandbox'])->name('sandbox-full.leave');
         Route::delete('/sandbox-full/discard', [BusinessProfileController::class, 'discardFullSandbox'])->name('sandbox-full.discard');
+    });
+
+Route::middleware(['auth', 'verified', 'system_superadmin'])
+    ->prefix('system-superadmin/transversal-config')
+    ->name('system-superadmin.transversal-config.')
+    ->group(function () {
+        Route::get('/', [BusinessTransversalController::class, 'index'])->name('index');
+        Route::post('/{section}', [BusinessTransversalController::class, 'store'])->name('store');
+        Route::put('/{section}/{record}', [BusinessTransversalController::class, 'update'])->name('update');
+        Route::delete('/{section}/{record}', [BusinessTransversalController::class, 'destroy'])->name('destroy');
     });

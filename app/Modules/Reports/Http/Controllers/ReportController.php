@@ -7,9 +7,14 @@ use App\Modules\Expenses\Models\Expense;
 use App\Modules\Inventory\Models\ProductBranchStock;
 use App\Modules\Inventory\Models\ProductCoil;
 use App\Modules\Payments\Models\PaymentPromise;
+use App\Modules\Production\Models\ProductionOrder;
 use App\Modules\Purchases\Models\Purchase;
+use App\Modules\Reports\Services\ProfileReportFeatureService;
+use App\Modules\Reservations\Models\BusinessReservation;
+use App\Modules\Restaurant\Models\KitchenOrder;
+use App\Modules\Restaurant\Models\RestaurantTable;
 use App\Modules\Sales\Models\Sale;
-use App\Modules\SystemSuperadmin\Services\ActiveBusinessProfile;
+use App\Modules\ServiceOrders\Models\ServiceOrder;
 use App\Support\BranchAccess;
 use App\Support\SystemCacheInvalidator;
 use App\Support\UiCatalogCache;
@@ -40,16 +45,7 @@ class ReportController extends Controller
             $to->toDateString(),
         );
 
-        $profileFeatures = [
-            'sales' => ActiveBusinessProfile::enabled('quotes') || ActiveBusinessProfile::enabled('sales_notes') || ActiveBusinessProfile::enabled('pos'),
-            'quotes' => ActiveBusinessProfile::enabled('quotes'),
-            'purchases' => ActiveBusinessProfile::enabled('purchases'),
-            'expenses' => ActiveBusinessProfile::enabled('expenses'),
-            'inventory' => ActiveBusinessProfile::enabled('inventory'),
-            'inventory_lots' => ActiveBusinessProfile::enabled('inventory')
-                && (bool) (ActiveBusinessProfile::payload()['inventory']['lot_tracking_optional'] ?? false),
-            'payments' => ActiveBusinessProfile::enabled('sales_notes'),
-        ];
+        $profileFeatures = app(ProfileReportFeatureService::class)->features();
 
         $metrics = Cache::remember($cacheKey.':'.md5(json_encode($profileFeatures)), now()->addSeconds($this->cacheSeconds()), function () use ($from, $to, $branchId, $profileFeatures) {
             return [
@@ -64,6 +60,19 @@ class ReportController extends Controller
                 'low_stock_count' => $profileFeatures['inventory'] ? $this->lowStockQuery($branchId)->count() : 0,
                 'gross_profit' => $profileFeatures['sales'] ? $this->grossProfit($from, $to, $branchId) : 0.0,
                 'gross_margin_percent' => $profileFeatures['sales'] ? $this->grossMarginPercent($from, $to, $branchId) : 0.0,
+                'restaurant_tables_count' => $profileFeatures['restaurant'] ? $this->restaurantTableQuery($branchId)->count() : 0,
+                'kitchen_orders_count' => $profileFeatures['restaurant'] ? $this->kitchenOrderQuery($from, $to, $branchId)->count() : 0,
+                'kitchen_pending_count' => $profileFeatures['restaurant'] ? $this->kitchenOrderQuery($from, $to, $branchId)->whereIn('status', [KitchenOrder::STATUS_SENT, KitchenOrder::STATUS_PREPARING])->count() : 0,
+                'service_orders_count' => $profileFeatures['service_orders'] ? $this->serviceOrderQuery($from, $to, $branchId)->count() : 0,
+                'service_orders_open_count' => $profileFeatures['service_orders'] ? $this->serviceOrderQuery($from, $to, $branchId)->whereIn('status', [ServiceOrder::STATUS_PENDING, ServiceOrder::STATUS_IN_PROGRESS])->count() : 0,
+                'service_orders_total' => $profileFeatures['service_orders'] ? (float) $this->serviceOrderQuery($from, $to, $branchId)->sum('total_amount') : 0.0,
+                'reservations_count' => $profileFeatures['reservations'] ? $this->reservationQuery($from, $to, $branchId)->where('type', BusinessReservation::TYPE_RESERVATION)->count() : 0,
+                'rentals_count' => $profileFeatures['rentals'] ? $this->reservationQuery($from, $to, $branchId)->where('type', BusinessReservation::TYPE_RENTAL)->count() : 0,
+                'reservation_total' => $profileFeatures['reservations'] ? (float) $this->reservationQuery($from, $to, $branchId)->where('type', BusinessReservation::TYPE_RESERVATION)->sum('total_amount') : 0.0,
+                'rental_deposit_total' => $profileFeatures['rentals'] ? (float) $this->reservationQuery($from, $to, $branchId)->where('type', BusinessReservation::TYPE_RENTAL)->sum('deposit_amount') : 0.0,
+                'production_orders_count' => $profileFeatures['production'] ? $this->productionOrderQuery($from, $to, $branchId)->count() : 0,
+                'production_total_cost' => $profileFeatures['production'] ? (float) $this->productionOrderQuery($from, $to, $branchId)->sum('total_cost') : 0.0,
+                'production_waste_total' => $profileFeatures['production'] ? (float) $this->productionOrderQuery($from, $to, $branchId)->sum('waste_meters') : 0.0,
             ];
         });
 
@@ -83,6 +92,10 @@ class ReportController extends Controller
             'latestMovements' => Inertia::defer(fn () => $profileFeatures['inventory_lots'] ? Cache::remember($this->sectionCacheKey('latest-movements', $user->id, $branchId, $from, $to), now()->addSeconds($this->cacheSeconds()), fn () => $this->latestMovements($request, $branchId)) : collect(), 'reports-lists'),
             'profitByProduct' => Inertia::defer(fn () => $profileFeatures['sales'] ? Cache::remember($this->sectionCacheKey('profit-products', $user->id, $branchId, $from, $to), now()->addSeconds($this->cacheSeconds()), fn () => $this->profitByProduct($from, $to, $branchId)) : collect(), 'reports-lists'),
             'profitBySeller' => Inertia::defer(fn () => $profileFeatures['sales'] ? Cache::remember($this->sectionCacheKey('profit-sellers', $user->id, $branchId, $from, $to), now()->addSeconds($this->cacheSeconds()), fn () => $this->profitBySeller($from, $to, $branchId)) : collect(), 'reports-lists'),
+            'restaurantSummary' => Inertia::defer(fn () => $profileFeatures['restaurant'] ? Cache::remember($this->sectionCacheKey('restaurant-summary', $user->id, $branchId, $from, $to), now()->addSeconds($this->cacheSeconds()), fn () => $this->restaurantSummary($from, $to, $branchId)) : collect(), 'reports-lists'),
+            'serviceOrderSummary' => Inertia::defer(fn () => $profileFeatures['service_orders'] ? Cache::remember($this->sectionCacheKey('service-orders-summary', $user->id, $branchId, $from, $to), now()->addSeconds($this->cacheSeconds()), fn () => $this->serviceOrderSummary($from, $to, $branchId)) : collect(), 'reports-lists'),
+            'reservationSummary' => Inertia::defer(fn () => ($profileFeatures['reservations'] || $profileFeatures['rentals']) ? Cache::remember($this->sectionCacheKey('reservation-summary', $user->id, $branchId, $from, $to), now()->addSeconds($this->cacheSeconds()), fn () => $this->reservationSummary($from, $to, $branchId)) : collect(), 'reports-lists'),
+            'productionSummary' => Inertia::defer(fn () => $profileFeatures['production'] ? Cache::remember($this->sectionCacheKey('production-summary', $user->id, $branchId, $from, $to), now()->addSeconds($this->cacheSeconds()), fn () => $this->productionSummary($from, $to, $branchId)) : collect(), 'reports-lists'),
         ]);
     }
 
@@ -248,6 +261,85 @@ class ReportController extends Controller
             ->when($branchId, fn ($query) => $query->where('branch_id', $branchId))
             ->where('status', Expense::STATUS_REGISTERED)
             ->whereBetween('spent_at', [$from, $to]);
+    }
+
+    private function restaurantTableQuery(?int $branchId)
+    {
+        return RestaurantTable::query()
+            ->when(true, fn ($query) => BranchAccess::apply($query, request()->user()))
+            ->when($branchId, fn ($query) => $query->where('branch_id', $branchId))
+            ->where('is_active', true);
+    }
+
+    private function kitchenOrderQuery(Carbon $from, Carbon $to, ?int $branchId)
+    {
+        return KitchenOrder::query()
+            ->when(true, fn ($query) => BranchAccess::apply($query, request()->user()))
+            ->when($branchId, fn ($query) => $query->where('branch_id', $branchId))
+            ->whereBetween('sent_at', [$from, $to]);
+    }
+
+    private function serviceOrderQuery(Carbon $from, Carbon $to, ?int $branchId)
+    {
+        return ServiceOrder::query()
+            ->when(true, fn ($query) => BranchAccess::apply($query, request()->user()))
+            ->when($branchId, fn ($query) => $query->where('branch_id', $branchId))
+            ->where(function ($query) use ($from, $to) {
+                $query->whereBetween('scheduled_at', [$from, $to])
+                    ->orWhereBetween('created_at', [$from, $to]);
+            });
+    }
+
+    private function reservationQuery(Carbon $from, Carbon $to, ?int $branchId)
+    {
+        return BusinessReservation::query()
+            ->when(true, fn ($query) => BranchAccess::apply($query, request()->user()))
+            ->when($branchId, fn ($query) => $query->where('branch_id', $branchId))
+            ->whereBetween('start_at', [$from, $to]);
+    }
+
+    private function productionOrderQuery(Carbon $from, Carbon $to, ?int $branchId)
+    {
+        return ProductionOrder::query()
+            ->when(true, fn ($query) => BranchAccess::apply($query, request()->user()))
+            ->when($branchId, fn ($query) => $query->where('branch_id', $branchId))
+            ->whereBetween('produced_at', [$from, $to]);
+    }
+
+    private function restaurantSummary(Carbon $from, Carbon $to, ?int $branchId)
+    {
+        return $this->kitchenOrderQuery($from, $to, $branchId)
+            ->with(['branch:id,name', 'table:id,name,area_name', 'waiter:id,name'])
+            ->latest('sent_at')
+            ->limit(8)
+            ->get(['id', 'branch_id', 'restaurant_table_id', 'waiter_user_id', 'order_number', 'channel', 'preparation_area', 'status', 'subtotal', 'sent_at']);
+    }
+
+    private function serviceOrderSummary(Carbon $from, Carbon $to, ?int $branchId)
+    {
+        return $this->serviceOrderQuery($from, $to, $branchId)
+            ->with(['branch:id,name', 'worker:id,name'])
+            ->latest('created_at')
+            ->limit(8)
+            ->get(['id', 'branch_id', 'worker_id', 'order_number', 'title', 'service_type', 'status', 'scheduled_at', 'total_amount']);
+    }
+
+    private function reservationSummary(Carbon $from, Carbon $to, ?int $branchId)
+    {
+        return $this->reservationQuery($from, $to, $branchId)
+            ->with(['branch:id,name', 'resource:id,name,type', 'worker:id,name'])
+            ->oldest('start_at')
+            ->limit(8)
+            ->get(['id', 'branch_id', 'reservable_resource_id', 'worker_id', 'reservation_number', 'type', 'title', 'customer_name', 'status', 'start_at', 'end_at', 'total_amount', 'deposit_amount']);
+    }
+
+    private function productionSummary(Carbon $from, Carbon $to, ?int $branchId)
+    {
+        return $this->productionOrderQuery($from, $to, $branchId)
+            ->with(['branch:id,name', 'outputProduct:id,name,sku'])
+            ->latest('produced_at')
+            ->limit(8)
+            ->get(['id', 'branch_id', 'output_product_id', 'order_number', 'produced_at', 'actual_output_quantity', 'waste_meters', 'total_cost', 'status']);
     }
 
     private function lowStockQuery(?int $branchId)

@@ -28,13 +28,14 @@ class EnsureSystemSuperadmin
             return false;
         }
 
-        if (! $request->is('system-superadmin/business-profiles*')) {
+        if ($request->is(
+            'system-superadmin/business-profiles/sandbox-full/leave',
+            'system-superadmin/business-profiles/sandbox-full/discard'
+        )) {
             return false;
         }
 
-        return ! $request->is(
-            'system-superadmin/business-profiles/sandbox-full/leave',
-            'system-superadmin/business-profiles/sandbox-full/discard'
-        );
+        return $request->is('system-superadmin/business-profiles*')
+            || $request->is('system-superadmin/transversal-config*');
     }
 }

@@ -25,16 +25,29 @@ class ActiveBusinessProfile
                 'businessType' => $profile?->business_type ?? 'hardware_store',
                 'status' => $profile?->status ?? 'active',
                 'configuration' => $configuration,
+                'schemaVersion' => $configuration['schema_version'] ?? 2,
+                'identity' => $configuration['identity'] ?? [],
                 'modules' => $configuration['modules'] ?? [],
+                'submodules' => $configuration['submodules'] ?? [],
+                'capabilities' => $configuration['capabilities'] ?? [],
                 'sales' => $configuration['sales'] ?? [],
                 'purchases' => $configuration['purchases'] ?? [],
+                'contacts' => $configuration['contacts'] ?? [],
                 'deliveries' => $configuration['deliveries'] ?? [],
                 'banks' => $configuration['banks'] ?? [],
+                'finance' => $configuration['finance'] ?? [],
                 'billing' => $configuration['billing'] ?? [],
                 'cash' => $configuration['cash'] ?? [],
                 'inventory' => $configuration['inventory'] ?? [],
                 'pos' => $configuration['pos'] ?? [],
                 'products' => $configuration['products'] ?? [],
+                'reservations' => $configuration['reservations'] ?? [],
+                'restaurant' => $configuration['restaurant'] ?? [],
+                'services' => $configuration['services'] ?? [],
+                'rentals' => $configuration['rentals'] ?? [],
+                'production_flow' => $configuration['production_flow'] ?? [],
+                'documents' => $configuration['documents'] ?? [],
+                'policies' => $configuration['policies'] ?? [],
                 'human_resources' => $configuration['human_resources'] ?? [],
                 'ux' => $configuration['ux'] ?? [],
             ];
@@ -51,6 +64,7 @@ class ActiveBusinessProfile
             'businessType' => $payload['businessType'] ?? 'hardware_store',
             'status' => $payload['status'] ?? 'active',
             'modules' => $payload['modules'] ?? [],
+            'capabilities' => $payload['capabilities'] ?? [],
         ];
     }
 
@@ -59,6 +73,13 @@ class ActiveBusinessProfile
         $modules = self::payload()['modules'] ?? [];
 
         return (bool) ($modules[$feature] ?? false);
+    }
+
+    public static function capable(string $capability): bool
+    {
+        $capabilities = self::payload()['capabilities'] ?? [];
+
+        return (bool) ($capabilities[$capability] ?? false);
     }
 
     public static function salesWorkflow(): string

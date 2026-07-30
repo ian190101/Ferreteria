@@ -7,8 +7,14 @@ use App\Modules\Inventory\Models\ProductBranchStock;
 use App\Modules\Inventory\Models\ProductCoil;
 use App\Modules\Payments\Models\PaymentPromise;
 use App\Modules\Purchases\Models\Purchase;
+use App\Modules\Restaurant\Models\KitchenOrder;
+use App\Modules\Restaurant\Models\RestaurantTable;
 use App\Modules\Sales\Models\Currency;
 use App\Modules\Sales\Models\Sale;
+use App\Modules\ServiceOrders\Models\ServiceOrder;
+use App\Modules\SystemSuperadmin\Models\BusinessProfile;
+use App\Modules\SystemSuperadmin\Services\BusinessProfileConfiguration;
+use App\Support\SystemCacheInvalidator;
 use Inertia\Testing\AssertableInertia as Assert;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
@@ -37,6 +43,19 @@ function reportsUser(array $permissions): User
     $user->assignRole($role);
 
     return $user;
+}
+
+function activeReportsProfile(array $configuration, string $businessType = 'mixed'): void
+{
+    BusinessProfile::query()->update(['status' => 'archived']);
+    BusinessProfile::query()->create([
+        'name' => 'Perfil reportes',
+        'business_type' => $businessType,
+        'status' => 'active',
+        'configuration' => BusinessProfileConfiguration::normalized($configuration),
+        'applied_at' => now(),
+    ]);
+    SystemCacheInvalidator::bumpOperational();
 }
 
 it('muestra dashboard de reportes con metricas cacheadas y relaciones cargadas', function () {
@@ -175,5 +194,95 @@ it('muestra antiguedad de cuentas por cobrar por rangos y proxima promesa', func
         ->assertInertia(fn (Assert $page) => $page
             ->component('Reports/Index', false)
             ->where('filters.branch_id', $user->branch_id)
+        );
+});
+
+it('muestra metricas de restaurante solo cuando el perfil activa comandas y mesas', function () {
+    activeReportsProfile([
+        'modules' => [
+            'reports' => true,
+            'restaurant_tables' => true,
+            'pos' => true,
+        ],
+        'capabilities' => [
+            'uses_pos' => true,
+            'uses_tables' => true,
+            'uses_kitchen_orders' => true,
+        ],
+    ], 'restaurant');
+
+    $user = reportsUser(['reports.view']);
+    $table = RestaurantTable::query()->create([
+        'branch_id' => $user->branch_id,
+        'area_name' => 'Salon',
+        'name' => 'Mesa 1',
+        'code' => 'M-1',
+        'capacity' => 4,
+        'status' => RestaurantTable::STATUS_OCCUPIED,
+        'is_active' => true,
+    ]);
+    KitchenOrder::query()->create([
+        'branch_id' => $user->branch_id,
+        'restaurant_table_id' => $table->id,
+        'waiter_user_id' => $user->id,
+        'order_number' => 'COM-REP-001',
+        'channel' => 'table',
+        'preparation_area' => 'cocina',
+        'status' => KitchenOrder::STATUS_PREPARING,
+        'subtotal' => 80,
+        'sent_at' => now(),
+    ]);
+
+    $this->actingAs($user)
+        ->get(route('reports.index', ['branch_id' => $user->branch_id]))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Reports/Index', false)
+            ->where('profileFeatures.restaurant', true)
+            ->where('profileFeatures.service_orders', false)
+            ->where('metrics.restaurant_tables_count', 1)
+            ->where('metrics.kitchen_orders_count', 1)
+            ->where('metrics.kitchen_pending_count', 1)
+        );
+});
+
+it('muestra metricas de servicios cuando el perfil activa ordenes de servicio', function () {
+    activeReportsProfile([
+        'modules' => [
+            'reports' => true,
+            'service_orders' => true,
+        ],
+        'capabilities' => [
+            'uses_services' => true,
+            'uses_service_orders' => true,
+        ],
+    ], 'services');
+
+    $user = reportsUser(['reports.view']);
+    ServiceOrder::query()->create([
+        'branch_id' => $user->branch_id,
+        'user_id' => $user->id,
+        'order_number' => 'SER-REP-001',
+        'customer_name' => 'Cliente servicio',
+        'title' => 'Mantenimiento',
+        'service_type' => 'tecnico',
+        'status' => ServiceOrder::STATUS_IN_PROGRESS,
+        'scheduled_at' => now(),
+        'labor_amount' => 120,
+        'materials_amount' => 30,
+        'advance_amount' => 20,
+        'total_amount' => 150,
+    ]);
+
+    $this->actingAs($user)
+        ->get(route('reports.index', ['branch_id' => $user->branch_id]))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Reports/Index', false)
+            ->where('profileFeatures.service_orders', true)
+            ->where('profileFeatures.restaurant', false)
+            ->where('metrics.service_orders_count', 1)
+            ->where('metrics.service_orders_open_count', 1)
+            ->where('metrics.service_orders_total', 150)
         );
 });

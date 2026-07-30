@@ -99,6 +99,7 @@ export default function Index({ products, branches = [], filters = {} }) {
                         <thead className="bg-slate-100 text-left text-slate-600 dark:bg-slate-800 dark:text-slate-300">
                             <tr>
                                 <th className="px-4 py-3 font-medium">Producto</th>
+                                <th className="px-4 py-3 font-medium">Tipo</th>
                                 <th className="px-4 py-3 font-medium">Categoria</th>
                                 <th className="px-4 py-3 font-medium">SKU</th>
                                 <th className="px-4 py-3 font-medium">Barcode</th>
@@ -114,13 +115,24 @@ export default function Index({ products, branches = [], filters = {} }) {
                         <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                             {products.data.length === 0 ? (
                                 <tr>
-                                    <td colSpan={canManage ? 11 : 10} className="px-4 py-6 text-center text-slate-500">
+                                    <td colSpan={canManage ? 12 : 11} className="px-4 py-6 text-center text-slate-500">
                                         No se encontraron productos con los filtros aplicados.
                                     </td>
                                 </tr>
                             ) : products.data.map((product) => (
                                 <tr key={product.id}>
-                                    <td className="px-4 py-3">{product.name}</td>
+                                    <td className="px-4 py-3">
+                                        <div className="flex items-center gap-3">
+                                            {product.primary_image?.url ? (
+                                                <img src={product.primary_image.url} alt={product.primary_image.alt_text || product.name} className="h-10 w-10 rounded-lg object-cover" loading="lazy" />
+                                            ) : null}
+                                            <div>
+                                                <p className="font-medium text-slate-900 dark:text-slate-100">{product.name}</p>
+                                                {product.active_variants_count ? <p className="text-xs text-slate-500">{product.active_variants_count} variantes activas</p> : null}
+                                            </div>
+                                        </div>
+                                    </td>
+                                    <td className="px-4 py-3">{itemTypeLabel(product.item_type)}</td>
                                     <td className="px-4 py-3">{product.product_category?.name ?? product.category ?? 'Ferreteria general'}</td>
                                     <td className="px-4 py-3">{product.sku}</td>
                                     <td className="px-4 py-3">{product.barcode}</td>
@@ -160,6 +172,20 @@ export default function Index({ products, branches = [], filters = {} }) {
             </section>
         </AuthenticatedLayout>
     );
+}
+
+function itemTypeLabel(type) {
+    return {
+        physical: 'Fisico',
+        service: 'Servicio',
+        combo: 'Combo',
+        kit: 'Kit',
+        prepared_product: 'Preparado',
+        internal_supply: 'Insumo',
+        finished_product: 'Terminado',
+        rental: 'Alquiler',
+        digital: 'Digital',
+    }[type] ?? 'Fisico';
 }
 
 function cleanQuery(query) {

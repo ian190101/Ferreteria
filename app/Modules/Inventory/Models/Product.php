@@ -4,6 +4,8 @@ namespace App\Modules\Inventory\Models;
 
 use App\Modules\Billing\Models\SiatProductMapping;
 use App\Modules\Shared\Models\AuditableModel;
+use App\Modules\SystemSuperadmin\Models\ProductImage;
+use App\Modules\SystemSuperadmin\Models\ProductVariant;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
@@ -27,6 +29,15 @@ class Product extends AuditableModel
         'barcode',
         'inventory_tracking_mode',
         'base_unit',
+        'item_type',
+        'is_sellable',
+        'is_purchasable',
+        'is_inventory_item',
+        'is_consumable',
+        'is_prepared',
+        'is_digital',
+        'duration_minutes',
+        'preparation_minutes',
         'attributes',
         'custom_attributes',
         'allowed_units',
@@ -40,6 +51,14 @@ class Product extends AuditableModel
         'attributes' => 'array',
         'custom_attributes' => 'array',
         'allowed_units' => 'array',
+        'is_sellable' => 'boolean',
+        'is_purchasable' => 'boolean',
+        'is_inventory_item' => 'boolean',
+        'is_consumable' => 'boolean',
+        'is_prepared' => 'boolean',
+        'is_digital' => 'boolean',
+        'duration_minutes' => 'integer',
+        'preparation_minutes' => 'integer',
         'purchase_price' => 'decimal:4',
         'sale_price' => 'decimal:4',
         'minimum_stock_meters' => 'decimal:3',
@@ -79,5 +98,25 @@ class Product extends AuditableModel
     public function siatMapping(): HasOne
     {
         return $this->hasOne(SiatProductMapping::class);
+    }
+
+    public function images(): HasMany
+    {
+        return $this->hasMany(ProductImage::class)->orderBy('sort_order')->orderBy('id');
+    }
+
+    public function primaryImage(): HasOne
+    {
+        return $this->hasOne(ProductImage::class)->where('is_primary', true);
+    }
+
+    public function variants(): HasMany
+    {
+        return $this->hasMany(ProductVariant::class);
+    }
+
+    public function activeVariants(): HasMany
+    {
+        return $this->hasMany(ProductVariant::class)->where('is_active', true);
     }
 }

@@ -17,6 +17,10 @@ export default function Index({
     latestMovements = [],
     profitByProduct = [],
     profitBySeller = [],
+    restaurantSummary = [],
+    serviceOrderSummary = [],
+    reservationSummary = [],
+    productionSummary = [],
     profileFeatures = {},
 }) {
     const decimalFormat = useDecimalFormatter('finance');
@@ -66,7 +70,147 @@ export default function Index({
                     {profileFeatures.expenses ? <MetricCard title="Gastos" value={`Bs ${decimalFormat.money(metrics.expense_total ?? 0)}`} detail={`${metrics.expense_count ?? 0} egresos registrados`} /> : null}
                     {profileFeatures.inventory ? <MetricCard title="Inventario" value={metrics.active_coils ?? 0} detail={`${metrics.low_stock_count ?? 0} alertas de stock bajo`} tone={Number(metrics.low_stock_count ?? 0) > 0 ? 'warning' : 'default'} /> : null}
                     {profileFeatures.sales ? <MetricCard title="Utilidad bruta" value={`Bs ${decimalFormat.money(metrics.gross_profit ?? 0)}`} detail={`Margen ${decimalFormat.money(metrics.gross_margin_percent ?? 0)}%`} tone={Number(metrics.gross_profit ?? 0) < 0 ? 'warning' : 'default'} /> : null}
+                    {profileFeatures.restaurant ? <MetricCard title="Restaurante" value={metrics.kitchen_orders_count ?? 0} detail={`${metrics.kitchen_pending_count ?? 0} comandas pendientes · ${metrics.restaurant_tables_count ?? 0} mesas`} tone={Number(metrics.kitchen_pending_count ?? 0) > 0 ? 'warning' : 'default'} /> : null}
+                    {profileFeatures.service_orders ? <MetricCard title="Servicios" value={metrics.service_orders_count ?? 0} detail={`${metrics.service_orders_open_count ?? 0} ordenes abiertas · Bs ${decimalFormat.money(metrics.service_orders_total ?? 0)}`} /> : null}
+                    {profileFeatures.reservations ? <MetricCard title="Reservas" value={metrics.reservations_count ?? 0} detail={`Total Bs ${decimalFormat.money(metrics.reservation_total ?? 0)}`} /> : null}
+                    {profileFeatures.rentals ? <MetricCard title="Alquileres" value={metrics.rentals_count ?? 0} detail={`Garantias Bs ${decimalFormat.money(metrics.rental_deposit_total ?? 0)}`} /> : null}
+                    {profileFeatures.production ? <MetricCard title="Produccion" value={metrics.production_orders_count ?? 0} detail={`Costo Bs ${decimalFormat.money(metrics.production_total_cost ?? 0)} · Merma ${decimalFormat.measure(metrics.production_waste_total ?? 0)}`} /> : null}
                 </div>
+
+                {(profileFeatures.restaurant || profileFeatures.service_orders) ? (
+                    <div className="mb-6 grid gap-6 xl:grid-cols-2">
+                        {profileFeatures.restaurant ? (
+                            <Panel title="Restaurante: comandas y mesas">
+                                <DataTable>
+                                    <thead className="bg-slate-100 text-left text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                                        <tr>
+                                            <th className="px-4 py-3 font-medium">Comanda</th>
+                                            <th className="px-4 py-3 font-medium">Mesa/canal</th>
+                                            <th className="px-4 py-3 font-medium">Mesero</th>
+                                            <th className="px-4 py-3 font-medium">Estado</th>
+                                            <th className="px-4 py-3 text-right font-medium">Total</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                                        {restaurantSummary.map((order) => (
+                                            <tr key={order.id}>
+                                                <td className="px-4 py-3">
+                                                    <p className="font-medium">{order.order_number}</p>
+                                                    <p className="text-xs text-slate-500">{formatDate(order.sent_at)}</p>
+                                                </td>
+                                                <td className="px-4 py-3">{order.table?.name ?? order.channel ?? '-'}</td>
+                                                <td className="px-4 py-3">{order.waiter?.name ?? '-'}</td>
+                                                <td className="px-4 py-3">{statusLabel(order.status)}</td>
+                                                <td className="px-4 py-3 text-right">Bs {decimalFormat.money(order.subtotal ?? 0)}</td>
+                                            </tr>
+                                        ))}
+                                        {restaurantSummary.length === 0 ? <EmptyTableRow colSpan={5} /> : null}
+                                    </tbody>
+                                </DataTable>
+                            </Panel>
+                        ) : null}
+
+                        {profileFeatures.service_orders ? (
+                            <Panel title="Servicios: ordenes por tecnico">
+                                <DataTable>
+                                    <thead className="bg-slate-100 text-left text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                                        <tr>
+                                            <th className="px-4 py-3 font-medium">Orden</th>
+                                            <th className="px-4 py-3 font-medium">Servicio</th>
+                                            <th className="px-4 py-3 font-medium">Tecnico</th>
+                                            <th className="px-4 py-3 font-medium">Estado</th>
+                                            <th className="px-4 py-3 text-right font-medium">Total</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                                        {serviceOrderSummary.map((order) => (
+                                            <tr key={order.id}>
+                                                <td className="px-4 py-3">
+                                                    <p className="font-medium">{order.order_number}</p>
+                                                    <p className="text-xs text-slate-500">{formatDate(order.scheduled_at)}</p>
+                                                </td>
+                                                <td className="px-4 py-3">{order.title}</td>
+                                                <td className="px-4 py-3">{order.worker?.name ?? '-'}</td>
+                                                <td className="px-4 py-3">{statusLabel(order.status)}</td>
+                                                <td className="px-4 py-3 text-right">Bs {decimalFormat.money(order.total_amount ?? 0)}</td>
+                                            </tr>
+                                        ))}
+                                        {serviceOrderSummary.length === 0 ? <EmptyTableRow colSpan={5} /> : null}
+                                    </tbody>
+                                </DataTable>
+                            </Panel>
+                        ) : null}
+                    </div>
+                ) : null}
+
+                {(profileFeatures.reservations || profileFeatures.rentals || profileFeatures.production) ? (
+                    <div className="mb-6 grid gap-6 xl:grid-cols-2">
+                        {(profileFeatures.reservations || profileFeatures.rentals) ? (
+                            <Panel title="Reservas y alquileres">
+                                <DataTable>
+                                    <thead className="bg-slate-100 text-left text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                                        <tr>
+                                            <th className="px-4 py-3 font-medium">Numero</th>
+                                            <th className="px-4 py-3 font-medium">Cliente/recurso</th>
+                                            <th className="px-4 py-3 font-medium">Periodo</th>
+                                            <th className="px-4 py-3 font-medium">Estado</th>
+                                            <th className="px-4 py-3 text-right font-medium">Total</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                                        {reservationSummary.map((reservation) => (
+                                            <tr key={reservation.id}>
+                                                <td className="px-4 py-3">
+                                                    <p className="font-medium">{reservation.reservation_number}</p>
+                                                    <p className="text-xs text-slate-500">{reservation.type === 'rental' ? 'Alquiler' : 'Reserva'}</p>
+                                                </td>
+                                                <td className="px-4 py-3">
+                                                    <p>{reservation.customer_name ?? reservation.title}</p>
+                                                    <p className="text-xs text-slate-500">{reservation.resource?.name ?? '-'}</p>
+                                                </td>
+                                                <td className="px-4 py-3">{formatDate(reservation.start_at)}</td>
+                                                <td className="px-4 py-3">{statusLabel(reservation.status)}</td>
+                                                <td className="px-4 py-3 text-right">Bs {decimalFormat.money(reservation.total_amount ?? 0)}</td>
+                                            </tr>
+                                        ))}
+                                        {reservationSummary.length === 0 ? <EmptyTableRow colSpan={5} /> : null}
+                                    </tbody>
+                                </DataTable>
+                            </Panel>
+                        ) : null}
+
+                        {profileFeatures.production ? (
+                            <Panel title="Produccion: ordenes y costos">
+                                <DataTable>
+                                    <thead className="bg-slate-100 text-left text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                                        <tr>
+                                            <th className="px-4 py-3 font-medium">Orden</th>
+                                            <th className="px-4 py-3 font-medium">Producto</th>
+                                            <th className="px-4 py-3 text-right font-medium">Producido</th>
+                                            <th className="px-4 py-3 text-right font-medium">Merma</th>
+                                            <th className="px-4 py-3 text-right font-medium">Costo</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                                        {productionSummary.map((order) => (
+                                            <tr key={order.id}>
+                                                <td className="px-4 py-3">
+                                                    <p className="font-medium">{order.order_number}</p>
+                                                    <p className="text-xs text-slate-500">{formatDate(order.produced_at)}</p>
+                                                </td>
+                                                <td className="px-4 py-3">{order.output_product?.name ?? '-'}</td>
+                                                <td className="px-4 py-3 text-right">{decimalFormat.quantity(order.actual_output_quantity ?? 0)}</td>
+                                                <td className="px-4 py-3 text-right">{decimalFormat.measure(order.waste_meters ?? 0)}</td>
+                                                <td className="px-4 py-3 text-right">Bs {decimalFormat.money(order.total_cost ?? 0)}</td>
+                                            </tr>
+                                        ))}
+                                        {productionSummary.length === 0 ? <EmptyTableRow colSpan={5} /> : null}
+                                    </tbody>
+                                </DataTable>
+                            </Panel>
+                        ) : null}
+                    </div>
+                ) : null}
 
                 {profileFeatures.sales ? (
                     <div className="mb-6 grid gap-6 xl:grid-cols-2">
@@ -301,6 +445,26 @@ function DataTable({ children }) {
 
 function documentType(type) {
     return type === 'quotation' ? 'Cotizacion' : 'Nota de venta';
+}
+
+function statusLabel(status) {
+    const labels = {
+        pending: 'Pendiente',
+        in_progress: 'En proceso',
+        finished: 'Terminado',
+        delivered: 'Entregado',
+        cancelled: 'Cancelado',
+        sent: 'Enviado',
+        preparing: 'En preparacion',
+        ready: 'Listo',
+        closed: 'Cerrado',
+        confirmed: 'Confirmado',
+        completed: 'Finalizado',
+        no_show: 'No asistio',
+        rescheduled: 'Reprogramado',
+    };
+
+    return labels[status] ?? status ?? '-';
 }
 
 function EmptyTableRow({ colSpan }) {

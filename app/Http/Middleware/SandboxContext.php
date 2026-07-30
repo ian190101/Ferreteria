@@ -63,6 +63,8 @@ class SandboxContext
     private function isSystemMasterRoute(Request $request): bool
     {
         return $request->is('system-superadmin/business-profiles')
-            || $request->is('system-superadmin/business-profiles/*');
+            || $request->is('system-superadmin/business-profiles/*')
+            || $request->is('system-superadmin/transversal-config')
+            || $request->is('system-superadmin/transversal-config/*');
     }
 }

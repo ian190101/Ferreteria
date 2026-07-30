@@ -18,7 +18,7 @@ use App\Modules\Sales\Models\ReceiptTemplate;
 use App\Modules\Sales\Models\SaleType;
 use App\Modules\Settings\Models\SystemSetting;
 use App\Modules\SystemSuperadmin\Models\BusinessProfilePreset;
-use App\Modules\SystemSuperadmin\Services\BusinessProfileConfiguration;
+use App\Modules\SystemSuperadmin\Services\BusinessProfilePresetFactory;
 use App\Support\DecimalPrecision;
 use App\Support\SystemRoles;
 use Illuminate\Database\Seeder;
@@ -73,6 +73,17 @@ class DatabaseSeeder extends Seeder
             'payment-promises.manage',
             'production.view',
             'production.manage',
+            'printing.view',
+            'printing.manage',
+            'printing.jobs.manage',
+            'reservations.view',
+            'reservations.manage',
+            'rentals.view',
+            'rentals.manage',
+            'restaurant.view',
+            'restaurant.manage',
+            'service-orders.view',
+            'service-orders.manage',
             'sales.view',
             'sales.manage',
             'sales.prices.override',
@@ -94,6 +105,9 @@ class DatabaseSeeder extends Seeder
         foreach ($permissions as $permission) {
             Permission::firstOrCreate(['name' => $permission, 'guard_name' => 'web']);
         }
+
+        $this->call(BusinessCapabilitySeeder::class);
+        $this->call(BusinessTransversalSeeder::class);
 
         $superadmin = Role::firstOrCreate(['name' => 'superadmin', 'guard_name' => 'web']);
         $superadmin->syncPermissions($permissions);
@@ -293,9 +307,7 @@ class DatabaseSeeder extends Seeder
 
     private function seedBusinessProfilePresets(int $userId): void
     {
-        $base = BusinessProfileConfiguration::defaults();
-
-        foreach ($this->businessProfilePresets($base) as $preset) {
+        foreach (app(BusinessProfilePresetFactory::class)->officialPresets() as $preset) {
             BusinessProfilePreset::withTrashed()->updateOrCreate(
                 ['name' => $preset['name']],
                 [
@@ -309,96 +321,5 @@ class DatabaseSeeder extends Seeder
                 ],
             );
         }
-    }
-
-    private function businessProfilePresets(array $base): array
-    {
-        return [
-            [
-                'name' => 'Ferreteria con cotizacion y nota',
-                'business_type' => 'hardware_store',
-                'description' => 'Flujo formal: cotizacion obligatoria, nota de venta, caja, bancos, inventario y despachos opcionales.',
-                'configuration' => [
-                    ...$base,
-                    'modules' => [...$base['modules'], 'quotes' => true, 'sales_notes' => true, 'pos' => false, 'purchases' => true, 'quick_purchases' => false, 'cash' => true, 'banks' => true, 'billing' => true, 'inventory' => true, 'deliveries' => true],
-                    'sales' => [...$base['sales'], 'workflow' => 'quotation_to_sale_note', 'quotation_mode' => 'required', 'document_main' => 'sale_note', 'customer_mode' => 'required', 'inventory_discount_timing' => 'sale_note', 'price_policy' => 'mixed', 'discount_policy' => 'permission', 'max_discount_percent' => 10, 'credit_limit_policy' => 'warn', 'default_credit_limit' => 1000, 'negative_stock_policy' => 'never'],
-                    'billing' => [...$base['billing'], 'enabled' => true, 'invoice_flow' => 'quote_sale_note_invoice', 'issue_from' => 'sale_note', 'issue_timing' => 'automatic_after_quote_conversion'],
-                    'purchases' => [...$base['purchases'], 'workflow' => 'standard_purchase', 'barcode_entry' => false, 'allow_create_product' => true],
-                ],
-            ],
-            [
-                'name' => 'Ferreteria POS',
-                'business_type' => 'hardware_store',
-                'description' => 'Ferreteria con venta rapida por POS, compras por barcode y cotizacion opcional.',
-                'configuration' => [
-                    ...$base,
-                    'modules' => [...$base['modules'], 'quotes' => true, 'sales_notes' => true, 'pos' => true, 'quick_purchases' => true, 'cash' => true, 'banks' => true, 'billing' => true, 'inventory' => true],
-                    'sales' => [...$base['sales'], 'workflow' => 'optional_quotation', 'quotation_mode' => 'optional', 'document_main' => 'ticket', 'customer_mode' => 'optional', 'price_policy' => 'branch_price', 'discount_policy' => 'permission', 'max_discount_percent' => 5, 'credit_limit_policy' => 'warn', 'default_credit_limit' => 500, 'negative_stock_policy' => 'role', 'negative_stock_roles' => ['superadmin']],
-                    'billing' => [...$base['billing'], 'enabled' => true, 'invoice_flow' => 'choose_per_sale', 'issue_from' => 'manual_choice', 'issue_timing' => 'manual'],
-                    'purchases' => [...$base['purchases'], 'workflow' => 'barcode_purchase', 'barcode_entry' => true],
-                    'pos' => [...$base['pos'], 'scanner_mode' => 'optional'],
-                    'cash' => [...$base['cash'], 'scope' => 'pos_terminal'],
-                ],
-            ],
-            [
-                'name' => 'Supermercado',
-                'business_type' => 'supermarket',
-                'description' => 'POS rapido sin cotizaciones, cliente oculto, caja obligatoria y lector de barras.',
-                'configuration' => [
-                    ...$base,
-                    'modules' => [...$base['modules'], 'quotes' => false, 'sales_notes' => true, 'pos' => true, 'billing' => true, 'deliveries' => false, 'customers' => false, 'payment_promises' => false],
-                    'sales' => [...$base['sales'], 'workflow' => 'pos', 'quotation_mode' => 'disabled', 'document_main' => 'invoice_direct', 'customer_mode' => 'hidden', 'price_policy' => 'branch_price', 'discount_policy' => 'never', 'credit_limit_policy' => 'disabled', 'negative_stock_policy' => 'never', 'payment_methods_by_flow' => ['sales' => ['cash', 'qr', 'card'], 'pos' => ['cash', 'qr', 'card'], 'collections' => ['cash', 'qr', 'card']]],
-                    'billing' => [...$base['billing'], 'enabled' => true, 'invoice_flow' => 'direct_invoice', 'issue_from' => 'pos', 'issue_timing' => 'automatic_direct'],
-                    'pos' => [...$base['pos'], 'scanner_mode' => 'required', 'customer_prompt' => 'hidden'],
-                    'deliveries' => [...$base['deliveries'], 'mode' => 'disabled'],
-                    'products' => [...$base['products'], 'catalog_mode' => 'barcode_retail', 'barcode_required' => true],
-                ],
-            ],
-            [
-                'name' => 'Libreria y papeleria',
-                'business_type' => 'stationery',
-                'description' => 'Tienda retail con POS, compras rapidas, cliente opcional y sin despachos.',
-                'configuration' => [
-                    ...$base,
-                    'modules' => [...$base['modules'], 'quotes' => false, 'sales_notes' => true, 'pos' => true, 'deliveries' => false],
-                    'sales' => [...$base['sales'], 'workflow' => 'pos', 'quotation_mode' => 'disabled', 'document_main' => 'ticket', 'customer_mode' => 'optional', 'price_policy' => 'base_price', 'discount_policy' => 'always_with_limit', 'max_discount_percent' => 5, 'credit_limit_policy' => 'disabled', 'negative_stock_policy' => 'never'],
-                    'deliveries' => [...$base['deliveries'], 'mode' => 'disabled'],
-                    'products' => [...$base['products'], 'catalog_mode' => 'barcode_retail'],
-                ],
-            ],
-            [
-                'name' => 'Servicios',
-                'business_type' => 'services',
-                'description' => 'Ventas de servicios sin inventario obligatorio ni compras operativas.',
-                'configuration' => [
-                    ...$base,
-                    'modules' => [...$base['modules'], 'quotes' => true, 'sales_notes' => true, 'pos' => false, 'purchases' => false, 'quick_purchases' => false, 'inventory' => false, 'deliveries' => false, 'suppliers' => false],
-                    'sales' => [...$base['sales'], 'workflow' => 'service_sale', 'quotation_mode' => 'optional', 'document_main' => 'receipt', 'customer_mode' => 'required', 'inventory_discount_timing' => 'manual', 'price_policy' => 'customer_price', 'discount_policy' => 'permission', 'max_discount_percent' => 20, 'credit_limit_policy' => 'block', 'default_credit_limit' => 2000],
-                    'products' => [...$base['products'], 'catalog_mode' => 'services', 'allow_service_items' => true],
-                ],
-            ],
-            [
-                'name' => 'Fabrica simple',
-                'business_type' => 'factory',
-                'description' => 'Cotizacion, nota de venta y despacho obligatorio para controlar entrega y movimiento de inventario.',
-                'configuration' => [
-                    ...$base,
-                    'modules' => [...$base['modules'], 'quotes' => true, 'sales_notes' => true, 'production' => true, 'deliveries' => true, 'inventory' => true],
-                    'sales' => [...$base['sales'], 'workflow' => 'quotation_to_sale_note', 'quotation_mode' => 'optional', 'inventory_discount_timing' => 'delivery', 'price_policy' => 'mixed', 'discount_policy' => 'role_limit', 'discount_roles' => ['superadmin', 'administrador'], 'max_discount_percent' => 12, 'credit_limit_policy' => 'block', 'default_credit_limit' => 1500, 'negative_stock_policy' => 'category', 'negative_stock_categories' => ['Materia prima']],
-                    'deliveries' => [...$base['deliveries'], 'mode' => 'required', 'driver_required' => true, 'truck_required' => true],
-                ],
-            ],
-            [
-                'name' => 'Tienda general',
-                'business_type' => 'store',
-                'description' => 'Venta directa por ticket con compras e inventario simple.',
-                'configuration' => [
-                    ...$base,
-                    'modules' => [...$base['modules'], 'quotes' => false, 'sales_notes' => true, 'pos' => true, 'deliveries' => false, 'payment_promises' => false],
-                    'sales' => [...$base['sales'], 'workflow' => 'pos', 'quotation_mode' => 'disabled', 'document_main' => 'ticket', 'customer_mode' => 'optional', 'price_policy' => 'base_price', 'discount_policy' => 'always_with_limit', 'max_discount_percent' => 3, 'credit_limit_policy' => 'warn', 'default_credit_limit' => 300, 'negative_stock_policy' => 'never'],
-                    'deliveries' => [...$base['deliveries'], 'mode' => 'disabled'],
-                ],
-            ],
-        ];
     }
 }

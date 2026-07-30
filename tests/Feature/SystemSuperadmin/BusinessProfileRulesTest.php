@@ -11,6 +11,7 @@ use App\Modules\SystemSuperadmin\Services\BusinessProfileConfiguration;
 use App\Modules\SystemSuperadmin\Services\BusinessProfileSandboxService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Http\Request;
+use App\Support\RouteSecurityAuditService;
 use App\Support\SystemRoles;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
@@ -89,6 +90,33 @@ it('bloquea rutas secundarias cuando el perfil empresarial desactiva el modulo',
     $this->actingAs($user)->get(route('payments.promises.index'))->assertNotFound();
     $this->actingAs($user)->get(route('inventory.reservations.index'))->assertNotFound();
     $this->actingAs($user)->get(route('inventory.transfers.index'))->assertNotFound();
+});
+
+it('mantiene las rutas operativas protegidas por perfil empresarial y permisos', function () {
+    $audit = app(RouteSecurityAuditService::class);
+
+    expect($audit->routesMissingProfileGuard())->toBe([])
+        ->and($audit->routesMissingAccessGuard())->toBe([]);
+});
+
+it('aplica cabeceras de seguridad transversales en respuestas autenticadas', function () {
+    $user = businessProfileUser(['dashboard.view']);
+    activeBusinessProfile([
+        'modules' => [
+            'dashboard' => true,
+        ],
+    ]);
+
+    $this->actingAs($user)
+        ->get(route('dashboard'))
+        ->assertOk()
+        ->assertHeader('X-Content-Type-Options', 'nosniff')
+        ->assertHeader('X-Frame-Options', 'DENY')
+        ->assertHeader('Referrer-Policy', 'strict-origin-when-cross-origin')
+        ->assertHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()')
+        ->assertHeader('Cross-Origin-Opener-Policy', 'same-origin')
+        ->assertHeader('X-Permitted-Cross-Domain-Policies', 'none')
+        ->assertHeader('X-Download-Options', 'noopen');
 });
 
 it('oculta y bloquea datasets de modulos desactivados en exportaciones', function () {
@@ -200,6 +228,45 @@ it('bloquea eliminar presets del sistema', function () {
         ->assertStatus(422);
 
     expect(BusinessProfilePreset::query()->whereKey($preset->id)->exists())->toBeTrue();
+});
+
+it('revalida compatibilidad backend antes de aplicar un borrador', function () {
+    $user = businessProfileUser(systemSuperadmin: true);
+    $active = activeBusinessProfile([
+        'modules' => ['billing' => false],
+        'billing' => ['enabled' => false, 'invoice_flow' => 'billing_disabled'],
+    ]);
+    $configuration = BusinessProfileConfiguration::normalized([
+        'modules' => [
+            'billing' => true,
+            'cash' => true,
+        ],
+        'sales' => [
+            'customer_mode' => 'hidden',
+        ],
+        'billing' => [
+            'enabled' => true,
+            'invoice_flow' => 'direct_invoice',
+        ],
+    ]);
+
+    $draft = BusinessProfileDraft::query()->create([
+        'name' => 'Borrador fiscal incompatible',
+        'business_type' => 'supermarket',
+        'configuration' => $configuration,
+        'source_profile_id' => $active->id,
+        'created_by' => $user->id,
+        'updated_by' => $user->id,
+    ]);
+
+    $this->actingAs($user)
+        ->from(route('system-superadmin.business-profiles.index'))
+        ->post(route('system-superadmin.business-profiles.drafts.apply', $draft))
+        ->assertRedirect(route('system-superadmin.business-profiles.index'))
+        ->assertSessionHasErrors('configuration');
+
+    expect($draft->refresh()->status)->not->toBe('applied')
+        ->and(BusinessProfile::query()->where('status', 'active')->latest('applied_at')->first()?->id)->toBe($active->id);
 });
 
 it('guarda y reinicia una demo sandbox aislada por usuario', function () {

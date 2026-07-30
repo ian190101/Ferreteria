@@ -28,10 +28,21 @@ export function buildProductFormData({ product = null, categories = [], units = 
         barcode: product?.barcode ?? '',
         inventory_tracking_mode: product?.inventory_tracking_mode ?? initialCategory?.default_tracking_mode ?? 'global',
         base_unit: product?.base_unit ?? initialUnit?.symbol ?? 'unidad',
+        item_type: product?.item_type ?? 'physical',
+        is_sellable: product?.is_sellable ?? true,
+        is_purchasable: product?.is_purchasable ?? true,
+        is_inventory_item: product?.is_inventory_item ?? true,
+        is_consumable: product?.is_consumable ?? false,
+        is_prepared: product?.is_prepared ?? false,
+        is_digital: product?.is_digital ?? false,
+        duration_minutes: product?.duration_minutes ?? '',
+        preparation_minutes: product?.preparation_minutes ?? '',
         attributes: product?.attributes ?? {},
         custom_attributes: normalizeCustomAttributes(product?.custom_attributes ?? []),
         allowed_units: normalizeAllowedUnits(product?.allowed_units, initialUnit),
         unit_conversions: normalizeUnitConversions(product?.unit_conversions ?? product?.unitConversions ?? []),
+        images: normalizeImages(product?.images ?? []),
+        variants: normalizeVariants(product?.active_variants ?? product?.activeVariants ?? product?.variants ?? []),
         purchase_price: product?.purchase_price ?? '0',
         sale_price: product?.sale_price ?? '0',
         minimum_stock_meters: product?.minimum_stock_meters ?? '0',
@@ -157,6 +168,44 @@ export default function ProductFormFields({ data, setData, errors = {}, thicknes
     const removeUnitConversion = (index) => {
         setData('unit_conversions', (data.unit_conversions ?? []).filter((_, rowIndex) => rowIndex !== index));
     };
+    const selectItemType = (itemType) => {
+        const isService = itemType === 'service' || itemType === 'digital';
+        const isPrepared = ['prepared_product', 'finished_product'].includes(itemType);
+
+        setData({
+            ...data,
+            item_type: itemType,
+            is_inventory_item: !isService,
+            is_consumable: itemType === 'internal_supply',
+            is_prepared: isPrepared,
+            is_digital: itemType === 'digital',
+        });
+    };
+    const addImage = () => setData('images', [
+        ...(data.images ?? []),
+        { id: null, url: '', path: '', alt_text: data.name ?? '', is_primary: (data.images ?? []).length === 0, sort_order: (data.images ?? []).length },
+    ]);
+    const updateImage = (index, field, value) => {
+        setData('images', (data.images ?? []).map((image, imageIndex) => (
+            imageIndex === index ? { ...image, [field]: value, is_primary: field === 'is_primary' && value ? true : image.is_primary } : { ...image, is_primary: field === 'is_primary' && value ? false : image.is_primary }
+        )));
+    };
+    const removeImage = (index) => setData('images', (data.images ?? []).filter((_, imageIndex) => imageIndex !== index));
+    const addVariant = () => setData('variants', [
+        ...(data.variants ?? []),
+        { id: null, name: '', sku: '', barcode: '', attributes: {}, cost_price: '', sale_price: '', is_active: true },
+    ]);
+    const updateVariant = (index, field, value) => {
+        setData('variants', (data.variants ?? []).map((variant, variantIndex) => (
+            variantIndex === index ? { ...variant, [field]: value } : variant
+        )));
+    };
+    const updateVariantAttribute = (index, key, value) => {
+        setData('variants', (data.variants ?? []).map((variant, variantIndex) => (
+            variantIndex === index ? { ...variant, attributes: { ...(variant.attributes ?? {}), [key]: value } } : variant
+        )));
+    };
+    const removeVariant = (index) => setData('variants', (data.variants ?? []).filter((_, variantIndex) => variantIndex !== index));
 
     return (
         <div className={`grid gap-5 ${compact ? 'sm:grid-cols-2' : 'sm:grid-cols-2'}`}>
@@ -169,8 +218,15 @@ export default function ProductFormFields({ data, setData, errors = {}, thicknes
                     </option>
                 ))}
             </SelectField>
+            <CatalogBehavior data={data} setData={setData} errors={errors} productPolicy={productPolicy} selectItemType={selectItemType} />
             <GeneratedField label="SKU" name="sku" value={data.sku} onChange={(event) => setData('sku', event.target.value)} error={errors.sku} onGenerate={generateSku} />
             <GeneratedField label={productPolicy.barcodeRequired ? 'Barcode *' : 'Barcode'} name="barcode" value={data.barcode} onChange={(event) => setData('barcode', event.target.value)} error={errors.barcode} onGenerate={generateBarcode} />
+            {productPolicy.imagesEnabled ? (
+                <ProductImages data={data} errors={errors} galleryEnabled={productPolicy.galleryEnabled} addImage={addImage} updateImage={updateImage} removeImage={removeImage} />
+            ) : null}
+            {productPolicy.variantsEnabled ? (
+                <ProductVariants data={data} errors={errors} addVariant={addVariant} updateVariant={updateVariant} updateVariantAttribute={updateVariantAttribute} removeVariant={removeVariant} />
+            ) : null}
             <SelectField label="Espesor" name="thickness_id" value={data.thickness_id} onChange={(event) => setData('thickness_id', event.target.value)} error={errors.thickness_id}>
                 <option value="">{selectedCategory?.requires_thickness ? 'Seleccione espesor' : 'Sin espesor'}</option>
                 {thicknesses.map((thickness) => (
@@ -230,6 +286,162 @@ export default function ProductFormFields({ data, setData, errors = {}, thicknes
                 updateCustomAttribute={updateCustomAttribute}
                 removeCustomAttribute={removeCustomAttribute}
             />
+        </div>
+    );
+}
+
+function CatalogBehavior({ data, setData, errors, productPolicy, selectItemType }) {
+    const itemTypes = productPolicy.allowedItemTypes ?? ['physical'];
+
+    return (
+        <div className="sm:col-span-2">
+            <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950/40">
+                <div className="flex items-center gap-2">
+                    <h3 className="text-sm font-semibold text-slate-950 dark:text-white">Tipo y comportamiento del item</h3>
+                    <ContextHelp title="Catalogo flexible">
+                        Define si este registro es producto fisico, servicio, combo, insumo, producto preparado o digital. Esto permite adaptar el sistema a ferreterias, restaurantes, servicios, tiendas o supermercados sin cambiar codigo.
+                    </ContextHelp>
+                </div>
+                <div className="mt-4 grid gap-3 md:grid-cols-2">
+                    <SelectField label="Tipo de item" name="item_type" value={data.item_type ?? 'physical'} onChange={(event) => selectItemType(event.target.value)} error={errors.item_type}>
+                        {itemTypes.map((type) => <option key={type} value={type}>{itemTypeLabel(type)}</option>)}
+                    </SelectField>
+                    <div className="grid grid-cols-2 gap-2 text-sm">
+                        <ToggleOption label="Vendible" checked={data.is_sellable} onChange={(value) => setData('is_sellable', value)} />
+                        <ToggleOption label="Comprable" checked={data.is_purchasable} onChange={(value) => setData('is_purchasable', value)} />
+                        <ToggleOption label="Maneja stock" checked={data.is_inventory_item} onChange={(value) => setData('is_inventory_item', value)} />
+                        <ToggleOption label="Insumo interno" checked={data.is_consumable} onChange={(value) => setData('is_consumable', value)} />
+                    </div>
+                    {['service', 'digital', 'rental'].includes(data.item_type) ? (
+                        <FormField label="Duracion estimada en minutos" name="duration_minutes" type="number" min="0" value={data.duration_minutes ?? ''} onChange={(event) => setData('duration_minutes', event.target.value)} error={errors.duration_minutes} />
+                    ) : null}
+                    {['prepared_product', 'finished_product'].includes(data.item_type) ? (
+                        <FormField label="Tiempo de preparacion en minutos" name="preparation_minutes" type="number" min="0" value={data.preparation_minutes ?? ''} onChange={(event) => setData('preparation_minutes', event.target.value)} error={errors.preparation_minutes} />
+                    ) : null}
+                </div>
+                <p className="mt-3 text-xs text-slate-500 dark:text-slate-400">
+                    El perfil actual permite: {itemTypes.map(itemTypeLabel).join(', ')}.
+                </p>
+            </div>
+        </div>
+    );
+}
+
+function ProductImages({ data, errors, galleryEnabled, addImage, updateImage, removeImage }) {
+    const images = data.images ?? [];
+
+    return (
+        <div className="sm:col-span-2">
+            <div className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-950/40">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                        <div className="flex items-center gap-2">
+                            <h3 className="text-sm font-semibold text-slate-950 dark:text-white">Imagenes del producto</h3>
+                            <ContextHelp title="Imagenes del catalogo">
+                                Usa URL publicas o rutas internas seguras. La primera imagen activa se usa como principal en POS, catalogos visuales y documentos que tengan imagen habilitada.
+                            </ContextHelp>
+                        </div>
+                        <p className="text-xs text-slate-500 dark:text-slate-400">{galleryEnabled ? 'Puedes agregar una galeria.' : 'Este perfil permite solo imagen principal.'}</p>
+                    </div>
+                    <button type="button" onClick={addImage} disabled={!galleryEnabled && images.length >= 1} className="rounded-md border border-brand-primary px-3 py-2 text-sm font-semibold text-brand-primary disabled:cursor-not-allowed disabled:opacity-50">
+                        Agregar imagen
+                    </button>
+                </div>
+                {errors.images ? <p className="mt-2 text-sm text-red-600">{errors.images}</p> : null}
+                {images.length ? (
+                    <div className="mt-4 grid gap-3">
+                        {images.map((image, index) => (
+                            <div key={index} className="grid gap-3 rounded-md border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-900 md:grid-cols-[1.5fr_1fr_auto]">
+                                <FormField label="URL de imagen" name={`images.${index}.url`} value={image.url ?? ''} onChange={(event) => updateImage(index, 'url', event.target.value)} error={errors[`images.${index}.url`]} placeholder="https://..." />
+                                <FormField label="Texto alternativo" name={`images.${index}.alt_text`} value={image.alt_text ?? ''} onChange={(event) => updateImage(index, 'alt_text', event.target.value)} error={errors[`images.${index}.alt_text`]} />
+                                <div className="flex flex-col justify-end gap-2">
+                                    <label className="flex items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-xs dark:border-slate-800 dark:bg-slate-950">
+                                        <input type="radio" name="primary_image" checked={Boolean(image.is_primary) || index === 0} onChange={() => updateImage(index, 'is_primary', true)} className="h-4 w-4 text-brand-primary focus:ring-brand-primary" />
+                                        Principal
+                                    </label>
+                                    <button type="button" onClick={() => removeImage(index)} className="rounded-md border border-red-200 px-3 py-2 text-sm font-semibold text-red-600 dark:border-red-900/60">
+                                        Quitar
+                                    </button>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                ) : (
+                    <p className="mt-4 rounded-lg border border-dashed border-slate-300 px-4 py-3 text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
+                        Sin imagen configurada. El sistema seguira usando el texto del producto.
+                    </p>
+                )}
+            </div>
+        </div>
+    );
+}
+
+function ProductVariants({ data, errors, addVariant, updateVariant, updateVariantAttribute, removeVariant }) {
+    const variants = data.variants ?? [];
+
+    return (
+        <div className="sm:col-span-2">
+            <div className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-950/40">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                        <div className="flex items-center gap-2">
+                            <h3 className="text-sm font-semibold text-slate-950 dark:text-white">Variantes comerciales</h3>
+                            <ContextHelp title="Variantes">
+                                Usa variantes cuando el mismo producto se vende con diferencias comerciales como talla, color, sabor o presentacion. Cada variante puede tener SKU, barcode y precio propio.
+                            </ContextHelp>
+                        </div>
+                        <p className="text-xs text-slate-500 dark:text-slate-400">Ejemplo: camiseta azul talla M, hamburguesa doble, cafe grande o producto por presentacion.</p>
+                    </div>
+                    <button type="button" onClick={addVariant} className="rounded-md border border-brand-primary px-3 py-2 text-sm font-semibold text-brand-primary">
+                        Agregar variante
+                    </button>
+                </div>
+                {errors.variants ? <p className="mt-2 text-sm text-red-600">{errors.variants}</p> : null}
+                {variants.length ? (
+                    <div className="mt-4 space-y-3">
+                        {variants.map((variant, index) => (
+                            <div key={index} className="grid gap-3 rounded-md border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-900 md:grid-cols-2 xl:grid-cols-12">
+                                <div className="xl:col-span-3">
+                                    <FormField label="Nombre variante" name={`variants.${index}.name`} value={variant.name ?? ''} onChange={(event) => updateVariant(index, 'name', event.target.value)} error={errors[`variants.${index}.name`]} />
+                                </div>
+                                <div className="xl:col-span-2">
+                                    <FormField label="SKU" name={`variants.${index}.sku`} value={variant.sku ?? ''} onChange={(event) => updateVariant(index, 'sku', event.target.value)} error={errors[`variants.${index}.sku`]} />
+                                </div>
+                                <div className="xl:col-span-2">
+                                    <FormField label="Barcode" name={`variants.${index}.barcode`} value={variant.barcode ?? ''} onChange={(event) => updateVariant(index, 'barcode', event.target.value)} error={errors[`variants.${index}.barcode`]} />
+                                </div>
+                                <div className="xl:col-span-2">
+                                    <FormField label="Atributo" name={`variants.${index}.attribute_key`} value={Object.keys(variant.attributes ?? {})[0] ?? ''} onChange={(event) => updateVariant(index, 'attributes', { [event.target.value]: Object.values(variant.attributes ?? {})[0] ?? '' })} placeholder="color, talla, sabor" />
+                                </div>
+                                <div className="xl:col-span-2">
+                                    <FormField label="Valor" name={`variants.${index}.attribute_value`} value={Object.values(variant.attributes ?? {})[0] ?? ''} onChange={(event) => updateVariantAttribute(index, Object.keys(variant.attributes ?? {})[0] ?? 'valor', event.target.value)} placeholder="Azul, M, grande" />
+                                </div>
+                                <div className="xl:col-span-1">
+                                    <SelectField label="Activa" name={`variants.${index}.is_active`} value={variant.is_active ? '1' : '0'} onChange={(event) => updateVariant(index, 'is_active', event.target.value === '1')}>
+                                        <option value="1">Si</option>
+                                        <option value="0">No</option>
+                                    </SelectField>
+                                </div>
+                                <div className="xl:col-span-2">
+                                    <FormField label="Costo propio" name={`variants.${index}.cost_price`} type="number" min="0" step="0.0001" value={variant.cost_price ?? ''} onChange={(event) => updateVariant(index, 'cost_price', event.target.value)} error={errors[`variants.${index}.cost_price`]} />
+                                </div>
+                                <div className="xl:col-span-2">
+                                    <FormField label="Precio propio" name={`variants.${index}.sale_price`} type="number" min="0" step="0.0001" value={variant.sale_price ?? ''} onChange={(event) => updateVariant(index, 'sale_price', event.target.value)} error={errors[`variants.${index}.sale_price`]} />
+                                </div>
+                                <div className="flex items-end md:col-span-2 xl:col-span-8">
+                                    <button type="button" onClick={() => removeVariant(index)} className="rounded-md border border-red-200 px-3 py-2 text-sm font-semibold text-red-600 dark:border-red-900/60">
+                                        Quitar variante
+                                    </button>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                ) : (
+                    <p className="mt-4 rounded-lg border border-dashed border-slate-300 px-4 py-3 text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
+                        Sin variantes. El producto se vendera como un item unico.
+                    </p>
+                )}
+            </div>
         </div>
     );
 }
@@ -543,6 +755,53 @@ export function normalizeUnitConversions(conversions) {
         factor_to_base: conversion.factor_to_base ?? '1',
         is_active: conversion.is_active ?? true,
     }));
+}
+
+export function normalizeImages(images) {
+    return (images ?? []).map((image, index) => ({
+        id: image.id ?? null,
+        url: image.url ?? '',
+        path: image.path ?? '',
+        alt_text: image.alt_text ?? '',
+        is_primary: Boolean(image.is_primary) || index === 0,
+        sort_order: image.sort_order ?? index,
+    }));
+}
+
+export function normalizeVariants(variants) {
+    return (variants ?? []).map((variant) => ({
+        id: variant.id ?? null,
+        sku: variant.sku ?? '',
+        barcode: variant.barcode ?? '',
+        name: variant.name ?? '',
+        attributes: variant.attributes ?? {},
+        cost_price: variant.cost_price ?? '',
+        sale_price: variant.sale_price ?? '',
+        is_active: variant.is_active ?? true,
+    }));
+}
+
+function ToggleOption({ label, checked, onChange }) {
+    return (
+        <label className="flex items-center justify-between gap-3 rounded-md border border-slate-200 bg-white px-3 py-2 dark:border-slate-800 dark:bg-slate-900">
+            <span className="text-xs font-medium text-slate-700 dark:text-slate-300">{label}</span>
+            <input type="checkbox" checked={Boolean(checked)} onChange={(event) => onChange(event.target.checked)} className="h-4 w-4 rounded border-slate-300 text-brand-primary focus:ring-brand-primary" />
+        </label>
+    );
+}
+
+function itemTypeLabel(type) {
+    return {
+        physical: 'Producto fisico',
+        service: 'Servicio',
+        combo: 'Combo',
+        kit: 'Kit',
+        prepared_product: 'Producto preparado',
+        internal_supply: 'Insumo interno',
+        finished_product: 'Producto terminado',
+        rental: 'Producto alquilable',
+        digital: 'Digital/intangible',
+    }[type] ?? type;
 }
 
 function GeneratedField({ label, name, value, onChange, error, onGenerate }) {

@@ -97,3 +97,33 @@ it('permite al usuario tecnico ver catalogo completo de exportacion para soporte
             ->has('catalog')
         );
 });
+
+it('muestra datasets por rubro solo si el perfil y permisos los activan', function () {
+    activeExportProfile([
+        'modules' => [
+            'exports' => true,
+            'restaurant_tables' => true,
+            'service_orders' => false,
+            'reservations' => true,
+            'production' => false,
+        ],
+        'capabilities' => [
+            'uses_pos' => true,
+            'uses_tables' => true,
+            'uses_kitchen_orders' => true,
+            'uses_reservations' => true,
+        ],
+    ]);
+    $user = exportUser(['settings.manage', 'restaurant.view', 'reservations.view', 'service-orders.view', 'production.view']);
+
+    $this->actingAs($user)
+        ->get(route('exports.index'))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Exports/Index', false)
+            ->has('catalog.restaurant_summary')
+            ->has('catalog.reservations_summary')
+            ->missing('catalog.service_orders_summary')
+            ->missing('catalog.production_summary')
+        );
+});

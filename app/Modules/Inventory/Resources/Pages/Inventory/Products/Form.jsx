@@ -30,7 +30,7 @@ export default function Form({ product, thicknesses, categories, units, branches
         <AuthenticatedLayout header={<h2 className="text-xl font-semibold leading-tight text-gray-800 dark:text-gray-200">Inventario</h2>}>
             <Head title={isEditing ? 'Editar producto' : 'Nuevo producto'} />
 
-            <section className="mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:px-8">
+            <section className="mx-auto max-w-6xl px-4 py-8 sm:px-6 lg:px-8">
                 <ModuleHeader
                     title={isEditing ? 'Editar producto' : 'Nuevo producto'}
                     description={productPolicy.catalogMode === 'barcode_retail'
@@ -41,7 +41,7 @@ export default function Form({ product, thicknesses, categories, units, branches
                 />
 
                 <div className="mb-5 rounded-lg border border-sky-200 bg-sky-50 p-4 text-sm text-sky-900 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-100">
-                    Perfil activo: {productPolicy.barcodeRequired ? 'barcode obligatorio' : 'barcode autogenerado si se deja vacio'}; {productPolicy.unitEquivalencesEnabled ? 'equivalencias habilitadas' : 'equivalencias desactivadas'}; {productPolicy.allowServiceItems ? 'permite items de servicio' : 'solo productos de inventario'}.
+                    Perfil activo: {productPolicy.barcodeRequired ? 'barcode obligatorio' : 'barcode autogenerado si se deja vacio'}; {productPolicy.unitEquivalencesEnabled ? 'equivalencias habilitadas' : 'equivalencias desactivadas'}; {productPolicy.allowServiceItems ? 'permite items de servicio' : 'solo productos de inventario'}; {productPolicy.imagesEnabled ? 'imagenes habilitadas' : 'imagenes desactivadas'}; {productPolicy.variantsEnabled ? 'variantes habilitadas' : 'variantes desactivadas'}.
                 </div>
 
                 <form onSubmit={submit} className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">

@@ -26,6 +26,28 @@ class ProductWorkflowPolicy
         return (bool) (ActiveBusinessProfile::payload()['products']['allow_service_items'] ?? false);
     }
 
+    public function imagesEnabled(): bool
+    {
+        return (bool) (ActiveBusinessProfile::payload()['products']['images_enabled'] ?? false);
+    }
+
+    public function galleryEnabled(): bool
+    {
+        return (bool) (ActiveBusinessProfile::payload()['products']['gallery_enabled'] ?? false);
+    }
+
+    public function variantsEnabled(): bool
+    {
+        return (bool) (ActiveBusinessProfile::payload()['products']['variants_enabled'] ?? false);
+    }
+
+    public function allowedItemTypes(): array
+    {
+        $types = ActiveBusinessProfile::payload()['products']['item_types'] ?? ['physical'];
+
+        return array_values(array_unique(array_filter(is_array($types) ? $types : ['physical'])));
+    }
+
     public function creationContext(): string
     {
         return (string) (ActiveBusinessProfile::payload()['products']['creation_context'] ?? 'inventory_and_purchase');
@@ -48,6 +70,10 @@ class ProductWorkflowPolicy
             'barcodeRequired' => $this->barcodeRequired(),
             'unitEquivalencesEnabled' => $this->unitEquivalencesEnabled(),
             'allowServiceItems' => $this->allowServiceItems(),
+            'imagesEnabled' => $this->imagesEnabled(),
+            'galleryEnabled' => $this->galleryEnabled(),
+            'variantsEnabled' => $this->variantsEnabled(),
+            'allowedItemTypes' => $this->allowedItemTypes(),
             'creationContext' => $this->creationContext(),
             'canCreateFromPurchase' => $this->canCreateFromPurchase(),
             'canCreateFromInventory' => $this->canCreateFromInventory(),

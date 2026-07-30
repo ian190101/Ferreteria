@@ -38,12 +38,17 @@ class ProductController extends Controller
                 'barcode',
                 'inventory_tracking_mode',
                 'base_unit',
+                'item_type',
+                'is_sellable',
+                'is_purchasable',
+                'is_inventory_item',
                 'purchase_price',
                 'sale_price',
                 'is_active',
                 'created_at',
             ])
-            ->with(['thickness:id,name', 'productCategory:id,name', 'unit:id,name,symbol'])
+            ->with(['thickness:id,name', 'productCategory:id,name', 'unit:id,name,symbol', 'primaryImage:id,product_id,url,path,alt_text'])
+            ->withCount(['activeVariants'])
             ->whereHas('branchStocks', function ($query) use ($allowedBranchIds, $filterBranchId) {
                 $query->where('is_enabled', true)
                     ->whereIn('branch_id', $filterBranchId ? [$filterBranchId] : $allowedBranchIds);
@@ -94,10 +99,12 @@ class ProductController extends Controller
     {
         DB::transaction(function () use ($request) {
             $validated = $request->validated();
-            $product = Product::query()->create(Arr::except($validated, ['branch_scope', 'branch_ids', 'unit_conversions']));
+            $product = Product::query()->create(Arr::except($validated, ['branch_scope', 'branch_ids', 'unit_conversions', 'images', 'variants']));
 
             $this->syncProductBranches($product, $request, $validated);
             $this->syncUnitConversions($product, $validated['unit_conversions'] ?? []);
+            $this->syncImages($product, $validated['images'] ?? []);
+            $this->syncVariants($product, $validated['variants'] ?? []);
         });
 
         UiCatalogCache::forgetProductCatalogs();
@@ -112,7 +119,7 @@ class ProductController extends Controller
         $policy = app(ProductWorkflowPolicy::class);
 
         return Inertia::render('Inventory/Products/Form', [
-            'product' => $product->load(['thickness', 'productCategory', 'unit', 'unitConversions.unit:id,name,symbol,kind', 'branchStocks:id,product_id,branch_id,is_enabled']),
+            'product' => $product->load(['thickness', 'productCategory', 'unit', 'unitConversions.unit:id,name,symbol,kind', 'branchStocks:id,product_id,branch_id,is_enabled', 'images', 'activeVariants']),
             'thicknesses' => $this->activeThicknesses(),
             'categories' => $this->activeCategories(),
             'units' => $this->activeUnits(),
@@ -126,9 +133,11 @@ class ProductController extends Controller
     {
         DB::transaction(function () use ($request, $product) {
             $validated = $request->validated();
-            $product->update(Arr::except($validated, ['branch_scope', 'branch_ids', 'unit_conversions']));
+            $product->update(Arr::except($validated, ['branch_scope', 'branch_ids', 'unit_conversions', 'images', 'variants']));
             $this->syncProductBranches($product, $request, $validated);
             $this->syncUnitConversions($product, $validated['unit_conversions'] ?? []);
+            $this->syncImages($product, $validated['images'] ?? []);
+            $this->syncVariants($product, $validated['variants'] ?? []);
         });
 
         UiCatalogCache::forgetProductCatalogs();
@@ -210,6 +219,74 @@ class ProductController extends Controller
                 'factor_to_base' => $conversion['factor_to_base'],
                 'is_active' => $conversion['is_active'] ?? true,
             ]);
+        }
+    }
+
+    private function syncImages(Product $product, array $images): void
+    {
+        $ids = collect($images)->pluck('id')->filter()->map(fn ($id) => (int) $id)->all();
+
+        $product->images()
+            ->when($ids !== [], fn ($query) => $query->whereNotIn('id', $ids))
+            ->delete();
+
+        if ($ids === []) {
+            $product->images()->delete();
+        }
+
+        foreach (array_values($images) as $index => $image) {
+            $payload = [
+                'url' => $image['url'] ?? null,
+                'path' => $image['path'] ?? null,
+                'alt_text' => $image['alt_text'] ?? null,
+                'is_primary' => $index === 0 || (bool) ($image['is_primary'] ?? false),
+                'sort_order' => (int) ($image['sort_order'] ?? $index),
+            ];
+
+            if (! empty($image['id'])) {
+                $product->images()->whereKey($image['id'])->update($payload);
+                continue;
+            }
+
+            $product->images()->create($payload);
+        }
+
+        $primary = $product->images()->orderByDesc('is_primary')->orderBy('sort_order')->first();
+        if ($primary) {
+            $product->images()->whereKeyNot($primary->id)->update(['is_primary' => false]);
+            $primary->update(['is_primary' => true]);
+        }
+    }
+
+    private function syncVariants(Product $product, array $variants): void
+    {
+        $ids = collect($variants)->pluck('id')->filter()->map(fn ($id) => (int) $id)->all();
+
+        $product->variants()
+            ->when($ids !== [], fn ($query) => $query->whereNotIn('id', $ids))
+            ->update(['is_active' => false]);
+
+        if ($ids === []) {
+            $product->variants()->update(['is_active' => false]);
+        }
+
+        foreach ($variants as $variant) {
+            $payload = [
+                'sku' => $variant['sku'] ?? null,
+                'barcode' => $variant['barcode'] ?? null,
+                'name' => $variant['name'],
+                'attributes' => $variant['attributes'] ?? [],
+                'cost_price' => $variant['cost_price'] ?? null,
+                'sale_price' => $variant['sale_price'] ?? null,
+                'is_active' => (bool) ($variant['is_active'] ?? true),
+            ];
+
+            if (! empty($variant['id'])) {
+                $product->variants()->whereKey($variant['id'])->update($payload);
+                continue;
+            }
+
+            $product->variants()->create($payload);
         }
     }
 }

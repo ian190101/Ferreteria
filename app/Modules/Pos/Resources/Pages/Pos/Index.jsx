@@ -16,10 +16,31 @@ export default function Index({ branches = [], selectedBranchId, saleTypes = [],
     const [paymentAmount, setPaymentAmount] = useState('');
     const [pendingSales, setPendingSales] = useState(() => readStorage(queueKey(selectedBranchId), []));
     const [isOnline, setIsOnline] = useState(() => navigator.onLine);
+    const [selectedTable, setSelectedTable] = useState('');
+    const [serviceReference, setServiceReference] = useState('');
+    const [assignedPerson, setAssignedPerson] = useState('');
     const offlineEnabled = posPolicy.offlineMode !== 'disabled';
     const scannerRequired = posPolicy.scannerMode === 'required';
+    const modeLabel = posPolicy.modeLabel ?? 'POS dinamico';
+    const manualSelectionAllowed = posPolicy.manualSelectionAllowed !== false;
     const scanner = useRef({ buffer: '', lastAt: 0 });
-    const productsByBarcode = useMemo(() => new Map(products.map((product) => [String(product.barcode), product])), [products]);
+    const productsByBarcode = useMemo(() => {
+        const map = new Map();
+
+        products.forEach((product) => {
+            if (product.barcode) {
+                map.set(String(product.barcode), { product });
+            }
+
+            (product.variants ?? []).forEach((variant) => {
+                if (variant.barcode) {
+                    map.set(String(variant.barcode), { product, variant });
+                }
+            });
+        });
+
+        return map;
+    }, [products]);
     const filteredProducts = useMemo(() => {
         const term = query.trim().toLowerCase();
 
@@ -28,7 +49,13 @@ export default function Index({ branches = [], selectedBranchId, saleTypes = [],
         }
 
         return products
-            .filter((product) => `${product.name} ${product.sku} ${product.barcode}`.toLowerCase().includes(term))
+            .filter((product) => {
+                const variantText = (product.variants ?? [])
+                    .map((variant) => `${variant.name} ${variant.sku} ${variant.barcode}`)
+                    .join(' ');
+
+                return `${product.name} ${product.sku} ${product.barcode} ${variantText}`.toLowerCase().includes(term);
+            })
             .slice(0, 30);
     }, [products, query]);
     const total = cart.reduce((sum, item) => sum + (Number(item.quantity) * Number(item.sale_price)), 0);
@@ -102,35 +129,37 @@ export default function Index({ branches = [], selectedBranchId, saleTypes = [],
         return () => window.removeEventListener('keydown', onKeyDown);
     }, [productsByBarcode]);
 
-    const addProduct = (product) => {
+    const addProduct = (product, variant = null) => {
+        const cartItem = normalizeCartItem(product, variant);
+
         setCart((current) => {
-            const existing = current.find((item) => item.id === product.id);
+            const existing = current.find((item) => item.cart_key === cartItem.cart_key);
 
             if (existing) {
-                return current.map((item) => item.id === product.id ? { ...item, quantity: item.quantity + 1 } : item);
+                return current.map((item) => item.cart_key === cartItem.cart_key ? { ...item, quantity: item.quantity + 1 } : item);
             }
 
-            return [...current, { ...product, quantity: 1 }];
+            return [...current, { ...cartItem, quantity: 1 }];
         });
-        setNotice(`${product.name} agregado al carrito.`);
+        setNotice(`${cartItem.name} agregado al carrito.`);
     };
 
     const addByBarcode = (code) => {
-        const product = productsByBarcode.get(String(code));
+        const entry = productsByBarcode.get(String(code));
 
-        if (!product) {
+        if (!entry) {
             setNotice(`No se encontro un producto con el codigo ${code}.`);
             return;
         }
 
-        addProduct(product);
+        addProduct(entry.product, entry.variant ?? null);
     };
 
-    const updateQuantity = (productId, quantity) => {
+    const updateQuantity = (cartKey, quantity) => {
         const nextQuantity = Math.max(0, Number(quantity) || 0);
 
         setCart((current) => current
-            .map((item) => item.id === productId ? { ...item, quantity: nextQuantity } : item)
+            .map((item) => (item.cart_key ?? String(item.id)) === cartKey ? { ...item, quantity: nextQuantity } : item)
             .filter((item) => item.quantity > 0));
     };
 
@@ -170,6 +199,12 @@ export default function Index({ branches = [], selectedBranchId, saleTypes = [],
             paymentReference,
             cart,
             defaultTerms: documentPolicy.termsByDocument?.ticket ?? documentPolicy.termsByDocument?.sale_note ?? documentPolicy.defaultTerms ?? '',
+            context: {
+                mode: posPolicy.mode ?? 'retail',
+                table: selectedTable,
+                reference: serviceReference,
+                assigned: assignedPerson,
+            },
         });
 
         if (!isOnline && !offlineEnabled) {
@@ -290,9 +325,9 @@ export default function Index({ branches = [], selectedBranchId, saleTypes = [],
                 <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
                     <div>
                         <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Comercial</p>
-                        <h1 className="text-3xl font-bold text-slate-950 dark:text-white">{documentPolicy.ticketLabel ?? 'POS rapido'}</h1>
+                        <h1 className="text-3xl font-bold text-slate-950 dark:text-white">{documentPolicy.ticketLabel ?? modeLabel}</h1>
                         <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                            Escanee un codigo de barras, cobre y genere {String(documentPolicy.saleNoteLabel ?? 'nota de venta').toLowerCase()} pagada desde una sola pantalla.
+                            {modeLabel}. Escanee, seleccione items y genere {String(documentPolicy.saleNoteLabel ?? 'nota de venta').toLowerCase()} pagada desde una sola pantalla.
                         </p>
                         <p className={`mt-2 text-xs font-semibold ${isOnline ? 'text-emerald-600 dark:text-emerald-300' : 'text-amber-600 dark:text-amber-300'}`}>
                             {isOnline ? 'Conexion activa' : (offlineEnabled ? 'Modo sin conexion: se usara cola local' : 'Sin conexion: ventas offline desactivadas')}
@@ -341,6 +376,41 @@ export default function Index({ branches = [], selectedBranchId, saleTypes = [],
                     </div>
                 ) : null}
 
+                {(posPolicy.usesTables || posPolicy.supportsServices || posPolicy.usesKitchen || posPolicy.usesSplitPayments) ? (
+                    <div className="mb-5 grid gap-3 lg:grid-cols-3">
+                        {posPolicy.usesTables ? (
+                            <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+                                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Restaurante</p>
+                                <label className="mt-3 block text-sm font-semibold text-slate-700 dark:text-slate-200">Mesa o ambiente</label>
+                                <input value={selectedTable} onChange={(event) => setSelectedTable(event.target.value)} placeholder="Ej. Mesa 4, salon norte" className="mt-2 h-11 w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 text-sm dark:border-slate-800 dark:bg-slate-950" />
+                                <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">Esta venta quedara marcada con la mesa indicada hasta conectar comandas reales en la fase restaurante.</p>
+                            </div>
+                        ) : null}
+
+                        {posPolicy.supportsServices ? (
+                            <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+                                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Servicios</p>
+                                <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                                    <input value={serviceReference} onChange={(event) => setServiceReference(event.target.value)} placeholder="Referencia u orden" className="h-11 rounded-2xl border border-slate-200 bg-slate-50 px-3 text-sm dark:border-slate-800 dark:bg-slate-950" />
+                                    <input value={assignedPerson} onChange={(event) => setAssignedPerson(event.target.value)} placeholder="Tecnico/asignado" className="h-11 rounded-2xl border border-slate-200 bg-slate-50 px-3 text-sm dark:border-slate-800 dark:bg-slate-950" />
+                                </div>
+                            </div>
+                        ) : null}
+
+                        {(posPolicy.usesKitchen || posPolicy.usesSplitPayments) ? (
+                            <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+                                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Capacidades activas</p>
+                                <div className="mt-3 flex flex-wrap gap-2">
+                                    {posPolicy.usesKitchen ? <span className="rounded-full bg-orange-100 px-3 py-1 text-xs font-bold text-orange-700 dark:bg-orange-500/20 dark:text-orange-100">Cocina/barra</span> : null}
+                                    {posPolicy.usesSplitPayments ? <span className="rounded-full bg-sky-100 px-3 py-1 text-xs font-bold text-sky-700 dark:bg-sky-500/20 dark:text-sky-100">Pago mixto</span> : null}
+                                    {posPolicy.usesTips ? <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-bold text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-100">Propinas</span> : null}
+                                </div>
+                                <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">Las reglas financieras profundas se aplican en sus fases especificas para mantener trazabilidad.</p>
+                            </div>
+                        ) : null}
+                    </div>
+                ) : null}
+
                 <div className="grid gap-5 xl:grid-cols-[1fr_0.72fr]">
                     <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
                         <div className="grid gap-3 md:grid-cols-[1fr_auto]">
@@ -372,16 +442,35 @@ export default function Index({ branches = [], selectedBranchId, saleTypes = [],
 
                         <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                             {filteredProducts.map((product) => (
-                                <button key={product.id} type="button" onClick={() => scannerRequired ? setNotice('Escanea el codigo de barras para agregar productos en este perfil.') : addProduct(product)} className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-left transition hover:border-brand-primary hover:bg-brand-primary/5 dark:border-slate-800 dark:bg-slate-950">
-                                    <p className="line-clamp-2 min-h-10 text-sm font-bold text-slate-950 dark:text-white">{product.name}</p>
-                                    <p className="mt-2 text-xs text-slate-500">{product.sku} - {product.barcode}</p>
-                                    <div className="mt-3 flex items-center justify-between text-sm">
-                                        <span className="font-semibold text-brand-primary">Bs {money(product.sale_price)}</span>
-                                        <span className="rounded-full bg-slate-200 px-2.5 py-1 text-xs text-slate-600 dark:bg-slate-800 dark:text-slate-300">
-                                            {stock(product.stock)} {product.unit}
-                                        </span>
-                                    </div>
-                                </button>
+                                <div key={product.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-left transition hover:border-brand-primary hover:bg-brand-primary/5 dark:border-slate-800 dark:bg-slate-950">
+                                    {posPolicy.usesImages && product.image_url ? (
+                                        <img src={product.image_url} alt={product.image_alt ?? product.name} loading="lazy" className="mb-3 h-28 w-full rounded-xl object-cover" />
+                                    ) : null}
+                                    <button type="button" onClick={() => !manualSelectionAllowed ? setNotice('Escanea el codigo de barras para agregar productos en este perfil.') : addProduct(product)} className="w-full text-left">
+                                        <p className="line-clamp-2 min-h-10 text-sm font-bold text-slate-950 dark:text-white">{product.name}</p>
+                                        <p className="mt-2 text-xs text-slate-500">{product.sku} - {product.barcode}</p>
+                                        <div className="mt-2 flex flex-wrap gap-1.5">
+                                            <span className="rounded-full bg-slate-200 px-2 py-0.5 text-[11px] font-semibold text-slate-600 dark:bg-slate-800 dark:text-slate-300">{itemTypeLabel(product.item_type)}</span>
+                                            {product.preparation_minutes ? <span className="rounded-full bg-orange-100 px-2 py-0.5 text-[11px] font-semibold text-orange-700 dark:bg-orange-500/20 dark:text-orange-100">{product.preparation_minutes} min prep.</span> : null}
+                                            {product.duration_minutes ? <span className="rounded-full bg-sky-100 px-2 py-0.5 text-[11px] font-semibold text-sky-700 dark:bg-sky-500/20 dark:text-sky-100">{product.duration_minutes} min</span> : null}
+                                        </div>
+                                        <div className="mt-3 flex items-center justify-between text-sm">
+                                            <span className="font-semibold text-brand-primary">Bs {money(product.sale_price)}</span>
+                                            <span className="rounded-full bg-slate-200 px-2.5 py-1 text-xs text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                                                {product.is_inventory_item ? `${stock(product.stock)} ${product.unit}` : 'Sin stock'}
+                                            </span>
+                                        </div>
+                                    </button>
+                                    {posPolicy.usesVariants && product.variants?.length ? (
+                                        <div className="mt-3 flex flex-wrap gap-2 border-t border-slate-200 pt-3 dark:border-slate-800">
+                                            {product.variants.slice(0, 4).map((variant) => (
+                                                <button key={variant.id} type="button" onClick={() => !manualSelectionAllowed ? setNotice('Escanea el codigo de barras para agregar variantes en este perfil.') : addProduct(product, variant)} className="rounded-full border border-slate-300 px-2.5 py-1 text-xs font-semibold text-slate-700 hover:border-brand-primary hover:text-brand-primary dark:border-slate-700 dark:text-slate-200">
+                                                    {variant.name}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    ) : null}
+                                </div>
                             ))}
                         </div>
                     </div>
@@ -404,22 +493,26 @@ export default function Index({ branches = [], selectedBranchId, saleTypes = [],
                                 </div>
                             ) : null}
 
-                            {cart.map((item) => (
-                                <div key={item.id} className="rounded-2xl border border-slate-200 p-3 dark:border-slate-800">
+                            {cart.map((item) => {
+                                const cartKey = item.cart_key ?? String(item.id);
+
+                                return (
+                                <div key={cartKey} className="rounded-2xl border border-slate-200 p-3 dark:border-slate-800">
                                     <div className="flex items-start justify-between gap-3">
                                         <div>
                                             <p className="text-sm font-bold text-slate-950 dark:text-white">{item.name}</p>
+                                            {item.variant_name ? <p className="text-xs font-semibold text-brand-primary">{item.variant_name}</p> : null}
                                             <p className="text-xs text-slate-500">Bs {money(item.sale_price)} por {item.unit}</p>
                                         </div>
                                         <p className="text-sm font-bold">Bs {money(item.quantity * item.sale_price)}</p>
                                     </div>
                                     <div className="mt-3 flex items-center gap-2">
-                                        <button type="button" onClick={() => updateQuantity(item.id, item.quantity - 1)} className="h-9 w-9 rounded-full border border-slate-300 text-lg font-bold dark:border-slate-700">-</button>
-                                        <input value={item.quantity} onChange={(event) => updateQuantity(item.id, event.target.value)} className="h-9 w-20 rounded-xl border border-slate-200 bg-slate-50 text-center text-sm font-semibold dark:border-slate-800 dark:bg-slate-950" />
-                                        <button type="button" onClick={() => updateQuantity(item.id, item.quantity + 1)} className="h-9 w-9 rounded-full border border-slate-300 text-lg font-bold dark:border-slate-700">+</button>
+                                        <button type="button" onClick={() => updateQuantity(cartKey, item.quantity - 1)} className="h-9 w-9 rounded-full border border-slate-300 text-lg font-bold dark:border-slate-700">-</button>
+                                        <input value={item.quantity} onChange={(event) => updateQuantity(cartKey, event.target.value)} className="h-9 w-20 rounded-xl border border-slate-200 bg-slate-50 text-center text-sm font-semibold dark:border-slate-800 dark:bg-slate-950" />
+                                        <button type="button" onClick={() => updateQuantity(cartKey, item.quantity + 1)} className="h-9 w-9 rounded-full border border-slate-300 text-lg font-bold dark:border-slate-700">+</button>
                                     </div>
                                 </div>
-                            ))}
+                            );})}
                         </div>
 
                         <div className="mt-5 rounded-2xl bg-slate-950 p-5 text-white shadow-sm dark:bg-slate-950 dark:text-white">
@@ -450,7 +543,15 @@ export default function Index({ branches = [], selectedBranchId, saleTypes = [],
     );
 }
 
-function buildCheckoutPayload({ selectedBranchId, saleTypeId, currencyId, paymentMethodId, amountToCharge, paymentReference, cart, defaultTerms = '' }) {
+function buildCheckoutPayload({ selectedBranchId, saleTypeId, currencyId, paymentMethodId, amountToCharge, paymentReference, cart, defaultTerms = '', context = {} }) {
+    const notes = [
+        'Venta generada desde POS dinamico.',
+        context.mode ? `Modo: ${context.mode}.` : null,
+        context.table ? `Mesa/ambiente: ${context.table}.` : null,
+        context.reference ? `Referencia: ${context.reference}.` : null,
+        context.assigned ? `Asignado: ${context.assigned}.` : null,
+    ].filter(Boolean).join(' ');
+
     return {
             document_type: 'sale_note',
             branch_id: selectedBranchId,
@@ -462,24 +563,56 @@ function buildCheckoutPayload({ selectedBranchId, saleTypeId, currencyId, paymen
             advance_mode: 'none',
             requires_delivery: false,
             terms: defaultTerms,
-            internal_notes: 'Venta generada desde POS rapido.',
+            internal_notes: notes,
             pos_payment_method_id: paymentMethodId,
             pos_payment_amount: amountToCharge,
             pos_payment_reference: paymentReference,
             items: cart.map((item) => ({
-                product_id: item.id,
+                product_id: item.product_id ?? item.id,
                 product_coil_id: '',
-                description: item.name,
+                description: item.variant_name ? `${item.name} - ${item.variant_name}` : item.name,
                 unit_label: item.unit,
                 display_quantity: item.quantity,
                 display_unit_label: item.unit,
-                item_attributes: [],
+                item_attributes: item.variant_attributes ? Object.entries(item.variant_attributes).map(([key, value]) => ({ name: key, value })) : [],
                 calculation_mode: 'direct',
                 meters: item.quantity,
                 unit_price: item.sale_price,
                 discount_amount: 0,
             })),
     };
+}
+
+function normalizeCartItem(product, variant = null) {
+    const variantPrice = variant?.sale_price !== undefined && variant?.sale_price !== null
+        ? Number(variant.sale_price)
+        : Number(product.sale_price);
+
+    return {
+        ...product,
+        product_id: product.id,
+        variant_id: variant?.id ?? null,
+        variant_name: variant?.name ?? null,
+        variant_attributes: variant?.attributes ?? null,
+        cart_key: variant?.id ? `${product.id}:variant:${variant.id}` : `${product.id}:base`,
+        sale_price: variantPrice,
+        sku: variant?.sku ?? product.sku,
+        barcode: variant?.barcode ?? product.barcode,
+    };
+}
+
+function itemTypeLabel(type) {
+    return ({
+        physical: 'Producto',
+        service: 'Servicio',
+        combo: 'Combo',
+        kit: 'Kit',
+        prepared_product: 'Preparado',
+        internal_supply: 'Insumo',
+        finished_product: 'Terminado',
+        rental: 'Alquiler',
+        digital: 'Digital',
+    })[type] ?? 'Item';
 }
 
 function money(value) {
