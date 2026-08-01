@@ -2,6 +2,8 @@
 
 use App\Models\User;
 use App\Modules\Branches\Models\Branch;
+use App\Modules\SystemSuperadmin\Models\AttachmentDefinition;
+use App\Modules\SystemSuperadmin\Models\BusinessAttachment;
 use App\Modules\SystemSuperadmin\Models\BusinessCurrency;
 use App\Modules\SystemSuperadmin\Models\BusinessModuleLicense;
 use App\Modules\SystemSuperadmin\Models\BusinessProfile;
@@ -15,6 +17,7 @@ use App\Modules\SystemSuperadmin\Models\PrinterProfile;
 use App\Modules\SystemSuperadmin\Models\WorkflowDefinition;
 use App\Modules\SystemSuperadmin\Models\WorkflowTransition;
 use App\Modules\SystemSuperadmin\Services\BusinessCurrencyService;
+use App\Modules\SystemSuperadmin\Services\BusinessAttachmentService;
 use App\Modules\SystemSuperadmin\Services\BusinessLicensePolicyService;
 use App\Modules\SystemSuperadmin\Services\BusinessNotificationRuleService;
 use App\Modules\SystemSuperadmin\Services\BusinessPriceListService;
@@ -25,6 +28,8 @@ use App\Modules\SystemSuperadmin\Services\CustomFieldRuntimeService;
 use App\Modules\SystemSuperadmin\Services\DynamicRelationshipService;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
@@ -342,6 +347,89 @@ it('bloquea multiples destinos cuando la relacion dinamica no lo permite', funct
     $service = app(DynamicRelationshipService::class);
     $service->attach($definition, 99, 'GAR-1');
     $service->attach($definition, 99, 'GAR-2');
+})->throws(ValidationException::class);
+
+it('guarda adjuntos solo cuando el perfil activo habilita el motor', function () {
+    Storage::fake('local');
+
+    $definition = AttachmentDefinition::query()->create([
+        'entity_type' => 'customer',
+        'code' => 'foto_ci',
+        'label' => 'Foto CI',
+        'purpose' => 'identity_document',
+        'allowed_extensions' => ['jpg'],
+        'allowed_mime_types' => ['image/jpeg'],
+        'max_file_mb' => 2,
+        'storage_disk' => 'local',
+        'path_prefix' => 'business-attachments/clientes',
+        'is_sensitive' => true,
+        'requires_signed_url' => true,
+        'audit_downloads' => true,
+        'is_active' => true,
+    ]);
+
+    $service = app(BusinessAttachmentService::class);
+    expect($service->definitionsFor('customer'))->toBe([]);
+
+    BusinessProfile::query()->create([
+        'name' => 'Perfil adjuntos',
+        'business_type' => 'health_clinic',
+        'status' => 'active',
+        'configuration' => BusinessProfileConfiguration::normalized([
+            'capabilities' => [
+                'uses_attachments' => true,
+            ],
+            'feature_flags' => [
+                'attachments_engine' => true,
+            ],
+        ]),
+        'applied_at' => now(),
+    ]);
+    Cache::flush();
+
+    $file = UploadedFile::fake()->create('ci.jpg', 300, 'image/jpeg');
+    $attachment = $service->store($definition, 123, $file, User::factory()->create(), ['lado' => 'frontal']);
+
+    Storage::disk('local')->assertExists($attachment->path);
+
+    expect(collect($service->definitionsFor('customer'))->pluck('code')->all())->toBe(['foto_ci'])
+        ->and($attachment->entity_type)->toBe('customer')
+        ->and($attachment->record_id)->toBe('123')
+        ->and($attachment->is_sensitive)->toBeTrue()
+        ->and($attachment->payload)->toBe(['lado' => 'frontal'])
+        ->and($attachment->checksum)->not->toBeNull()
+        ->and($service->attachmentsFor('customer', 123))->toBe([])
+        ->and(collect($service->attachmentsFor('customer', 123, true))->pluck('id')->all())->toBe([$attachment->id]);
+});
+
+it('bloquea adjuntos con extension no permitida', function () {
+    Storage::fake('local');
+
+    $definition = AttachmentDefinition::query()->create([
+        'entity_type' => 'customer',
+        'code' => 'contrato_pdf',
+        'label' => 'Contrato PDF',
+        'purpose' => 'contract',
+        'allowed_extensions' => ['pdf'],
+        'allowed_mime_types' => ['application/pdf'],
+        'max_file_mb' => 2,
+        'storage_disk' => 'local',
+        'path_prefix' => 'business-attachments/contratos',
+        'is_active' => true,
+    ]);
+    BusinessProfile::query()->create([
+        'name' => 'Perfil adjuntos PDF',
+        'business_type' => 'loans',
+        'status' => 'active',
+        'configuration' => BusinessProfileConfiguration::normalized([
+            'capabilities' => ['uses_attachments' => true],
+            'feature_flags' => ['attachments_engine' => true],
+        ]),
+        'applied_at' => now(),
+    ]);
+    Cache::flush();
+
+    app(BusinessAttachmentService::class)->store($definition, 1, UploadedFile::fake()->create('foto.jpg', 100, 'image/jpeg'), User::factory()->create());
 })->throws(ValidationException::class);
 
 it('resuelve workflows formales con permisos, validaciones y acciones', function () {

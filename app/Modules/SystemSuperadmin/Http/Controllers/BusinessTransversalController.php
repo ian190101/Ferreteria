@@ -4,6 +4,7 @@ namespace App\Modules\SystemSuperadmin\Http\Controllers;
 
 use App\Http\Controllers\Controller;
 use App\Modules\HumanResources\Models\Worker;
+use App\Modules\SystemSuperadmin\Models\AttachmentDefinition;
 use App\Modules\SystemSuperadmin\Models\BusinessCurrency;
 use App\Modules\SystemSuperadmin\Models\BusinessModuleLicense;
 use App\Modules\SystemSuperadmin\Models\BusinessStateDefinition;
@@ -98,6 +99,7 @@ class BusinessTransversalController extends Controller
         return match ($section) {
             'entities' => $this->validateEntity($request, $options, $current),
             'relationships' => $this->validateRelationship($request, $options, $current),
+            'attachments' => $this->validateAttachmentDefinition($request, $options, $current),
             'custom-fields' => $this->validateCustomField($request, $options, $current),
             'workflows' => $this->validateWorkflow($request, $options, $current),
             'states' => $this->validateState($request, $options),
@@ -112,6 +114,91 @@ class BusinessTransversalController extends Controller
             'imports' => $this->validateImportTemplate($request, $options),
             default => abort(404),
         };
+    }
+
+    /**
+     * @param array<string, mixed> $options
+     * @return array<string, mixed>
+     */
+    private function validateAttachmentDefinition(Request $request, array $options, ?Model $current = null): array
+    {
+        $entityOptions = array_keys(app(DynamicEntityRegistry::class)->options());
+        $uniqueCode = Rule::unique('attachment_definitions', 'code')
+            ->where(fn ($query) => $query->where('entity_type', (string) $request->input('entity_type')));
+
+        if ($current instanceof AttachmentDefinition) {
+            $uniqueCode->ignore($current->id);
+        }
+
+        $data = $request->validate([
+            'entity_type' => ['required', 'string', Rule::in($entityOptions)],
+            'code' => ['required', 'string', 'max:120', 'regex:/^[a-z0-9_]+$/', $uniqueCode],
+            'label' => ['required', 'string', 'max:180'],
+            'purpose' => ['required', 'string', Rule::in(array_keys($options['attachmentPurposes']))],
+            'allowed_extensions_csv' => ['nullable', 'string', 'max:500'],
+            'allowed_mime_types_csv' => ['nullable', 'string', 'max:1000'],
+            'max_file_mb' => ['required', 'integer', 'min:1', 'max:100'],
+            'storage_disk' => ['nullable', 'string', Rule::in(array_keys($options['attachmentStorageDisks']))],
+            'path_prefix' => ['required', 'string', 'max:180', 'regex:/^[A-Za-z0-9_\/-]+$/'],
+            'is_required' => ['boolean'],
+            'is_sensitive' => ['boolean'],
+            'requires_signed_url' => ['boolean'],
+            'audit_downloads' => ['boolean'],
+            'visible_in_documents' => ['boolean'],
+            'visible_in_reports' => ['boolean'],
+            'permissions_text' => ['nullable', 'string', 'max:3000'],
+            'metadata_text' => ['nullable', 'string', 'max:3000'],
+            'retention_policy' => ['required', 'string', Rule::in(array_keys($options['retentionPolicies']))],
+            'sort_order' => ['nullable', 'integer', 'min:0', 'max:999'],
+            'is_active' => ['boolean'],
+        ], [], [
+            'entity_type' => 'entidad',
+            'code' => 'codigo interno',
+            'label' => 'nombre visible',
+            'purpose' => 'proposito',
+            'path_prefix' => 'carpeta base',
+        ]);
+
+        $extensions = BusinessTransversalConfiguration::listFromCsv($data['allowed_extensions_csv'] ?? null);
+        $mimeTypes = BusinessTransversalConfiguration::listFromCsv($data['allowed_mime_types_csv'] ?? null);
+
+        $invalidExtensions = array_diff($extensions, array_keys($options['attachmentExtensions']));
+        $invalidMimes = array_diff($mimeTypes, array_keys($options['attachmentMimeTypes']));
+
+        if ($invalidExtensions !== []) {
+            throw ValidationException::withMessages([
+                'allowed_extensions_csv' => 'Hay extensiones no permitidas por la politica del sistema.',
+            ]);
+        }
+
+        if ($invalidMimes !== []) {
+            throw ValidationException::withMessages([
+                'allowed_mime_types_csv' => 'Hay tipos MIME no permitidos por la politica del sistema.',
+            ]);
+        }
+
+        return [
+            'entity_type' => $data['entity_type'],
+            'code' => $data['code'],
+            'label' => $data['label'],
+            'purpose' => $data['purpose'],
+            'allowed_extensions' => $extensions,
+            'allowed_mime_types' => $mimeTypes,
+            'max_file_mb' => (int) $data['max_file_mb'],
+            'storage_disk' => $data['storage_disk'] ?? null,
+            'path_prefix' => trim($data['path_prefix'], '/'),
+            'is_required' => (bool) ($data['is_required'] ?? false),
+            'is_sensitive' => (bool) ($data['is_sensitive'] ?? false),
+            'requires_signed_url' => (bool) ($data['requires_signed_url'] ?? true),
+            'audit_downloads' => (bool) ($data['audit_downloads'] ?? true),
+            'visible_in_documents' => (bool) ($data['visible_in_documents'] ?? false),
+            'visible_in_reports' => (bool) ($data['visible_in_reports'] ?? false),
+            'permissions' => BusinessTransversalConfiguration::jsonFromText($data['permissions_text'] ?? null),
+            'metadata' => BusinessTransversalConfiguration::jsonFromText($data['metadata_text'] ?? null),
+            'retention_policy' => $data['retention_policy'],
+            'sort_order' => (int) ($data['sort_order'] ?? 0),
+            'is_active' => (bool) ($data['is_active'] ?? true),
+        ];
     }
 
     /**
@@ -714,6 +801,7 @@ class BusinessTransversalController extends Controller
         return match ($section) {
             'entities' => DynamicEntity::class,
             'relationships' => DynamicRelationshipDefinition::class,
+            'attachments' => AttachmentDefinition::class,
             'custom-fields' => CustomFieldDefinition::class,
             'workflows' => WorkflowDefinition::class,
             'states' => BusinessStateDefinition::class,
@@ -745,6 +833,7 @@ class BusinessTransversalController extends Controller
         return match ($section) {
             'entities' => 'Entidad configurable',
             'relationships' => 'Relacion entre entidades',
+            'attachments' => 'Adjunto/evidencia',
             'custom-fields' => 'Campo personalizado',
             'workflows' => 'Flujo de estado',
             'states' => 'Estado personalizado',

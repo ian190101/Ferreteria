@@ -3,6 +3,7 @@
 use App\Models\User;
 use App\Modules\Branches\Models\Branch;
 use App\Modules\HumanResources\Models\Worker;
+use App\Modules\SystemSuperadmin\Models\AttachmentDefinition;
 use App\Modules\SystemSuperadmin\Models\BusinessCurrency;
 use App\Modules\SystemSuperadmin\Models\BusinessProfileSandboxSession;
 use App\Modules\SystemSuperadmin\Models\BusinessStateDefinition;
@@ -379,6 +380,72 @@ it('bloquea relaciones con entidad destino inexistente o mismo origen', function
         ->assertSessionHasErrors('target_entity_type');
 
     expect(DynamicRelationshipDefinition::query()->count())->toBe(0);
+});
+
+it('crea definiciones de adjuntos sin activar el perfil actual de ferreteria', function () {
+    $user = transversalUser();
+
+    $this->actingAs($user)
+        ->post(route('system-superadmin.transversal-config.store', 'attachments'), [
+            'entity_type' => 'customer',
+            'code' => 'ci_escaneado',
+            'label' => 'CI escaneado',
+            'purpose' => 'identity_document',
+            'allowed_extensions_csv' => 'jpg,png,pdf',
+            'allowed_mime_types_csv' => 'image/jpeg,image/png,application/pdf',
+            'max_file_mb' => 8,
+            'storage_disk' => 'local',
+            'path_prefix' => 'business-attachments/clientes',
+            'is_required' => true,
+            'is_sensitive' => true,
+            'requires_signed_url' => true,
+            'audit_downloads' => true,
+            'visible_in_documents' => false,
+            'visible_in_reports' => false,
+            'permissions_text' => '{"view":["admin"],"download":["admin"]}',
+            'metadata_text' => '{"lado":"frontal"}',
+            'retention_policy' => 'sensitive',
+            'sort_order' => 2,
+            'is_active' => true,
+        ])
+        ->assertRedirect();
+
+    $definition = AttachmentDefinition::query()->where('code', 'ci_escaneado')->first();
+    $configuration = BusinessProfileConfiguration::normalized([]);
+
+    expect($definition)->not->toBeNull()
+        ->and($definition->entity_type)->toBe('customer')
+        ->and($definition->allowed_extensions)->toBe(['jpg', 'png', 'pdf'])
+        ->and($definition->allowed_mime_types)->toBe(['image/jpeg', 'image/png', 'application/pdf'])
+        ->and($definition->is_sensitive)->toBeTrue()
+        ->and($definition->permissions)->toBe(['view' => ['admin'], 'download' => ['admin']])
+        ->and($definition->metadata)->toBe(['lado' => 'frontal'])
+        ->and($configuration['feature_flags']['attachments_engine'])->toBeFalse()
+        ->and($configuration['capabilities']['uses_attachments'])->toBeFalse();
+});
+
+it('bloquea definiciones de adjuntos con extensiones o mime fuera de politica', function () {
+    $user = transversalUser();
+
+    $this->actingAs($user)
+        ->from(route('system-superadmin.transversal-config.index'))
+        ->post(route('system-superadmin.transversal-config.store', 'attachments'), [
+            'entity_type' => 'customer',
+            'code' => 'archivo_invalido',
+            'label' => 'Archivo invalido',
+            'purpose' => 'evidence',
+            'allowed_extensions_csv' => 'exe',
+            'allowed_mime_types_csv' => 'application/x-msdownload',
+            'max_file_mb' => 10,
+            'storage_disk' => 'local',
+            'path_prefix' => 'business-attachments',
+            'retention_policy' => 'standard',
+            'is_active' => true,
+        ])
+        ->assertRedirect(route('system-superadmin.transversal-config.index'))
+        ->assertSessionHasErrors('allowed_extensions_csv');
+
+    expect(AttachmentDefinition::query()->count())->toBe(0);
 });
 
 it('permite campos personalizados sobre entidades dinamicas activas y los oculta al desactivarlas', function () {

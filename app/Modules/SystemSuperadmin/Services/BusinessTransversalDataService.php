@@ -5,6 +5,7 @@ namespace App\Modules\SystemSuperadmin\Services;
 use App\Modules\Branches\Models\Branch;
 use App\Modules\HumanResources\Models\Worker;
 use App\Modules\Inventory\Models\Product;
+use App\Modules\SystemSuperadmin\Models\AttachmentDefinition;
 use App\Modules\SystemSuperadmin\Models\BusinessCurrency;
 use App\Modules\SystemSuperadmin\Models\BusinessModuleLicense;
 use App\Modules\SystemSuperadmin\Models\BusinessStateDefinition;
@@ -31,6 +32,7 @@ class BusinessTransversalDataService
             'summary' => [
                 'entities' => DynamicEntity::query()->count(),
                 'relationships' => DynamicRelationshipDefinition::query()->count(),
+                'attachments' => AttachmentDefinition::query()->count(),
                 'custom_fields' => CustomFieldDefinition::query()->count(),
                 'workflows' => WorkflowDefinition::query()->count(),
                 'states' => BusinessStateDefinition::query()->count(),
@@ -46,6 +48,7 @@ class BusinessTransversalDataService
             ],
             'entities' => DynamicEntity::query()->orderBy('sort_order')->orderBy('label')->limit(80)->get(),
             'relationships' => DynamicRelationshipDefinition::query()->orderBy('source_entity_type')->orderBy('sort_order')->orderBy('label')->limit(80)->get(),
+            'attachments' => AttachmentDefinition::query()->orderBy('entity_type')->orderBy('sort_order')->orderBy('label')->limit(80)->get(),
             'customFields' => CustomFieldDefinition::query()->orderBy('entity_type')->orderBy('sort_order')->orderBy('label')->limit(80)->get(),
             'workflows' => WorkflowDefinition::query()->orderBy('entity_type')->orderByDesc('is_default')->orderBy('name')->limit(80)->get(),
             'states' => BusinessStateDefinition::query()->orderBy('entity_type')->orderBy('sort_order')->orderBy('label')->limit(80)->get(),

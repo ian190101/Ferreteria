@@ -9,6 +9,7 @@ import ContextHelp from '../../../../../Shared/Resources/Components/ContextHelp'
 const sectionOrder = [
     ['entities', 'entities', 'Entidades'],
     ['relationships', 'relationships', 'Relaciones'],
+    ['attachments', 'attachments', 'Adjuntos'],
     ['customFields', 'custom-fields', 'Campos personalizados'],
     ['workflows', 'workflows', 'Flujos'],
     ['states', 'states', 'Estados'],
@@ -26,6 +27,7 @@ const sectionOrder = [
 const emptyForms = {
     entities: { code: '', label: '', plural_label: '', base_entity: '', module: '', icon: '', mode: 'optional', is_visible: true, is_editable: true, is_required: false, is_exportable: false, is_reportable: false, is_auditable: true, is_sensitive: false, retention_policy: 'standard', permissions_text: '', settings_text: '', sort_order: 0, is_active: true },
     relationships: { source_entity_type: 'customer', target_entity_type: 'product', code: '', label: '', type: 'one_to_many', inverse_label: '', is_required: false, allows_multiple: true, min_items: '', max_items: '', cascade_behavior: 'restrict', permissions_text: '', metadata_text: '', sort_order: 0, is_active: true },
+    attachments: { entity_type: 'customer', code: '', label: '', purpose: 'evidence', allowed_extensions_csv: 'jpg,png,pdf', allowed_mime_types_csv: 'image/jpeg,image/png,application/pdf', max_file_mb: 10, storage_disk: 'local', path_prefix: 'business-attachments', is_required: false, is_sensitive: false, requires_signed_url: true, audit_downloads: true, visible_in_documents: false, visible_in_reports: false, permissions_text: '', metadata_text: '', retention_policy: 'standard', sort_order: 0, is_active: true },
     customFields: { entity_type: 'product', code: '', label: '', help_text: '', placeholder: '', type: 'text', group: '', options_csv: '', validation_rules_text: '', default_value_text: '', format: '', min_value: '', max_value: '', relation_entity_type: '', metadata_text: '', is_required: false, visible_in_forms: true, visible_in_table: false, visible_in_documents: false, visible_in_reports: false, is_exportable: false, is_auditable: true, is_sensitive: false, is_encrypted: false, is_read_only: false, sort_order: 0, is_active: true },
     workflows: { entity_type: 'service_order', code: '', name: '', description: '', initial_state_code: '', final_state_codes_csv: '', settings_text: '', is_default: false, is_active: true },
     states: { entity_type: 'service_order', workflow_code: '', code: '', label: '', color: '#2563eb', state_type: 'intermediate', is_initial: false, is_final: false, allowed_transitions_csv: '', required_permission: '', entry_validations_text: '', actions_text: '', exit_actions_text: '', sort_order: 0, is_active: true },
@@ -44,6 +46,7 @@ export default function Index({
     summary = {},
     entities = [],
     relationships = [],
+    attachments = [],
     customFields = [],
     workflows = [],
     states = [],
@@ -64,7 +67,7 @@ export default function Index({
     const [activeSection, setActiveSection] = useState('customFields');
     const [editing, setEditing] = useState(null);
     const currentRouteSection = sectionOrder.find(([key]) => key === activeSection)?.[1] ?? 'custom-fields';
-    const rows = { entities, relationships, customFields, workflows, states, workflowTransitions, resources, priceLists, commissions, notifications, currencies, printers, licenses, imports }[activeSection] ?? [];
+    const rows = { entities, relationships, attachments, customFields, workflows, states, workflowTransitions, resources, priceLists, commissions, notifications, currencies, printers, licenses, imports }[activeSection] ?? [];
     const form = useForm(emptyForms[activeSection]);
 
     const sectionLabel = sectionOrder.find(([key]) => key === activeSection)?.[2] ?? 'Configuracion';
@@ -304,6 +307,33 @@ function DynamicFormFields({ section, form, options, branches, workers, products
                 <OptionSelect label="Al desactivar" value={form.data.cascade_behavior} onChange={(value) => set('cascade_behavior', value)} options={options.relationshipCascadeBehaviors} />
                 <FormField label="Permisos JSON" value={form.data.permissions_text} onChange={(event) => set('permissions_text', event.target.value)} helpText='Ejemplo: {"view":["admin"],"attach":["tecnico"]}' />
                 <FormField label="Metadatos JSON" value={form.data.metadata_text} onChange={(event) => set('metadata_text', event.target.value)} helpText='Ejemplo: {"documentos":["contrato"],"requiere_evidencia":true}' />
+                <FormField label="Orden" type="number" value={form.data.sort_order} onChange={(event) => set('sort_order', event.target.value)} />
+                {bool('is_active', 'Activo')}
+            </>
+        );
+    }
+
+    if (section === 'attachments') {
+        return (
+            <>
+                <OptionSelect label="Entidad" value={form.data.entity_type} onChange={(value) => set('entity_type', value)} options={options.entities} />
+                <FormField label="Codigo interno" value={form.data.code} onChange={(event) => set('code', event.target.value)} error={form.errors.code} helpTooltip="Usa minusculas, numeros y guion bajo. Ejemplo: ci_escaneado, foto_antes, contrato_firmado." />
+                <FormField label="Nombre visible" value={form.data.label} onChange={(event) => set('label', event.target.value)} error={form.errors.label} />
+                <OptionSelect label="Proposito" value={form.data.purpose} onChange={(value) => set('purpose', value)} options={options.attachmentPurposes} />
+                <FormField label="Extensiones permitidas" value={form.data.allowed_extensions_csv} onChange={(event) => set('allowed_extensions_csv', event.target.value)} helpText="Separadas por coma. Ejemplo: jpg,png,pdf." />
+                <FormField label="MIME permitidos" value={form.data.allowed_mime_types_csv} onChange={(event) => set('allowed_mime_types_csv', event.target.value)} helpText="Separados por coma. Ejemplo: image/jpeg,application/pdf." />
+                <FormField label="Maximo MB" type="number" value={form.data.max_file_mb} onChange={(event) => set('max_file_mb', event.target.value)} />
+                <OptionSelect label="Disco" value={form.data.storage_disk} onChange={(value) => set('storage_disk', value)} options={options.attachmentStorageDisks} />
+                <FormField label="Carpeta base" value={form.data.path_prefix} onChange={(event) => set('path_prefix', event.target.value)} helpText="Sin espacios. Ejemplo: business-attachments/clinica." />
+                <OptionSelect label="Retencion" value={form.data.retention_policy} onChange={(value) => set('retention_policy', value)} options={options.retentionPolicies} />
+                {bool('is_required', 'Obligatorio')}
+                {bool('is_sensitive', 'Dato sensible')}
+                {bool('requires_signed_url', 'Requiere URL firmada')}
+                {bool('audit_downloads', 'Auditar descargas')}
+                {bool('visible_in_documents', 'Visible en documentos')}
+                {bool('visible_in_reports', 'Visible en reportes')}
+                <FormField label="Permisos JSON" value={form.data.permissions_text} onChange={(event) => set('permissions_text', event.target.value)} helpText='Ejemplo: {"view":["doctor"],"download":["admin"]}' />
+                <FormField label="Metadatos JSON" value={form.data.metadata_text} onChange={(event) => set('metadata_text', event.target.value)} helpText='Ejemplo: {"requiere_firma":true,"lado":"frontal"}' />
                 <FormField label="Orden" type="number" value={form.data.sort_order} onChange={(event) => set('sort_order', event.target.value)} />
                 {bool('is_active', 'Activo')}
             </>
@@ -551,6 +581,7 @@ function sectionHelp(section) {
     return {
         entities: 'Define entidades propias del negocio como paciente, vehiculo, mascota, prestamo, proyecto, garantia o equipo. Crear una entidad aqui no cambia ferreteria hasta que se active el motor correspondiente en el perfil.',
         relationships: 'Define vinculos entre entidades como cliente-vehiculo, paciente-tratamiento, prestamo-garantia, proyecto-etapa u orden-material. No se aplican en ferreteria hasta activar el motor de relaciones.',
+        attachments: 'Define documentos, fotos, contratos, firmas y evidencias por entidad. Crear la definicion no habilita subida de archivos en ferreteria hasta activar el motor de adjuntos.',
         customFields: 'Permite agregar datos propios por entidad, por ejemplo placa en taller, historia clinica en servicios o talla en tienda.',
         workflows: 'Define flujos por entidad, como reparacion, prestamo, comanda, tratamiento o alquiler. Un flujo controla estados y transiciones.',
         states: 'Define estados y transiciones para reservas, comandas, servicios o produccion sin escribir codigo nuevo.',
@@ -570,6 +601,7 @@ function columnsFor(section) {
     return {
         entities: [{ key: 'label', label: 'Entidad' }, { key: 'code', label: 'Codigo' }, { key: 'mode', label: 'Modo' }, { key: 'is_active', label: 'Estado' }],
         relationships: [{ key: 'label', label: 'Relacion' }, { key: 'source_entity_type', label: 'Origen' }, { key: 'target_entity_type', label: 'Destino' }, { key: 'type', label: 'Tipo' }, { key: 'is_active', label: 'Estado' }],
+        attachments: [{ key: 'label', label: 'Adjunto' }, { key: 'entity_type', label: 'Entidad' }, { key: 'purpose', label: 'Proposito' }, { key: 'max_file_mb', label: 'MB' }, { key: 'is_sensitive', label: 'Sensible' }],
         customFields: [{ key: 'label', label: 'Nombre' }, { key: 'entity_type', label: 'Entidad' }, { key: 'type', label: 'Tipo' }, { key: 'is_active', label: 'Estado' }],
         workflows: [{ key: 'name', label: 'Flujo' }, { key: 'entity_type', label: 'Entidad' }, { key: 'initial_state_code', label: 'Inicial' }, { key: 'is_default', label: 'Default' }],
         states: [{ key: 'label', label: 'Estado' }, { key: 'entity_type', label: 'Entidad' }, { key: 'is_initial', label: 'Inicial' }, { key: 'is_final', label: 'Final' }],
@@ -616,6 +648,10 @@ function formFromRow(section, row) {
 
     if (section === 'relationships') {
         return { ...base, ...pick(row, ['source_entity_type', 'target_entity_type', 'code', 'label', 'type', 'inverse_label', 'is_required', 'allows_multiple', 'min_items', 'max_items', 'cascade_behavior', 'sort_order', 'is_active']), permissions_text: stringify(row.permissions), metadata_text: stringify(row.metadata) };
+    }
+
+    if (section === 'attachments') {
+        return { ...base, ...pick(row, ['entity_type', 'code', 'label', 'purpose', 'max_file_mb', 'storage_disk', 'path_prefix', 'is_required', 'is_sensitive', 'requires_signed_url', 'audit_downloads', 'visible_in_documents', 'visible_in_reports', 'retention_policy', 'sort_order', 'is_active']), allowed_extensions_csv: (row.allowed_extensions ?? []).join(', '), allowed_mime_types_csv: (row.allowed_mime_types ?? []).join(', '), permissions_text: stringify(row.permissions), metadata_text: stringify(row.metadata) };
     }
 
     if (section === 'states') {
