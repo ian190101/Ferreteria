@@ -258,6 +258,69 @@ it('registra reserva y bloquea solapamientos del mismo recurso', function () {
         ->assertSessionHasErrors('reservable_resource_id');
 });
 
+it('consulta disponibilidad de recurso antes de registrar reserva', function () {
+    $user = reservationUser(reservationConfiguration([
+        'rentals' => ['deposit_required' => false, 'condition_check_required' => false],
+    ]));
+    $resource = reservableResourceFor($user->branch_id, ['name' => 'Box disponible', 'type' => 'box']);
+
+    $this->actingAs($user)
+        ->getJson(route('reservations.availability', [
+            'branch_id' => $user->branch_id,
+            'reservable_resource_id' => $resource->id,
+            'start_at' => '2026-08-08 09:00:00',
+            'end_at' => '2026-08-08 10:00:00',
+        ]))
+        ->assertOk()
+        ->assertJsonPath('available', true)
+        ->assertJsonPath('resource.name', 'Box disponible');
+
+    BusinessReservation::query()->create([
+        'branch_id' => $user->branch_id,
+        'reservable_resource_id' => $resource->id,
+        'user_id' => $user->id,
+        'reservation_number' => 'RES-DISP-001',
+        'type' => BusinessReservation::TYPE_RESERVATION,
+        'status' => BusinessReservation::STATUS_PENDING,
+        'title' => 'Reserva ocupada',
+        'customer_name' => 'Cliente con horario',
+        'start_at' => '2026-08-08 09:30:00',
+        'end_at' => '2026-08-08 10:30:00',
+    ]);
+
+    $this->actingAs($user)
+        ->getJson(route('reservations.availability', [
+            'branch_id' => $user->branch_id,
+            'reservable_resource_id' => $resource->id,
+            'start_at' => '2026-08-08 09:45:00',
+            'end_at' => '2026-08-08 10:15:00',
+        ]))
+        ->assertOk()
+        ->assertJsonPath('available', false)
+        ->assertJsonPath('conflicts.0.number', 'RES-DISP-001')
+        ->assertJsonPath('conflicts.0.customer', 'Cliente con horario');
+});
+
+it('bloquea consulta de disponibilidad cuando reservas no estan activas', function () {
+    $user = reservationUser([
+        'identity' => ['business_type' => 'hardware_store'],
+        'modules' => ['reservations' => true],
+        'capabilities' => [
+            'uses_reservations' => false,
+            'uses_reservable_resources' => false,
+            'uses_rentals' => false,
+        ],
+    ]);
+
+    $this->actingAs($user)
+        ->getJson(route('reservations.availability', [
+            'branch_id' => $user->branch_id,
+            'start_at' => '2026-08-08 09:00:00',
+            'end_at' => '2026-08-08 10:00:00',
+        ]))
+        ->assertNotFound();
+});
+
 it('respeta disponibilidad avanzada, mantenimiento y recursos globales', function () {
     $user = reservationUser(reservationConfiguration([
         'rentals' => ['deposit_required' => false, 'condition_check_required' => false],

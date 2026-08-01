@@ -15,6 +15,10 @@ Route::middleware(['auth', 'verified'])
             ->middleware(['business_capability:uses_reservations,uses_reservable_resources,uses_rentals', 'permission:reservations.manage'])
             ->name('store');
 
+        Route::get('/availability', [ReservationController::class, 'availability'])
+            ->middleware(['business_capability:uses_reservations,uses_reservable_resources,uses_rentals', 'permission:reservations.view'])
+            ->name('availability');
+
         Route::patch('/{reservation}/status', [ReservationController::class, 'updateStatus'])
             ->middleware(['business_capability:uses_reservations,uses_reservable_resources,uses_rentals', 'permission:reservations.manage'])
             ->name('status');

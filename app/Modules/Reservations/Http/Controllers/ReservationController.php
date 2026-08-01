@@ -17,6 +17,7 @@ use App\Support\SystemCacheInvalidator;
 use App\Support\UiCatalogCache;
 use Carbon\Carbon;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
@@ -173,6 +174,37 @@ class ReservationController extends Controller
         return back()->with('success', $type === BusinessReservation::TYPE_RENTAL
             ? 'Alquiler registrado correctamente.'
             : 'Reserva registrada correctamente.');
+    }
+
+    public function availability(Request $request, ReservationWorkflowPolicy $policy, ReservationAvailabilityService $availability): JsonResponse
+    {
+        abort_unless($policy->reservationsEnabled(), 404);
+
+        $data = $request->validate([
+            'branch_id' => ['required', 'integer', 'exists:branches,id'],
+            'reservable_resource_id' => ['nullable', 'integer', 'exists:reservable_resources,id'],
+            'start_at' => ['required', 'date'],
+            'end_at' => ['required', 'date'],
+            'ignore_reservation_id' => ['nullable', 'integer', 'exists:business_reservations,id'],
+        ], [], [
+            'branch_id' => 'sucursal',
+            'reservable_resource_id' => 'recurso reservable',
+            'start_at' => 'inicio',
+            'end_at' => 'fin',
+            'ignore_reservation_id' => 'reserva a ignorar',
+        ]);
+
+        abort_unless(BranchAccess::canAccess($request->user(), (int) $data['branch_id']), 403);
+        $this->validateResourceBranch($data);
+
+        $result = $availability->checkResourceAvailability(
+            (int) ($data['reservable_resource_id'] ?? 0) ?: null,
+            Carbon::parse($data['start_at']),
+            Carbon::parse($data['end_at']),
+            (int) ($data['ignore_reservation_id'] ?? 0) ?: null,
+        );
+
+        return response()->json($result);
     }
 
     public function updateStatus(Request $request, BusinessReservation $reservation, BusinessStateTransitionService $transitions): RedirectResponse

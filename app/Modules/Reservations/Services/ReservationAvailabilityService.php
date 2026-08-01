@@ -7,10 +7,50 @@ use App\Modules\SystemSuperadmin\Models\ReservableResource;
 use Carbon\Carbon;
 use Carbon\CarbonInterface;
 use Carbon\CarbonPeriod;
+use Illuminate\Support\Collection;
 use Illuminate\Validation\ValidationException;
 
 class ReservationAvailabilityService
 {
+    /**
+     * @return array{available: bool, message: string, conflicts: array<int, array<string, mixed>>, resource?: array<string, mixed>}
+     */
+    public function checkResourceAvailability(
+        ?int $resourceId,
+        CarbonInterface $startAt,
+        CarbonInterface $endAt,
+        ?int $ignoreReservationId = null
+    ): array {
+        try {
+            $this->ensureResourceAvailable($resourceId, $startAt, $endAt, $ignoreReservationId);
+
+            return [
+                'available' => true,
+                'message' => $resourceId
+                    ? 'El recurso esta disponible para el horario seleccionado.'
+                    : 'El horario es valido. No se verifico recurso porque no fue seleccionado.',
+                'conflicts' => [],
+                'resource' => $resourceId ? $this->resourceSummary($resourceId) : null,
+            ];
+        } catch (ValidationException $exception) {
+            [$conflictStart, $conflictEnd] = $resourceId
+                ? $this->availabilityWindow($resourceId, $startAt, $endAt)
+                : [$startAt, $endAt];
+
+            return [
+                'available' => false,
+                'message' => collect($exception->errors())->flatten()->first() ?: 'El recurso no esta disponible.',
+                'conflicts' => $resourceId
+                    ? $this->overlappingReservations($resourceId, $conflictStart, $conflictEnd, $ignoreReservationId)
+                        ->map(fn (BusinessReservation $reservation) => $this->reservationSummary($reservation))
+                        ->values()
+                        ->all()
+                    : [],
+                'resource' => $resourceId ? $this->resourceSummary($resourceId) : null,
+            ];
+        }
+    }
+
     public function ensureResourceAvailable(
         ?int $resourceId,
         CarbonInterface $startAt,
@@ -44,28 +84,103 @@ class ReservationAvailabilityService
         $this->ensureRulesAllowReservation($resource, $startAt, $endAt);
 
         $rules = $resource->availability_rules ?? [];
-        $bufferMinutes = max(0, (int) data_get($rules, 'buffer_minutes', 0));
         $parallelCapacity = max(1, (int) data_get($rules, 'parallel_capacity', 1));
-        $blockedStart = $startAt->copy()->subMinutes($bufferMinutes);
-        $blockedEnd = $endAt->copy()->addMinutes($bufferMinutes);
+        [$blockedStart, $blockedEnd] = $this->availabilityWindow($resourceId, $startAt, $endAt);
 
-        $overlapExists = BusinessReservation::query()
-            ->where('reservable_resource_id', $resourceId)
-            ->whereNotIn('status', [
-                BusinessReservation::STATUS_CANCELLED,
-                BusinessReservation::STATUS_COMPLETED,
-                BusinessReservation::STATUS_NO_SHOW,
-            ])
-            ->when($ignoreReservationId, fn ($query) => $query->whereKeyNot($ignoreReservationId))
-            ->where('start_at', '<', $blockedEnd)
-            ->where('end_at', '>', $blockedStart)
-            ->count();
+        $overlapExists = $this->overlappingReservations($resourceId, $blockedStart, $blockedEnd, $ignoreReservationId)->count();
 
         if ($overlapExists >= $parallelCapacity) {
             throw ValidationException::withMessages([
                 'reservable_resource_id' => 'El recurso ya tiene una reserva o alquiler en ese horario.',
             ]);
         }
+    }
+
+    /**
+     * @return array{0: CarbonInterface, 1: CarbonInterface}
+     */
+    private function availabilityWindow(int $resourceId, CarbonInterface $startAt, CarbonInterface $endAt): array
+    {
+        $resource = ReservableResource::query()->find($resourceId);
+        $bufferMinutes = max(0, (int) data_get($resource?->availability_rules ?? [], 'buffer_minutes', 0));
+
+        return [
+            $startAt->copy()->subMinutes($bufferMinutes),
+            $endAt->copy()->addMinutes($bufferMinutes),
+        ];
+    }
+
+    /**
+     * @return Collection<int, BusinessReservation>
+     */
+    public function reservationsForResource(int $resourceId, CarbonInterface $from, CarbonInterface $to): Collection
+    {
+        return BusinessReservation::query()
+            ->with(['customer:id,name,phone', 'worker:id,name'])
+            ->where('reservable_resource_id', $resourceId)
+            ->whereNotIn('status', [
+                BusinessReservation::STATUS_CANCELLED,
+                BusinessReservation::STATUS_COMPLETED,
+                BusinessReservation::STATUS_NO_SHOW,
+            ])
+            ->where('start_at', '<', $to)
+            ->where('end_at', '>', $from)
+            ->orderBy('start_at')
+            ->get();
+    }
+
+    /**
+     * @return Collection<int, BusinessReservation>
+     */
+    private function overlappingReservations(
+        int $resourceId,
+        CarbonInterface $startAt,
+        CarbonInterface $endAt,
+        ?int $ignoreReservationId = null
+    ): Collection {
+        return $this->reservationsForResource($resourceId, $startAt, $endAt)
+            ->when($ignoreReservationId, fn (Collection $reservations) => $reservations->reject(
+                fn (BusinessReservation $reservation) => (int) $reservation->id === (int) $ignoreReservationId
+            ))
+            ->values();
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function resourceSummary(int $resourceId): ?array
+    {
+        $resource = ReservableResource::query()->find($resourceId);
+
+        if (! $resource) {
+            return null;
+        }
+
+        return [
+            'id' => $resource->id,
+            'name' => $resource->name,
+            'type' => $resource->type,
+            'status' => $resource->status,
+            'capacity' => $resource->capacity,
+            'location' => $resource->location,
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function reservationSummary(BusinessReservation $reservation): array
+    {
+        return [
+            'id' => $reservation->id,
+            'number' => $reservation->reservation_number,
+            'type' => $reservation->type,
+            'status' => $reservation->status,
+            'title' => $reservation->title,
+            'customer' => $reservation->customer?->name ?? $reservation->customer_name,
+            'start_at' => $reservation->start_at?->toISOString(),
+            'end_at' => $reservation->end_at?->toISOString(),
+        ];
     }
 
     private function ensureOutsideMaintenanceWindow(ReservableResource $resource, CarbonInterface $startAt, CarbonInterface $endAt): void

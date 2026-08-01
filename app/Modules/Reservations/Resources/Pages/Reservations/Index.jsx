@@ -1,6 +1,7 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import Pagination from '../../../../Shared/Resources/Components/Pagination';
 import { Head, router, useForm } from '@inertiajs/react';
+import { useState } from 'react';
 
 export default function Index({
     branches = [],
@@ -15,6 +16,8 @@ export default function Index({
     products = [],
     filters = {},
 }) {
+    const [availability, setAvailability] = useState(null);
+    const [checkingAvailability, setCheckingAvailability] = useState(false);
     const form = useForm({
         branch_id: selectedBranchId ?? branches[0]?.id ?? '',
         type: policy.rentalsEnabled ? 'rental' : 'reservation',
@@ -59,6 +62,40 @@ export default function Index({
             preserveScroll: true,
             onSuccess: () => form.reset('reservable_resource_id', 'customer_id', 'worker_id', 'customer_name', 'customer_phone', 'title', 'start_at', 'end_at', 'reminder_at', 'amount', 'advance_amount', 'deposit_amount', 'penalty_amount', 'condition_before', 'condition_after', 'notes', 'items'),
         });
+    };
+
+    const checkAvailability = async () => {
+        setCheckingAvailability(true);
+        setAvailability(null);
+
+        const params = new URLSearchParams({
+            branch_id: form.data.branch_id ?? '',
+            start_at: form.data.start_at ?? '',
+            end_at: form.data.end_at ?? '',
+        });
+        if (form.data.reservable_resource_id) {
+            params.set('reservable_resource_id', form.data.reservable_resource_id);
+        }
+
+        try {
+            const response = await fetch(`${route('reservations.availability')}?${params.toString()}`, {
+                headers: { Accept: 'application/json' },
+            });
+            const payload = await response.json();
+            setAvailability(response.ok ? payload : {
+                available: false,
+                message: firstValidationMessage(payload) ?? 'No se pudo verificar la disponibilidad.',
+                conflicts: [],
+            });
+        } catch (error) {
+            setAvailability({
+                available: false,
+                message: 'No se pudo consultar disponibilidad. Revisa la conexion e intenta nuevamente.',
+                conflicts: [],
+            });
+        } finally {
+            setCheckingAvailability(false);
+        }
     };
 
     const updateStatus = (reservation, status, confirmationStatus = null) => {
@@ -144,6 +181,24 @@ export default function Index({
                                     {policy.advanceEnabled ? <Field label="Anticipo Bs" type="number" step="0.1" value={form.data.advance_amount} onChange={(value) => form.setData('advance_amount', value)} error={form.errors.advance_amount} /> : null}
                                     {selectedType === 'rental' ? <Field label={policy.depositRequired ? 'Garantia requerida Bs' : 'Garantia Bs'} type="number" step="0.1" value={form.data.deposit_amount} onChange={(value) => form.setData('deposit_amount', value)} error={form.errors.deposit_amount} /> : null}
                                     {selectedType === 'rental' && policy.penaltyEnabled ? <Field label="Penalidad Bs" type="number" step="0.1" value={form.data.penalty_amount} onChange={(value) => form.setData('penalty_amount', value)} error={form.errors.penalty_amount} /> : null}
+                                </div>
+
+                                <div className="rounded-3xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950">
+                                    <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                                        <div>
+                                            <h3 className="text-sm font-black text-slate-950 dark:text-white">Disponibilidad del horario</h3>
+                                            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Verifica solapamientos, mantenimiento, buffer y reglas del recurso antes de guardar.</p>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={checkAvailability}
+                                            disabled={checkingAvailability || !form.data.start_at || !form.data.end_at}
+                                            className="rounded-full border border-brand-primary px-4 py-2 text-sm font-black text-brand-primary disabled:cursor-not-allowed disabled:opacity-50"
+                                        >
+                                            {checkingAvailability ? 'Verificando...' : 'Verificar disponibilidad'}
+                                        </button>
+                                    </div>
+                                    {availability ? <AvailabilityResult availability={availability} /> : null}
                                 </div>
 
                                 {selectedType === 'rental' ? (
@@ -347,6 +402,26 @@ function MutedState({ text }) {
     return <div className="rounded-2xl border border-dashed border-slate-300 p-5 text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">{text}</div>;
 }
 
+function AvailabilityResult({ availability }) {
+    return (
+        <div className={`mt-3 rounded-2xl border p-3 text-sm ${availability.available ? 'border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-100' : 'border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-100'}`}>
+            <p className="font-bold">{availability.available ? 'Disponible' : 'No disponible'}</p>
+            <p className="mt-1">{availability.message}</p>
+            {availability.conflicts?.length ? (
+                <div className="mt-3 space-y-2">
+                    {availability.conflicts.map((conflict) => (
+                        <div key={conflict.id} className="rounded-xl bg-white/70 p-2 text-xs dark:bg-slate-900/60">
+                            <p className="font-bold">{conflict.number ?? 'Reserva'} - {conflict.title}</p>
+                            <p>{formatDate(conflict.start_at)} hasta {formatDate(conflict.end_at)}</p>
+                            <p>{conflict.customer ?? 'Sin cliente'} · {conflict.status}</p>
+                        </div>
+                    ))}
+                </div>
+            ) : null}
+        </div>
+    );
+}
+
 function emptyItem(product) {
     return {
         product_id: product?.id ?? '',
@@ -407,4 +482,11 @@ function toLocalInputValue(value) {
 
 function capitalize(value) {
     return String(value || '').replace(/_/g, ' ').replace(/^\w/, (letter) => letter.toUpperCase());
+}
+
+function firstValidationMessage(payload) {
+    const errors = payload?.errors ?? {};
+    const first = Object.values(errors)[0];
+
+    return Array.isArray(first) ? first[0] : null;
 }
