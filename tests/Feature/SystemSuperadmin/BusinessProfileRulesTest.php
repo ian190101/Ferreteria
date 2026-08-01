@@ -176,6 +176,12 @@ it('valida columnas y metodos avanzados antes de guardar un borrador', function 
     $configuration = BusinessProfileConfiguration::defaults();
     $configuration['sales']['visible_columns'] = ['description', 'columna_invalida'];
     $configuration['sales']['allowed_payment_methods'] = ['cash', 'metodo_invalido'];
+    $configuration['field_permissions']['rules'] = [[
+        'entity' => 'customer',
+        'field' => 'historia_clinica',
+        'actions' => ['leer_sin_permiso'],
+        'effect' => 'allow',
+    ]];
 
     $this->actingAs($user)
         ->from(route('system-superadmin.business-profiles.index'))
@@ -188,6 +194,7 @@ it('valida columnas y metodos avanzados antes de guardar un borrador', function 
         ->assertSessionHasErrors([
             'configuration.sales.visible_columns.1',
             'configuration.sales.allowed_payment_methods.1',
+            'configuration.field_permissions.rules.0.actions.0',
         ]);
 });
 

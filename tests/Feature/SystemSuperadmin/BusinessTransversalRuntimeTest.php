@@ -4,6 +4,7 @@ use App\Models\User;
 use App\Modules\Branches\Models\Branch;
 use App\Modules\SystemSuperadmin\Models\BusinessCurrency;
 use App\Modules\SystemSuperadmin\Models\BusinessModuleLicense;
+use App\Modules\SystemSuperadmin\Models\BusinessProfile;
 use App\Modules\SystemSuperadmin\Models\BusinessStateDefinition;
 use App\Modules\SystemSuperadmin\Models\CustomFieldDefinition;
 use App\Modules\SystemSuperadmin\Models\NotificationRule;
@@ -15,10 +16,12 @@ use App\Modules\SystemSuperadmin\Services\BusinessCurrencyService;
 use App\Modules\SystemSuperadmin\Services\BusinessLicensePolicyService;
 use App\Modules\SystemSuperadmin\Services\BusinessNotificationRuleService;
 use App\Modules\SystemSuperadmin\Services\BusinessPriceListService;
+use App\Modules\SystemSuperadmin\Services\BusinessProfileConfiguration;
 use App\Modules\SystemSuperadmin\Services\BusinessPrinterProfileService;
 use App\Modules\SystemSuperadmin\Services\BusinessStateTransitionService;
 use App\Modules\SystemSuperadmin\Services\CustomFieldRuntimeService;
 use Illuminate\Support\Facades\Crypt;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Validation\ValidationException;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
@@ -125,6 +128,93 @@ it('valida limites, opciones y prepara valores cifrados de atributos', function 
         'tipo_cliente' => 'bloqueado',
     ]);
 })->throws(ValidationException::class);
+
+it('aplica permisos por campo sensible desde el perfil activo', function () {
+    $branch = Branch::query()->create([
+        'name' => 'Sucursal permisos campo',
+        'code' => 'FIELD-PERM',
+        'barcode' => 'BR-FIELD-PERM',
+        'is_active' => true,
+    ]);
+    $otherBranch = Branch::query()->create([
+        'name' => 'Sucursal sin permiso campo',
+        'code' => 'FIELD-PERM-2',
+        'barcode' => 'BR-FIELD-PERM-2',
+        'is_active' => true,
+    ]);
+    BusinessProfile::query()->create([
+        'name' => 'Perfil permisos por campo',
+        'business_type' => 'health_clinic',
+        'status' => 'active',
+        'configuration' => BusinessProfileConfiguration::normalized([
+            'capabilities' => [
+                'uses_dynamic_entities' => true,
+                'uses_dynamic_fields' => true,
+                'uses_field_level_permissions' => true,
+            ],
+            'feature_flags' => [
+                'dynamic_entities_engine' => true,
+                'dynamic_fields_engine' => true,
+                'field_permissions_engine' => true,
+            ],
+            'field_permissions' => [
+                'default_sensitive_visibility' => 'deny',
+                'rules' => [
+                    [
+                        'entity' => 'customer',
+                        'field' => 'historia_clinica',
+                        'actions' => ['view'],
+                        'roles' => ['medico'],
+                        'branches' => [$branch->id],
+                        'flows' => ['consulta'],
+                        'states' => ['en_atencion'],
+                        'effect' => 'allow',
+                    ],
+                    [
+                        'entity' => 'customer',
+                        'field' => 'historia_clinica',
+                        'actions' => ['edit'],
+                        'roles' => ['director_medico'],
+                        'branches' => [$branch->id],
+                        'effect' => 'allow',
+                    ],
+                ],
+            ],
+        ]),
+        'applied_at' => now(),
+    ]);
+    Cache::flush();
+
+    CustomFieldDefinition::query()->create([
+        'entity_type' => 'customer',
+        'code' => 'historia_clinica',
+        'label' => 'Historia clinica',
+        'type' => 'text',
+        'visible_in_forms' => true,
+        'visible_in_reports' => true,
+        'is_exportable' => true,
+        'is_sensitive' => true,
+        'is_active' => true,
+    ]);
+
+    $medicoRole = Role::findOrCreate('medico', 'web');
+    $directorRole = Role::findOrCreate('director_medico', 'web');
+    $medico = User::factory()->create(['branch_id' => $branch->id]);
+    $director = User::factory()->create(['branch_id' => $branch->id]);
+    $sinPermiso = User::factory()->create(['branch_id' => $branch->id]);
+    $otraSucursal = User::factory()->create(['branch_id' => $otherBranch->id]);
+    $medico->assignRole($medicoRole);
+    $director->assignRole($directorRole);
+
+    $service = app(CustomFieldRuntimeService::class);
+    $context = ['branch_id' => $branch->id, 'flow' => 'consulta', 'state' => 'en_atencion'];
+
+    expect(collect($service->definitionsForSurface('customer', 'report', false, $sinPermiso, $context))->pluck('code')->all())->toBe([])
+        ->and(collect($service->definitionsForSurface('customer', 'report', false, $otraSucursal, ['branch_id' => $otherBranch->id, 'flow' => 'consulta', 'state' => 'en_atencion']))->pluck('code')->all())->toBe([])
+        ->and(collect($service->definitionsForSurface('customer', 'report', false, $medico, $context))->pluck('code')->all())->toBe(['historia_clinica'])
+        ->and(collect($service->editableDefinitionsFor('customer', $medico, $context))->pluck('code')->all())->toBe([])
+        ->and(collect($service->editableDefinitionsFor('customer', $director, ['branch_id' => $branch->id]))->pluck('code')->all())->toBe(['historia_clinica']);
+});
 
 it('resuelve transiciones de estado con permisos finos', function () {
     BusinessStateDefinition::query()->create([

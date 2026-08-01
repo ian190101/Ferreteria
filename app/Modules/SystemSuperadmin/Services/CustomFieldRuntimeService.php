@@ -3,12 +3,17 @@
 namespace App\Modules\SystemSuperadmin\Services;
 
 use App\Modules\SystemSuperadmin\Models\CustomFieldDefinition;
+use App\Models\User;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\ValidationException;
 
 class CustomFieldRuntimeService
 {
+    public function __construct(private readonly FieldPermissionService $fieldPermissions)
+    {
+    }
+
     /**
      * @return array<int, CustomFieldDefinition>
      */
@@ -30,7 +35,7 @@ class CustomFieldRuntimeService
     /**
      * @return array<int, CustomFieldDefinition>
      */
-    public function definitionsForSurface(string $entityType, string $surface, bool $includeSensitive = false): array
+    public function definitionsForSurface(string $entityType, string $surface, bool $includeSensitive = false, ?User $user = null, array $context = []): array
     {
         $column = match ($surface) {
             'table' => 'visible_in_table',
@@ -42,7 +47,19 @@ class CustomFieldRuntimeService
 
         return collect($this->definitionsFor($entityType))
             ->filter(fn (CustomFieldDefinition $definition) => (bool) $definition->{$column})
-            ->filter(fn (CustomFieldDefinition $definition) => $includeSensitive || ! $definition->is_sensitive)
+            ->filter(fn (CustomFieldDefinition $definition) => $includeSensitive || ! $definition->is_sensitive || $this->fieldPermissions->canUseOnSurface($definition, $surface, $user, $context))
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @return array<int, CustomFieldDefinition>
+     */
+    public function editableDefinitionsFor(string $entityType, ?User $user = null, array $context = []): array
+    {
+        return collect($this->definitionsFor($entityType))
+            ->filter(fn (CustomFieldDefinition $definition) => (bool) $definition->visible_in_forms)
+            ->filter(fn (CustomFieldDefinition $definition) => $this->fieldPermissions->canEdit($definition, $user, $context))
             ->values()
             ->all();
     }

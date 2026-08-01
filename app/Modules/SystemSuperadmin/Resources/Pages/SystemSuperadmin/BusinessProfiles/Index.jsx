@@ -433,6 +433,23 @@ export default function Index({ activeProfile, drafts, versions, presets = [], o
                                     <Toggle label="Exportar solo con permiso" checked={form.data.configuration.policies?.data?.export_requires_permission ?? true} onChange={(value) => setNestedConfig('policies', 'data', 'export_requires_permission', value)} />
                                     <FormField label="Permiso para ver costos" name="show_costs_permission" value={form.data.configuration.policies?.data?.show_costs_permission ?? ''} onChange={(event) => setNestedConfig('policies', 'data', 'show_costs_permission', event.target.value)} />
                                     <FormField label="Permiso para reportes financieros" name="show_financial_reports_permission" value={form.data.configuration.policies?.data?.show_financial_reports_permission ?? ''} onChange={(event) => setNestedConfig('policies', 'data', 'show_financial_reports_permission', event.target.value)} />
+                                    <SelectField label="Permisos por campo" name="field_permissions_mode" value={form.data.configuration.field_permissions?.mode ?? 'role_entity_field'} onChange={(event) => setConfig('field_permissions', 'mode', event.target.value)} helpTooltip="Define si los campos sensibles se filtran por rol, usuario, sucursal, entidad, campo, flujo o estado.">
+                                        {Object.entries(options.fieldPermissionModes ?? {}).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                                    </SelectField>
+                                    <SelectField label="Visibilidad sensible por defecto" name="default_sensitive_visibility" value={form.data.configuration.field_permissions?.default_sensitive_visibility ?? 'deny'} onChange={(event) => setConfig('field_permissions', 'default_sensitive_visibility', event.target.value)} helpTooltip="Si no hay una regla especifica, define si un campo sensible se oculta, se permite solo lectura o se muestra.">
+                                        <option value="deny">Ocultar por defecto</option>
+                                        <option value="read_only">Solo lectura por defecto</option>
+                                        <option value="allow">Permitir por defecto</option>
+                                    </SelectField>
+                                    <div className="md:col-span-2 xl:col-span-3">
+                                        <JsonArrayField
+                                            label="Reglas JSON por campo"
+                                            value={JSON.stringify(form.data.configuration.field_permissions?.rules ?? [], null, 2)}
+                                            onValidChange={(rules) => setConfig('field_permissions', 'rules', rules)}
+                                            helpText='Ejemplo: [{"entity":"customer","field":"historia_clinica","actions":["view"],"roles":["medico"],"effect":"allow"}]'
+                                            helpTooltip="Estas reglas son aplicadas en backend; no dependen de ocultar inputs en el navegador."
+                                        />
+                                    </div>
                                     <Toggle label="Anulacion requiere permiso" checked={form.data.configuration.policies?.voids_returns?.requires_permission ?? true} onChange={(value) => setNestedConfig('policies', 'voids_returns', 'requires_permission', value)} />
                                     <FormField label="Horas maximas para anular" name="max_hours_after_sale" type="number" min="0" value={form.data.configuration.policies?.voids_returns?.max_hours_after_sale ?? 24} onChange={(event) => setNestedConfig('policies', 'voids_returns', 'max_hours_after_sale', event.target.value)} />
                                     <Toggle label="Devolucion devuelve stock" checked={form.data.configuration.policies?.voids_returns?.return_stock ?? true} onChange={(value) => setNestedConfig('policies', 'voids_returns', 'return_stock', value)} />
@@ -681,6 +698,53 @@ function Checklist({ title, options, values, onToggle }) {
                 ))}
             </div>
         </div>
+    );
+}
+
+function JsonArrayField({ label, value, onValidChange, helpText, helpTooltip = null }) {
+    const [text, setText] = useState(value);
+    const [error, setError] = useState('');
+
+    useEffect(() => {
+        setText(value);
+        setError('');
+    }, [value]);
+
+    const handleChange = (event) => {
+        const nextText = event.target.value;
+
+        setText(nextText);
+
+        try {
+            const parsed = JSON.parse(nextText);
+
+            if (!Array.isArray(parsed)) {
+                setError('Debe ser un arreglo JSON.');
+                return;
+            }
+
+            setError('');
+            onValidChange(parsed);
+        } catch {
+            setError('JSON invalido. Se conserva la ultima regla valida hasta corregirlo.');
+        }
+    };
+
+    return (
+        <label className="block">
+            <span className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                {label}
+                {helpTooltip ? <span className="rounded-full border border-slate-300 px-1.5 text-[10px] normal-case tracking-normal text-slate-500 dark:border-slate-700 dark:text-slate-400" title={helpTooltip}>?</span> : null}
+            </span>
+            <textarea
+                value={text}
+                onChange={handleChange}
+                rows={6}
+                className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 font-mono text-xs text-slate-900 shadow-sm outline-none transition focus:border-brand-primary focus:ring-2 focus:ring-brand-primary/20 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100"
+            />
+            {helpText ? <span className="mt-2 block text-xs leading-5 text-slate-500 dark:text-slate-400">{helpText}</span> : null}
+            {error ? <span className="mt-2 block text-xs font-semibold text-rose-600 dark:text-rose-300">{error}</span> : null}
+        </label>
     );
 }
 
