@@ -11,6 +11,7 @@ use App\Modules\SystemSuperadmin\Models\BusinessStateDefinition;
 use App\Modules\SystemSuperadmin\Models\CommissionRule;
 use App\Modules\SystemSuperadmin\Models\CustomFieldDefinition;
 use App\Modules\SystemSuperadmin\Models\DynamicEntity;
+use App\Modules\SystemSuperadmin\Models\DynamicRelationshipDefinition;
 use App\Modules\SystemSuperadmin\Models\ImportProfileTemplate;
 use App\Modules\SystemSuperadmin\Models\NotificationRule;
 use App\Modules\SystemSuperadmin\Models\PriceList;
@@ -29,6 +30,7 @@ class BusinessTransversalDataService
         return [
             'summary' => [
                 'entities' => DynamicEntity::query()->count(),
+                'relationships' => DynamicRelationshipDefinition::query()->count(),
                 'custom_fields' => CustomFieldDefinition::query()->count(),
                 'workflows' => WorkflowDefinition::query()->count(),
                 'states' => BusinessStateDefinition::query()->count(),
@@ -43,6 +45,7 @@ class BusinessTransversalDataService
                 'imports' => ImportProfileTemplate::query()->count(),
             ],
             'entities' => DynamicEntity::query()->orderBy('sort_order')->orderBy('label')->limit(80)->get(),
+            'relationships' => DynamicRelationshipDefinition::query()->orderBy('source_entity_type')->orderBy('sort_order')->orderBy('label')->limit(80)->get(),
             'customFields' => CustomFieldDefinition::query()->orderBy('entity_type')->orderBy('sort_order')->orderBy('label')->limit(80)->get(),
             'workflows' => WorkflowDefinition::query()->orderBy('entity_type')->orderByDesc('is_default')->orderBy('name')->limit(80)->get(),
             'states' => BusinessStateDefinition::query()->orderBy('entity_type')->orderBy('sort_order')->orderBy('label')->limit(80)->get(),

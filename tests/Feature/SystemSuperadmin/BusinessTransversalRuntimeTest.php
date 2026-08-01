@@ -7,6 +7,8 @@ use App\Modules\SystemSuperadmin\Models\BusinessModuleLicense;
 use App\Modules\SystemSuperadmin\Models\BusinessProfile;
 use App\Modules\SystemSuperadmin\Models\BusinessStateDefinition;
 use App\Modules\SystemSuperadmin\Models\CustomFieldDefinition;
+use App\Modules\SystemSuperadmin\Models\DynamicEntity;
+use App\Modules\SystemSuperadmin\Models\DynamicRelationshipDefinition;
 use App\Modules\SystemSuperadmin\Models\NotificationRule;
 use App\Modules\SystemSuperadmin\Models\PriceList;
 use App\Modules\SystemSuperadmin\Models\PrinterProfile;
@@ -20,6 +22,7 @@ use App\Modules\SystemSuperadmin\Services\BusinessProfileConfiguration;
 use App\Modules\SystemSuperadmin\Services\BusinessPrinterProfileService;
 use App\Modules\SystemSuperadmin\Services\BusinessStateTransitionService;
 use App\Modules\SystemSuperadmin\Services\CustomFieldRuntimeService;
+use App\Modules\SystemSuperadmin\Services\DynamicRelationshipService;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Validation\ValidationException;
@@ -246,6 +249,100 @@ it('resuelve transiciones de estado con permisos finos', function () {
         ->and($service->canTransition('service_order', 'pendiente', 'cerrado', $user))->toBeTrue()
         ->and($service->initialStates('service_order'))->toHaveCount(1);
 });
+
+it('resuelve relaciones dinamicas solo cuando el perfil activo las habilita', function () {
+    DynamicEntity::query()->create([
+        'code' => 'vehiculo',
+        'label' => 'Vehiculo',
+        'base_entity' => 'customer',
+        'mode' => 'optional',
+        'retention_policy' => 'standard',
+        'is_visible' => true,
+        'is_active' => true,
+    ]);
+    $definition = DynamicRelationshipDefinition::query()->create([
+        'source_entity_type' => 'customer',
+        'target_entity_type' => 'vehiculo',
+        'code' => 'vehiculos_cliente',
+        'label' => 'Vehiculos del cliente',
+        'type' => 'one_to_many',
+        'allows_multiple' => true,
+        'cascade_behavior' => 'restrict',
+        'is_active' => true,
+    ]);
+
+    $service = app(DynamicRelationshipService::class);
+    expect($service->definitionsFor('customer'))->toBe([]);
+
+    BusinessProfile::query()->create([
+        'name' => 'Perfil relaciones dinamicas',
+        'business_type' => 'auto_mechanic',
+        'status' => 'active',
+        'configuration' => BusinessProfileConfiguration::normalized([
+            'capabilities' => [
+                'uses_dynamic_entities' => true,
+                'uses_dynamic_relationships' => true,
+            ],
+            'feature_flags' => [
+                'dynamic_entities_engine' => true,
+                'dynamic_relationships_engine' => true,
+            ],
+        ]),
+        'applied_at' => now(),
+    ]);
+    Cache::flush();
+
+    $value = $service->attach($definition, 15, 'ABC-123', ['placa' => 'ABC-123']);
+
+    expect(collect($service->definitionsFor('customer'))->pluck('code')->all())->toBe(['vehiculos_cliente'])
+        ->and($value->source_entity_type)->toBe('customer')
+        ->and($value->target_entity_type)->toBe('vehiculo')
+        ->and($value->payload)->toBe(['placa' => 'ABC-123'])
+        ->and(collect($service->valuesFor('customer', 15))->pluck('target_record_id')->all())->toBe(['ABC-123']);
+});
+
+it('bloquea multiples destinos cuando la relacion dinamica no lo permite', function () {
+    DynamicEntity::query()->create([
+        'code' => 'garantia',
+        'label' => 'Garantia',
+        'base_entity' => 'customer',
+        'mode' => 'optional',
+        'retention_policy' => 'financial',
+        'is_visible' => true,
+        'is_active' => true,
+    ]);
+    $definition = DynamicRelationshipDefinition::query()->create([
+        'source_entity_type' => 'customer',
+        'target_entity_type' => 'garantia',
+        'code' => 'garantia_principal',
+        'label' => 'Garantia principal',
+        'type' => 'one_to_one',
+        'allows_multiple' => false,
+        'cascade_behavior' => 'restrict',
+        'is_active' => true,
+    ]);
+    BusinessProfile::query()->create([
+        'name' => 'Perfil relacion unica',
+        'business_type' => 'loans',
+        'status' => 'active',
+        'configuration' => BusinessProfileConfiguration::normalized([
+            'capabilities' => [
+                'uses_dynamic_entities' => true,
+                'uses_dynamic_relationships' => true,
+            ],
+            'feature_flags' => [
+                'dynamic_entities_engine' => true,
+                'dynamic_relationships_engine' => true,
+            ],
+        ]),
+        'applied_at' => now(),
+    ]);
+    Cache::flush();
+
+    $service = app(DynamicRelationshipService::class);
+    $service->attach($definition, 99, 'GAR-1');
+    $service->attach($definition, 99, 'GAR-2');
+})->throws(ValidationException::class);
 
 it('resuelve workflows formales con permisos, validaciones y acciones', function () {
     $workflow = WorkflowDefinition::query()->create([

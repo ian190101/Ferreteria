@@ -34,6 +34,7 @@ class BusinessTransversalConfiguration
         return [
             'sections' => [
                 'entities' => 'Entidades configurables',
+                'relationships' => 'Relaciones entre entidades',
                 'custom_fields' => 'Campos personalizados',
                 'workflows' => 'Flujos de estado',
                 'states' => 'Estados personalizados',
@@ -53,6 +54,17 @@ class BusinessTransversalConfiguration
                 'optional' => 'Opcional',
                 'required' => 'Obligatoria',
                 'read_only' => 'Solo lectura historica',
+            ],
+            'relationshipTypes' => [
+                'one_to_one' => 'Uno a uno',
+                'one_to_many' => 'Uno a muchos',
+                'many_to_one' => 'Muchos a uno',
+                'many_to_many' => 'Muchos a muchos',
+            ],
+            'relationshipCascadeBehaviors' => [
+                'restrict' => 'Restringir si hay datos relacionados',
+                'detach' => 'Desvincular relacion',
+                'readonly_history' => 'Mantener historial solo lectura',
             ],
             'retentionPolicies' => [
                 'standard' => 'Retencion estandar',

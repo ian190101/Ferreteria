@@ -8,6 +8,7 @@ use App\Modules\SystemSuperadmin\Models\BusinessProfileSandboxSession;
 use App\Modules\SystemSuperadmin\Models\BusinessStateDefinition;
 use App\Modules\SystemSuperadmin\Models\CustomFieldDefinition;
 use App\Modules\SystemSuperadmin\Models\DynamicEntity;
+use App\Modules\SystemSuperadmin\Models\DynamicRelationshipDefinition;
 use App\Modules\SystemSuperadmin\Models\PrinterProfile;
 use App\Modules\SystemSuperadmin\Models\ReservableResource;
 use App\Modules\SystemSuperadmin\Models\WorkflowDefinition;
@@ -284,6 +285,100 @@ it('crea entidades configurables sin activar motores nuevos ni cambiar ferreteri
         ->and($configuration['identity']['business_type'])->toBe('hardware_store')
         ->and($configuration['feature_flags']['dynamic_entities_engine'])->toBeFalse()
         ->and($configuration['capabilities']['uses_dynamic_entities'])->toBeFalse();
+});
+
+it('crea relaciones entre entidades sin activar el perfil actual de ferreteria', function () {
+    $user = transversalUser();
+    DynamicEntity::query()->create([
+        'code' => 'vehiculo',
+        'label' => 'Vehiculo',
+        'base_entity' => 'customer',
+        'mode' => 'optional',
+        'retention_policy' => 'standard',
+        'is_visible' => true,
+        'is_active' => true,
+    ]);
+
+    $this->actingAs($user)
+        ->post(route('system-superadmin.transversal-config.store', 'relationships'), [
+            'source_entity_type' => 'customer',
+            'target_entity_type' => 'vehiculo',
+            'code' => 'vehiculos_cliente',
+            'label' => 'Vehiculos del cliente',
+            'type' => 'one_to_many',
+            'inverse_label' => 'Cliente propietario',
+            'is_required' => false,
+            'allows_multiple' => true,
+            'min_items' => 0,
+            'max_items' => 5,
+            'cascade_behavior' => 'readonly_history',
+            'permissions_text' => '{"view":["admin"],"attach":["tecnico"]}',
+            'metadata_text' => '{"documentos":["orden_servicio"]}',
+            'sort_order' => 3,
+            'is_active' => true,
+        ])
+        ->assertRedirect();
+
+    $this->actingAs($user)
+        ->post(route('system-superadmin.transversal-config.store', 'relationships'), [
+            'source_entity_type' => 'customer',
+            'target_entity_type' => 'product',
+            'code' => 'producto_favorito',
+            'label' => 'Producto favorito',
+            'type' => 'one_to_one',
+            'allows_multiple' => true,
+            'cascade_behavior' => 'restrict',
+            'is_active' => true,
+        ])
+        ->assertRedirect();
+
+    $relationship = DynamicRelationshipDefinition::query()->where('code', 'vehiculos_cliente')->first();
+    $singleRelationship = DynamicRelationshipDefinition::query()->where('code', 'producto_favorito')->first();
+    $configuration = BusinessProfileConfiguration::normalized([]);
+
+    expect($relationship)->not->toBeNull()
+        ->and($relationship->source_entity_type)->toBe('customer')
+        ->and($relationship->target_entity_type)->toBe('vehiculo')
+        ->and($relationship->allows_multiple)->toBeTrue()
+        ->and($relationship->permissions)->toBe(['view' => ['admin'], 'attach' => ['tecnico']])
+        ->and($relationship->metadata)->toBe(['documentos' => ['orden_servicio']])
+        ->and($singleRelationship->allows_multiple)->toBeFalse()
+        ->and($configuration['feature_flags']['dynamic_relationships_engine'])->toBeFalse()
+        ->and($configuration['capabilities']['uses_dynamic_relationships'])->toBeFalse();
+});
+
+it('bloquea relaciones con entidad destino inexistente o mismo origen', function () {
+    $user = transversalUser();
+
+    $this->actingAs($user)
+        ->from(route('system-superadmin.transversal-config.index'))
+        ->post(route('system-superadmin.transversal-config.store', 'relationships'), [
+            'source_entity_type' => 'customer',
+            'target_entity_type' => 'fantasma',
+            'code' => 'relacion_invalida',
+            'label' => 'Relacion invalida',
+            'type' => 'one_to_many',
+            'cascade_behavior' => 'restrict',
+            'is_active' => true,
+        ])
+        ->assertRedirect(route('system-superadmin.transversal-config.index'))
+        ->assertSessionHasErrors('target_entity_type');
+
+    $this->actingAs($user)
+        ->from(route('system-superadmin.transversal-config.index'))
+        ->post(route('system-superadmin.transversal-config.store', 'relationships'), [
+            'source_entity_type' => 'customer',
+            'target_entity_type' => 'customer',
+            'code' => 'cliente_cliente',
+            'label' => 'Cliente consigo mismo',
+            'type' => 'one_to_one',
+            'cascade_behavior' => 'restrict',
+            'is_active' => true,
+        ])
+        ->assertRedirect(route('system-superadmin.transversal-config.index'))
+        ->assertSessionHasErrors('target_entity_type');
+
+    expect(DynamicRelationshipDefinition::query()->count())->toBe(0);
 });
 
 it('permite campos personalizados sobre entidades dinamicas activas y los oculta al desactivarlas', function () {

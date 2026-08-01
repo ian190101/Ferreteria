@@ -10,6 +10,7 @@ use App\Modules\SystemSuperadmin\Models\BusinessStateDefinition;
 use App\Modules\SystemSuperadmin\Models\CommissionRule;
 use App\Modules\SystemSuperadmin\Models\CustomFieldDefinition;
 use App\Modules\SystemSuperadmin\Models\DynamicEntity;
+use App\Modules\SystemSuperadmin\Models\DynamicRelationshipDefinition;
 use App\Modules\SystemSuperadmin\Models\ImportProfileTemplate;
 use App\Modules\SystemSuperadmin\Models\NotificationRule;
 use App\Modules\SystemSuperadmin\Models\PriceList;
@@ -96,6 +97,7 @@ class BusinessTransversalController extends Controller
 
         return match ($section) {
             'entities' => $this->validateEntity($request, $options, $current),
+            'relationships' => $this->validateRelationship($request, $options, $current),
             'custom-fields' => $this->validateCustomField($request, $options, $current),
             'workflows' => $this->validateWorkflow($request, $options, $current),
             'states' => $this->validateState($request, $options),
@@ -110,6 +112,67 @@ class BusinessTransversalController extends Controller
             'imports' => $this->validateImportTemplate($request, $options),
             default => abort(404),
         };
+    }
+
+    /**
+     * @param array<string, mixed> $options
+     * @return array<string, mixed>
+     */
+    private function validateRelationship(Request $request, array $options, ?Model $current = null): array
+    {
+        $entityOptions = array_keys(app(DynamicEntityRegistry::class)->options());
+        $uniqueCode = Rule::unique('dynamic_relationship_definitions', 'code')
+            ->where(fn ($query) => $query->where('source_entity_type', (string) $request->input('source_entity_type')));
+
+        if ($current instanceof DynamicRelationshipDefinition) {
+            $uniqueCode->ignore($current->id);
+        }
+
+        $data = $request->validate([
+            'source_entity_type' => ['required', 'string', Rule::in($entityOptions)],
+            'target_entity_type' => ['required', 'string', Rule::in($entityOptions), 'different:source_entity_type'],
+            'code' => ['required', 'string', 'max:120', 'regex:/^[a-z0-9_]+$/', $uniqueCode],
+            'label' => ['required', 'string', 'max:180'],
+            'type' => ['required', 'string', Rule::in(array_keys($options['relationshipTypes']))],
+            'inverse_label' => ['nullable', 'string', 'max:180'],
+            'is_required' => ['boolean'],
+            'allows_multiple' => ['boolean'],
+            'min_items' => ['nullable', 'integer', 'min:0', 'max:999999'],
+            'max_items' => ['nullable', 'integer', 'min:1', 'max:999999', 'gte:min_items'],
+            'cascade_behavior' => ['required', 'string', Rule::in(array_keys($options['relationshipCascadeBehaviors']))],
+            'permissions_text' => ['nullable', 'string', 'max:3000'],
+            'metadata_text' => ['nullable', 'string', 'max:3000'],
+            'sort_order' => ['nullable', 'integer', 'min:0', 'max:999'],
+            'is_active' => ['boolean'],
+        ], [], [
+            'source_entity_type' => 'entidad origen',
+            'target_entity_type' => 'entidad destino',
+            'code' => 'codigo interno',
+            'label' => 'nombre visible',
+            'type' => 'tipo de relacion',
+        ]);
+
+        $allowsMultiple = in_array($data['type'], ['one_to_many', 'many_to_many'], true)
+            ? (bool) ($data['allows_multiple'] ?? true)
+            : false;
+
+        return [
+            'source_entity_type' => $data['source_entity_type'],
+            'target_entity_type' => $data['target_entity_type'],
+            'code' => $data['code'],
+            'label' => $data['label'],
+            'type' => $data['type'],
+            'inverse_label' => $data['inverse_label'] ?? null,
+            'is_required' => (bool) ($data['is_required'] ?? false),
+            'allows_multiple' => $allowsMultiple,
+            'min_items' => $data['min_items'] ?? null,
+            'max_items' => $data['max_items'] ?? null,
+            'cascade_behavior' => $data['cascade_behavior'],
+            'permissions' => BusinessTransversalConfiguration::jsonFromText($data['permissions_text'] ?? null),
+            'metadata' => BusinessTransversalConfiguration::jsonFromText($data['metadata_text'] ?? null),
+            'sort_order' => (int) ($data['sort_order'] ?? 0),
+            'is_active' => (bool) ($data['is_active'] ?? true),
+        ];
     }
 
     /**
@@ -650,6 +713,7 @@ class BusinessTransversalController extends Controller
     {
         return match ($section) {
             'entities' => DynamicEntity::class,
+            'relationships' => DynamicRelationshipDefinition::class,
             'custom-fields' => CustomFieldDefinition::class,
             'workflows' => WorkflowDefinition::class,
             'states' => BusinessStateDefinition::class,
@@ -680,6 +744,7 @@ class BusinessTransversalController extends Controller
     {
         return match ($section) {
             'entities' => 'Entidad configurable',
+            'relationships' => 'Relacion entre entidades',
             'custom-fields' => 'Campo personalizado',
             'workflows' => 'Flujo de estado',
             'states' => 'Estado personalizado',

@@ -8,6 +8,7 @@ import ContextHelp from '../../../../../Shared/Resources/Components/ContextHelp'
 
 const sectionOrder = [
     ['entities', 'entities', 'Entidades'],
+    ['relationships', 'relationships', 'Relaciones'],
     ['customFields', 'custom-fields', 'Campos personalizados'],
     ['workflows', 'workflows', 'Flujos'],
     ['states', 'states', 'Estados'],
@@ -24,6 +25,7 @@ const sectionOrder = [
 
 const emptyForms = {
     entities: { code: '', label: '', plural_label: '', base_entity: '', module: '', icon: '', mode: 'optional', is_visible: true, is_editable: true, is_required: false, is_exportable: false, is_reportable: false, is_auditable: true, is_sensitive: false, retention_policy: 'standard', permissions_text: '', settings_text: '', sort_order: 0, is_active: true },
+    relationships: { source_entity_type: 'customer', target_entity_type: 'product', code: '', label: '', type: 'one_to_many', inverse_label: '', is_required: false, allows_multiple: true, min_items: '', max_items: '', cascade_behavior: 'restrict', permissions_text: '', metadata_text: '', sort_order: 0, is_active: true },
     customFields: { entity_type: 'product', code: '', label: '', help_text: '', placeholder: '', type: 'text', group: '', options_csv: '', validation_rules_text: '', default_value_text: '', format: '', min_value: '', max_value: '', relation_entity_type: '', metadata_text: '', is_required: false, visible_in_forms: true, visible_in_table: false, visible_in_documents: false, visible_in_reports: false, is_exportable: false, is_auditable: true, is_sensitive: false, is_encrypted: false, is_read_only: false, sort_order: 0, is_active: true },
     workflows: { entity_type: 'service_order', code: '', name: '', description: '', initial_state_code: '', final_state_codes_csv: '', settings_text: '', is_default: false, is_active: true },
     states: { entity_type: 'service_order', workflow_code: '', code: '', label: '', color: '#2563eb', state_type: 'intermediate', is_initial: false, is_final: false, allowed_transitions_csv: '', required_permission: '', entry_validations_text: '', actions_text: '', exit_actions_text: '', sort_order: 0, is_active: true },
@@ -41,6 +43,7 @@ const emptyForms = {
 export default function Index({
     summary = {},
     entities = [],
+    relationships = [],
     customFields = [],
     workflows = [],
     states = [],
@@ -61,7 +64,7 @@ export default function Index({
     const [activeSection, setActiveSection] = useState('customFields');
     const [editing, setEditing] = useState(null);
     const currentRouteSection = sectionOrder.find(([key]) => key === activeSection)?.[1] ?? 'custom-fields';
-    const rows = { entities, customFields, workflows, states, workflowTransitions, resources, priceLists, commissions, notifications, currencies, printers, licenses, imports }[activeSection] ?? [];
+    const rows = { entities, relationships, customFields, workflows, states, workflowTransitions, resources, priceLists, commissions, notifications, currencies, printers, licenses, imports }[activeSection] ?? [];
     const form = useForm(emptyForms[activeSection]);
 
     const sectionLabel = sectionOrder.find(([key]) => key === activeSection)?.[2] ?? 'Configuracion';
@@ -279,6 +282,28 @@ function DynamicFormFields({ section, form, options, branches, workers, products
                 {bool('is_sensitive', 'Dato sensible')}
                 <FormField label="Permisos JSON" value={form.data.permissions_text} onChange={(event) => set('permissions_text', event.target.value)} helpText='Ejemplo: {"view":["admin"],"edit":["gerente"]}' />
                 <FormField label="Configuracion JSON" value={form.data.settings_text} onChange={(event) => set('settings_text', event.target.value)} />
+                <FormField label="Orden" type="number" value={form.data.sort_order} onChange={(event) => set('sort_order', event.target.value)} />
+                {bool('is_active', 'Activo')}
+            </>
+        );
+    }
+
+    if (section === 'relationships') {
+        return (
+            <>
+                <OptionSelect label="Entidad origen" value={form.data.source_entity_type} onChange={(value) => set('source_entity_type', value)} options={options.entities} />
+                <OptionSelect label="Entidad destino" value={form.data.target_entity_type} onChange={(value) => set('target_entity_type', value)} options={options.entities} />
+                <FormField label="Codigo interno" value={form.data.code} onChange={(event) => set('code', event.target.value)} error={form.errors.code} helpTooltip="Usa minusculas, numeros y guion bajo. Ejemplo: vehiculos_cliente." />
+                <FormField label="Nombre visible" value={form.data.label} onChange={(event) => set('label', event.target.value)} error={form.errors.label} />
+                <OptionSelect label="Tipo de relacion" value={form.data.type} onChange={(value) => set('type', value)} options={options.relationshipTypes} />
+                <FormField label="Nombre inverso" value={form.data.inverse_label} onChange={(event) => set('inverse_label', event.target.value)} helpText="Ejemplo: Cliente propietario, Paciente, Prestamo asociado." />
+                {bool('is_required', 'Relacion obligatoria')}
+                {bool('allows_multiple', 'Permite multiples destinos')}
+                <FormField label="Minimo de relaciones" type="number" value={form.data.min_items} onChange={(event) => set('min_items', event.target.value)} />
+                <FormField label="Maximo de relaciones" type="number" value={form.data.max_items} onChange={(event) => set('max_items', event.target.value)} />
+                <OptionSelect label="Al desactivar" value={form.data.cascade_behavior} onChange={(value) => set('cascade_behavior', value)} options={options.relationshipCascadeBehaviors} />
+                <FormField label="Permisos JSON" value={form.data.permissions_text} onChange={(event) => set('permissions_text', event.target.value)} helpText='Ejemplo: {"view":["admin"],"attach":["tecnico"]}' />
+                <FormField label="Metadatos JSON" value={form.data.metadata_text} onChange={(event) => set('metadata_text', event.target.value)} helpText='Ejemplo: {"documentos":["contrato"],"requiere_evidencia":true}' />
                 <FormField label="Orden" type="number" value={form.data.sort_order} onChange={(event) => set('sort_order', event.target.value)} />
                 {bool('is_active', 'Activo')}
             </>
@@ -525,6 +550,7 @@ function WorkflowSelect({ value, onChange, workflows }) {
 function sectionHelp(section) {
     return {
         entities: 'Define entidades propias del negocio como paciente, vehiculo, mascota, prestamo, proyecto, garantia o equipo. Crear una entidad aqui no cambia ferreteria hasta que se active el motor correspondiente en el perfil.',
+        relationships: 'Define vinculos entre entidades como cliente-vehiculo, paciente-tratamiento, prestamo-garantia, proyecto-etapa u orden-material. No se aplican en ferreteria hasta activar el motor de relaciones.',
         customFields: 'Permite agregar datos propios por entidad, por ejemplo placa en taller, historia clinica en servicios o talla en tienda.',
         workflows: 'Define flujos por entidad, como reparacion, prestamo, comanda, tratamiento o alquiler. Un flujo controla estados y transiciones.',
         states: 'Define estados y transiciones para reservas, comandas, servicios o produccion sin escribir codigo nuevo.',
@@ -543,6 +569,7 @@ function sectionHelp(section) {
 function columnsFor(section) {
     return {
         entities: [{ key: 'label', label: 'Entidad' }, { key: 'code', label: 'Codigo' }, { key: 'mode', label: 'Modo' }, { key: 'is_active', label: 'Estado' }],
+        relationships: [{ key: 'label', label: 'Relacion' }, { key: 'source_entity_type', label: 'Origen' }, { key: 'target_entity_type', label: 'Destino' }, { key: 'type', label: 'Tipo' }, { key: 'is_active', label: 'Estado' }],
         customFields: [{ key: 'label', label: 'Nombre' }, { key: 'entity_type', label: 'Entidad' }, { key: 'type', label: 'Tipo' }, { key: 'is_active', label: 'Estado' }],
         workflows: [{ key: 'name', label: 'Flujo' }, { key: 'entity_type', label: 'Entidad' }, { key: 'initial_state_code', label: 'Inicial' }, { key: 'is_default', label: 'Default' }],
         states: [{ key: 'label', label: 'Estado' }, { key: 'entity_type', label: 'Entidad' }, { key: 'is_initial', label: 'Inicial' }, { key: 'is_final', label: 'Final' }],
@@ -585,6 +612,10 @@ function formFromRow(section, row) {
 
     if (section === 'entities') {
         return { ...base, ...pick(row, ['code', 'label', 'plural_label', 'base_entity', 'module', 'icon', 'mode', 'is_visible', 'is_editable', 'is_required', 'is_exportable', 'is_reportable', 'is_auditable', 'is_sensitive', 'retention_policy', 'sort_order', 'is_active']), permissions_text: stringify(row.permissions), settings_text: stringify(row.settings) };
+    }
+
+    if (section === 'relationships') {
+        return { ...base, ...pick(row, ['source_entity_type', 'target_entity_type', 'code', 'label', 'type', 'inverse_label', 'is_required', 'allows_multiple', 'min_items', 'max_items', 'cascade_behavior', 'sort_order', 'is_active']), permissions_text: stringify(row.permissions), metadata_text: stringify(row.metadata) };
     }
 
     if (section === 'states') {
