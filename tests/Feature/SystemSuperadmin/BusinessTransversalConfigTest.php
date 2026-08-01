@@ -9,8 +9,10 @@ use App\Modules\SystemSuperadmin\Models\BusinessProfileSandboxSession;
 use App\Modules\SystemSuperadmin\Models\BusinessStateDefinition;
 use App\Modules\SystemSuperadmin\Models\CustomFieldDefinition;
 use App\Modules\SystemSuperadmin\Models\DynamicEntity;
+use App\Modules\SystemSuperadmin\Models\DynamicDocumentTemplate;
 use App\Modules\SystemSuperadmin\Models\DynamicFormDefinition;
 use App\Modules\SystemSuperadmin\Models\DynamicFormFieldRule;
+use App\Modules\SystemSuperadmin\Models\DynamicReportTemplate;
 use App\Modules\SystemSuperadmin\Models\DynamicRelationshipDefinition;
 use App\Modules\SystemSuperadmin\Models\PrinterProfile;
 use App\Modules\SystemSuperadmin\Models\ReservableResource;
@@ -522,6 +524,88 @@ it('bloquea campos de formulario que no pertenecen a la entidad del formulario',
         ->assertSessionHasErrors('field_code');
 
     expect(DynamicFormFieldRule::query()->count())->toBe(0);
+});
+
+it('crea plantillas documentales y reportes 2 sin activar ferreteria', function () {
+    $user = transversalUser();
+    $branch = Branch::query()->findOrFail($user->branch_id);
+
+    $this->actingAs($user)
+        ->post(route('system-superadmin.transversal-config.store', 'document-templates'), [
+            'branch_id' => $branch->id,
+            'document_type' => 'loan_contract',
+            'entity_type' => 'customer',
+            'code' => 'contrato_prestamo_base',
+            'name' => 'Contrato de prestamo base',
+            'paper_type' => 'letter',
+            'printer_area' => 'cashier',
+            'copies' => 2,
+            'layout_text' => '{"font_size":11,"show_logo":true}',
+            'fields_csv' => 'cliente,monto,interes,garantia,cuotas,firma_cliente',
+            'columns_csv' => 'concepto,valor',
+            'legal_text' => 'Documento interno sujeto a revision.',
+            'terms_text' => 'El cliente acepta las condiciones.',
+            'permissions_text' => '{"view":["admin"],"print":["cajero"]}',
+            'metadata_text' => '{"version":"2.0"}',
+            'is_default' => true,
+            'is_active' => true,
+        ])
+        ->assertRedirect();
+
+    $this->actingAs($user)
+        ->post(route('system-superadmin.transversal-config.store', 'report-templates'), [
+            'code' => 'ventas_margen_cliente',
+            'name' => 'Ventas y margen por cliente',
+            'module' => 'sales',
+            'entity_type' => 'customer',
+            'description' => 'Reporte configurable para ventas por cliente.',
+            'columns_csv' => 'cliente,total,margen,ticket_promedio',
+            'filters_text' => '{"date_range":true,"branch":true}',
+            'groupings_csv' => 'cliente',
+            'metrics_text' => '{"total":"sum","margen":"sum"}',
+            'permissions_text' => '{"view":["gerente"],"export":["gerente"]}',
+            'metadata_text' => '{"rubro":"retail"}',
+            'cache_ttl_minutes' => 30,
+            'is_exportable' => true,
+            'is_default' => true,
+            'is_active' => true,
+        ])
+        ->assertRedirect();
+
+    $document = DynamicDocumentTemplate::query()->where('code', 'contrato_prestamo_base')->first();
+    $report = DynamicReportTemplate::query()->where('code', 'ventas_margen_cliente')->first();
+    $configuration = BusinessProfileConfiguration::normalized([]);
+
+    expect($document)->not->toBeNull()
+        ->and($document->document_type)->toBe('loan_contract')
+        ->and($document->fields)->toBe(['cliente', 'monto', 'interes', 'garantia', 'cuotas', 'firma_cliente'])
+        ->and($document->permissions)->toBe(['view' => ['admin'], 'print' => ['cajero']])
+        ->and($report)->not->toBeNull()
+        ->and($report->columns)->toBe(['cliente', 'total', 'margen', 'ticket_promedio'])
+        ->and($report->is_exportable)->toBeTrue()
+        ->and($configuration['feature_flags']['document_engine_v2'])->toBeFalse()
+        ->and($configuration['feature_flags']['report_templates_engine'])->toBeFalse()
+        ->and($configuration['capabilities']['uses_document_templates'])->toBeFalse()
+        ->and($configuration['capabilities']['uses_report_templates'])->toBeFalse();
+});
+
+it('bloquea plantillas documentales con tipos de documento invalidos', function () {
+    $user = transversalUser();
+
+    $this->actingAs($user)
+        ->from(route('system-superadmin.transversal-config.index'))
+        ->post(route('system-superadmin.transversal-config.store', 'document-templates'), [
+            'document_type' => 'documento_fantasma',
+            'code' => 'fantasma',
+            'name' => 'Documento fantasma',
+            'paper_type' => 'letter',
+            'copies' => 1,
+            'is_active' => true,
+        ])
+        ->assertRedirect(route('system-superadmin.transversal-config.index'))
+        ->assertSessionHasErrors('document_type');
+
+    expect(DynamicDocumentTemplate::query()->count())->toBe(0);
 });
 
 it('bloquea definiciones de adjuntos con extensiones o mime fuera de politica', function () {

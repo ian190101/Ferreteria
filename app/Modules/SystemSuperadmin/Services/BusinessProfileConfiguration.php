@@ -104,6 +104,7 @@ class BusinessProfileConfiguration
                 'uses_dynamic_forms' => false,
                 'uses_field_level_permissions' => false,
                 'uses_attachments' => false,
+                'uses_document_templates' => false,
                 'uses_automation_rules' => false,
                 'uses_approval_flows' => false,
                 'uses_report_templates' => false,
@@ -322,6 +323,7 @@ class BusinessProfileConfiguration
                     'annual_reset' => false,
                     'fiscal_separate' => true,
                 ],
+                'templates' => [],
             ],
             'governance' => [
                 'soft_delete_by_default' => true,

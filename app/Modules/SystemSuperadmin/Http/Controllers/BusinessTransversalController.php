@@ -11,8 +11,10 @@ use App\Modules\SystemSuperadmin\Models\BusinessStateDefinition;
 use App\Modules\SystemSuperadmin\Models\CommissionRule;
 use App\Modules\SystemSuperadmin\Models\CustomFieldDefinition;
 use App\Modules\SystemSuperadmin\Models\DynamicEntity;
+use App\Modules\SystemSuperadmin\Models\DynamicDocumentTemplate;
 use App\Modules\SystemSuperadmin\Models\DynamicFormDefinition;
 use App\Modules\SystemSuperadmin\Models\DynamicFormFieldRule;
+use App\Modules\SystemSuperadmin\Models\DynamicReportTemplate;
 use App\Modules\SystemSuperadmin\Models\DynamicRelationshipDefinition;
 use App\Modules\SystemSuperadmin\Models\ImportProfileTemplate;
 use App\Modules\SystemSuperadmin\Models\NotificationRule;
@@ -104,6 +106,8 @@ class BusinessTransversalController extends Controller
             'attachments' => $this->validateAttachmentDefinition($request, $options, $current),
             'forms' => $this->validateDynamicForm($request, $options, $current),
             'form-fields' => $this->validateDynamicFormFieldRule($request, $current),
+            'document-templates' => $this->validateDocumentTemplate($request, $options, $current),
+            'report-templates' => $this->validateReportTemplate($request, $options, $current),
             'custom-fields' => $this->validateCustomField($request, $options, $current),
             'workflows' => $this->validateWorkflow($request, $options, $current),
             'states' => $this->validateState($request, $options),
@@ -238,6 +242,113 @@ class BusinessTransversalController extends Controller
             'required_conditions' => BusinessTransversalConfiguration::jsonFromText($data['required_conditions_text'] ?? null),
             'options_override' => BusinessTransversalConfiguration::listFromCsv($data['options_override_csv'] ?? null),
             'sort_order' => (int) ($data['sort_order'] ?? 0),
+            'is_active' => (bool) ($data['is_active'] ?? true),
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $options
+     * @return array<string, mixed>
+     */
+    private function validateDocumentTemplate(Request $request, array $options, ?Model $current = null): array
+    {
+        $entityOptions = array_keys(app(DynamicEntityRegistry::class)->options());
+        $uniqueCode = Rule::unique('dynamic_document_templates', 'code')
+            ->where(fn ($query) => $query->where('document_type', (string) $request->input('document_type')));
+
+        if ($current instanceof DynamicDocumentTemplate) {
+            $uniqueCode->ignore($current->id);
+        }
+
+        $data = $request->validate([
+            'branch_id' => ['nullable', 'integer', 'exists:branches,id'],
+            'document_type' => ['required', 'string', Rule::in(array_keys($options['documentTypes']))],
+            'entity_type' => ['nullable', 'string', Rule::in($entityOptions)],
+            'code' => ['required', 'string', 'max:120', 'regex:/^[a-z0-9_]+$/', $uniqueCode],
+            'name' => ['required', 'string', 'max:180'],
+            'paper_type' => ['required', 'string', Rule::in(array_keys($options['paperTypes']))],
+            'thermal_width_mm' => ['nullable', 'integer', 'min:30', 'max:220'],
+            'printer_area' => ['nullable', 'string', Rule::in(array_keys($options['printerAreas']))],
+            'copies' => ['required', 'integer', 'min:1', 'max:10'],
+            'layout_text' => ['nullable', 'string', 'max:5000'],
+            'fields_csv' => ['nullable', 'string', 'max:3000'],
+            'columns_csv' => ['nullable', 'string', 'max:3000'],
+            'legal_text' => ['nullable', 'string', 'max:3000'],
+            'terms_text' => ['nullable', 'string', 'max:3000'],
+            'permissions_text' => ['nullable', 'string', 'max:3000'],
+            'metadata_text' => ['nullable', 'string', 'max:3000'],
+            'is_default' => ['boolean'],
+            'is_active' => ['boolean'],
+        ]);
+
+        return [
+            'branch_id' => $data['branch_id'] ?? null,
+            'document_type' => $data['document_type'],
+            'entity_type' => $data['entity_type'] ?? null,
+            'code' => $data['code'],
+            'name' => $data['name'],
+            'paper_type' => $data['paper_type'],
+            'thermal_width_mm' => $data['thermal_width_mm'] ?? null,
+            'printer_area' => $data['printer_area'] ?? null,
+            'copies' => (int) $data['copies'],
+            'layout' => BusinessTransversalConfiguration::jsonFromText($data['layout_text'] ?? null),
+            'fields' => BusinessTransversalConfiguration::listFromCsv($data['fields_csv'] ?? null),
+            'columns' => BusinessTransversalConfiguration::listFromCsv($data['columns_csv'] ?? null),
+            'legal_text' => $data['legal_text'] ?? null,
+            'terms_text' => $data['terms_text'] ?? null,
+            'permissions' => BusinessTransversalConfiguration::jsonFromText($data['permissions_text'] ?? null),
+            'metadata' => BusinessTransversalConfiguration::jsonFromText($data['metadata_text'] ?? null),
+            'is_default' => (bool) ($data['is_default'] ?? false),
+            'is_active' => (bool) ($data['is_active'] ?? true),
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $options
+     * @return array<string, mixed>
+     */
+    private function validateReportTemplate(Request $request, array $options, ?Model $current = null): array
+    {
+        $entityOptions = array_keys(app(DynamicEntityRegistry::class)->options());
+        $uniqueCode = Rule::unique('dynamic_report_templates', 'code');
+
+        if ($current instanceof DynamicReportTemplate) {
+            $uniqueCode->ignore($current->id);
+        }
+
+        $data = $request->validate([
+            'code' => ['required', 'string', 'max:120', 'regex:/^[a-z0-9_]+$/', $uniqueCode],
+            'name' => ['required', 'string', 'max:180'],
+            'module' => ['nullable', 'string', Rule::in(array_keys($options['reportModules']))],
+            'entity_type' => ['nullable', 'string', Rule::in($entityOptions)],
+            'description' => ['nullable', 'string', 'max:1000'],
+            'columns_csv' => ['required', 'string', 'max:3000'],
+            'filters_text' => ['nullable', 'string', 'max:5000'],
+            'groupings_csv' => ['nullable', 'string', 'max:2000'],
+            'metrics_text' => ['nullable', 'string', 'max:5000'],
+            'permissions_text' => ['nullable', 'string', 'max:3000'],
+            'metadata_text' => ['nullable', 'string', 'max:3000'],
+            'cache_ttl_minutes' => ['required', 'integer', 'min:0', 'max:1440'],
+            'is_exportable' => ['boolean'],
+            'is_default' => ['boolean'],
+            'is_active' => ['boolean'],
+        ]);
+
+        return [
+            'code' => $data['code'],
+            'name' => $data['name'],
+            'module' => $data['module'] ?? null,
+            'entity_type' => $data['entity_type'] ?? null,
+            'description' => $data['description'] ?? null,
+            'columns' => BusinessTransversalConfiguration::listFromCsv($data['columns_csv']),
+            'filters' => BusinessTransversalConfiguration::jsonFromText($data['filters_text'] ?? null),
+            'groupings' => BusinessTransversalConfiguration::listFromCsv($data['groupings_csv'] ?? null),
+            'metrics' => BusinessTransversalConfiguration::jsonFromText($data['metrics_text'] ?? null),
+            'permissions' => BusinessTransversalConfiguration::jsonFromText($data['permissions_text'] ?? null),
+            'metadata' => BusinessTransversalConfiguration::jsonFromText($data['metadata_text'] ?? null),
+            'cache_ttl_minutes' => (int) $data['cache_ttl_minutes'],
+            'is_exportable' => (bool) ($data['is_exportable'] ?? false),
+            'is_default' => (bool) ($data['is_default'] ?? false),
             'is_active' => (bool) ($data['is_active'] ?? true),
         ];
     }
@@ -930,6 +1041,8 @@ class BusinessTransversalController extends Controller
             'attachments' => AttachmentDefinition::class,
             'forms' => DynamicFormDefinition::class,
             'form-fields' => DynamicFormFieldRule::class,
+            'document-templates' => DynamicDocumentTemplate::class,
+            'report-templates' => DynamicReportTemplate::class,
             'custom-fields' => CustomFieldDefinition::class,
             'workflows' => WorkflowDefinition::class,
             'states' => BusinessStateDefinition::class,
@@ -964,6 +1077,8 @@ class BusinessTransversalController extends Controller
             'attachments' => 'Adjunto/evidencia',
             'forms' => 'Formulario por flujo',
             'form-fields' => 'Regla de campo de formulario',
+            'document-templates' => 'Plantilla documental 2.0',
+            'report-templates' => 'Plantilla de reporte',
             'custom-fields' => 'Campo personalizado',
             'workflows' => 'Flujo de estado',
             'states' => 'Estado personalizado',
@@ -991,6 +1106,22 @@ class BusinessTransversalController extends Controller
             if ($section === 'workflows' && ($payload['is_default'] ?? false) === true) {
                 WorkflowDefinition::query()
                     ->when($current, fn ($query) => $query->whereKeyNot($current->getKey()))
+                    ->where('entity_type', $payload['entity_type'])
+                    ->update(['is_default' => false]);
+            }
+
+            if ($section === 'document-templates' && ($payload['is_default'] ?? false) === true) {
+                DynamicDocumentTemplate::query()
+                    ->when($current, fn ($query) => $query->whereKeyNot($current->getKey()))
+                    ->where('document_type', $payload['document_type'])
+                    ->where('branch_id', $payload['branch_id'])
+                    ->update(['is_default' => false]);
+            }
+
+            if ($section === 'report-templates' && ($payload['is_default'] ?? false) === true) {
+                DynamicReportTemplate::query()
+                    ->when($current, fn ($query) => $query->whereKeyNot($current->getKey()))
+                    ->where('module', $payload['module'])
                     ->where('entity_type', $payload['entity_type'])
                     ->update(['is_default' => false]);
             }

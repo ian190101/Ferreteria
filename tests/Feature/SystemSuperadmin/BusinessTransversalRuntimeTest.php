@@ -10,8 +10,10 @@ use App\Modules\SystemSuperadmin\Models\BusinessProfile;
 use App\Modules\SystemSuperadmin\Models\BusinessStateDefinition;
 use App\Modules\SystemSuperadmin\Models\CustomFieldDefinition;
 use App\Modules\SystemSuperadmin\Models\DynamicEntity;
+use App\Modules\SystemSuperadmin\Models\DynamicDocumentTemplate;
 use App\Modules\SystemSuperadmin\Models\DynamicFormDefinition;
 use App\Modules\SystemSuperadmin\Models\DynamicFormFieldRule;
+use App\Modules\SystemSuperadmin\Models\DynamicReportTemplate;
 use App\Modules\SystemSuperadmin\Models\DynamicRelationshipDefinition;
 use App\Modules\SystemSuperadmin\Models\NotificationRule;
 use App\Modules\SystemSuperadmin\Models\PriceList;
@@ -29,6 +31,7 @@ use App\Modules\SystemSuperadmin\Services\BusinessStateTransitionService;
 use App\Modules\SystemSuperadmin\Services\CustomFieldRuntimeService;
 use App\Modules\SystemSuperadmin\Services\DynamicRelationshipService;
 use App\Modules\SystemSuperadmin\Services\DynamicFormService;
+use App\Modules\SystemSuperadmin\Services\DynamicTemplateService;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Http\UploadedFile;
@@ -512,6 +515,71 @@ it('resuelve formularios por flujo solo cuando el perfil activo habilita el moto
 
     $service->validate('service_order', 'cierre_orden', ['diagnostico_final' => 'abc'], null, $context);
 })->throws(ValidationException::class);
+
+it('resuelve plantillas documentales y reportes solo con motores activos', function () {
+    $branch = Branch::query()->create([
+        'name' => 'Sucursal documentos dinamicos',
+        'code' => 'DOC-DYN',
+        'barcode' => 'BR-DOC-DYN',
+        'is_active' => true,
+    ]);
+    DynamicDocumentTemplate::query()->create([
+        'branch_id' => $branch->id,
+        'document_type' => 'loan_contract',
+        'entity_type' => 'customer',
+        'code' => 'contrato_base',
+        'name' => 'Contrato base',
+        'paper_type' => 'letter',
+        'fields' => ['cliente', 'monto', 'garantia'],
+        'columns' => ['concepto', 'valor'],
+        'is_default' => true,
+        'is_active' => true,
+    ]);
+    DynamicReportTemplate::query()->create([
+        'code' => 'prestamos_mora',
+        'name' => 'Prestamos en mora',
+        'module' => 'finance',
+        'entity_type' => 'customer',
+        'columns' => ['cliente', 'monto', 'dias_mora'],
+        'filters' => ['date_range' => true],
+        'metrics' => ['monto' => 'sum'],
+        'cache_ttl_minutes' => 15,
+        'is_default' => true,
+        'is_active' => true,
+    ]);
+
+    $service = app(DynamicTemplateService::class);
+
+    expect($service->documentTemplatesFor('loan_contract', $branch->id))->toBe([])
+        ->and($service->reportTemplatesFor('finance', 'customer'))->toBe([]);
+
+    BusinessProfile::query()->create([
+        'name' => 'Perfil documentos y reportes dinamicos',
+        'business_type' => 'loans',
+        'status' => 'active',
+        'configuration' => BusinessProfileConfiguration::normalized([
+            'modules' => ['reports' => true],
+            'capabilities' => [
+                'uses_document_templates' => true,
+                'uses_report_templates' => true,
+            ],
+            'feature_flags' => [
+                'document_engine_v2' => true,
+                'report_templates_engine' => true,
+            ],
+            'documents' => [
+                'active' => ['loan_contract'],
+            ],
+        ]),
+        'applied_at' => now(),
+    ]);
+    Cache::flush();
+
+    expect($service->resolveDocument('loan_contract', $branch->id)?->code)->toBe('contrato_base')
+        ->and($service->documentTemplatesFor('sale_note', $branch->id))->toBe([])
+        ->and($service->resolveReport('prestamos_mora')?->columns)->toBe(['cliente', 'monto', 'dias_mora'])
+        ->and(collect($service->reportTemplatesFor('finance', 'customer'))->pluck('code')->all())->toBe(['prestamos_mora']);
+});
 
 it('resuelve workflows formales con permisos, validaciones y acciones', function () {
     $workflow = WorkflowDefinition::query()->create([

@@ -85,6 +85,7 @@ class BusinessProfileCompatibilityValidator
             'uses_dynamic_fields' => 'dynamic_fields_engine',
             'uses_dynamic_relationships' => 'dynamic_relationships_engine',
             'uses_dynamic_forms' => 'dynamic_forms_engine',
+            'uses_document_templates' => 'document_engine_v2',
             'uses_report_templates' => 'report_templates_engine',
             'uses_approval_flows' => 'approval_engine',
             'uses_automation_rules' => 'automation_engine',

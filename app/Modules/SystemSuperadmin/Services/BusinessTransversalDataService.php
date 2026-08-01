@@ -12,8 +12,10 @@ use App\Modules\SystemSuperadmin\Models\BusinessStateDefinition;
 use App\Modules\SystemSuperadmin\Models\CommissionRule;
 use App\Modules\SystemSuperadmin\Models\CustomFieldDefinition;
 use App\Modules\SystemSuperadmin\Models\DynamicEntity;
+use App\Modules\SystemSuperadmin\Models\DynamicDocumentTemplate;
 use App\Modules\SystemSuperadmin\Models\DynamicFormDefinition;
 use App\Modules\SystemSuperadmin\Models\DynamicFormFieldRule;
+use App\Modules\SystemSuperadmin\Models\DynamicReportTemplate;
 use App\Modules\SystemSuperadmin\Models\DynamicRelationshipDefinition;
 use App\Modules\SystemSuperadmin\Models\ImportProfileTemplate;
 use App\Modules\SystemSuperadmin\Models\NotificationRule;
@@ -37,6 +39,8 @@ class BusinessTransversalDataService
                 'attachments' => AttachmentDefinition::query()->count(),
                 'forms' => DynamicFormDefinition::query()->count(),
                 'form_fields' => DynamicFormFieldRule::query()->count(),
+                'document_templates' => DynamicDocumentTemplate::query()->count(),
+                'report_templates' => DynamicReportTemplate::query()->count(),
                 'custom_fields' => CustomFieldDefinition::query()->count(),
                 'workflows' => WorkflowDefinition::query()->count(),
                 'states' => BusinessStateDefinition::query()->count(),
@@ -55,6 +59,8 @@ class BusinessTransversalDataService
             'attachments' => AttachmentDefinition::query()->orderBy('entity_type')->orderBy('sort_order')->orderBy('label')->limit(80)->get(),
             'forms' => DynamicFormDefinition::query()->orderBy('entity_type')->orderBy('flow')->orderBy('sort_order')->orderBy('name')->limit(80)->get(),
             'formFields' => DynamicFormFieldRule::query()->with('form:id,entity_type,code,name')->orderBy('dynamic_form_definition_id')->orderBy('sort_order')->limit(80)->get(),
+            'documentTemplates' => DynamicDocumentTemplate::query()->with('branch:id,name')->orderBy('document_type')->orderByDesc('is_default')->orderBy('name')->limit(80)->get(),
+            'reportTemplates' => DynamicReportTemplate::query()->orderBy('module')->orderBy('name')->limit(80)->get(),
             'customFields' => CustomFieldDefinition::query()->orderBy('entity_type')->orderBy('sort_order')->orderBy('label')->limit(80)->get(),
             'workflows' => WorkflowDefinition::query()->orderBy('entity_type')->orderByDesc('is_default')->orderBy('name')->limit(80)->get(),
             'states' => BusinessStateDefinition::query()->orderBy('entity_type')->orderBy('sort_order')->orderBy('label')->limit(80)->get(),

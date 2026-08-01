@@ -12,6 +12,8 @@ const sectionOrder = [
     ['attachments', 'attachments', 'Adjuntos'],
     ['forms', 'forms', 'Formularios'],
     ['formFields', 'form-fields', 'Campos por formulario'],
+    ['documentTemplates', 'document-templates', 'Documentos 2.0'],
+    ['reportTemplates', 'report-templates', 'Reportes 2.0'],
     ['customFields', 'custom-fields', 'Campos personalizados'],
     ['workflows', 'workflows', 'Flujos'],
     ['states', 'states', 'Estados'],
@@ -32,6 +34,8 @@ const emptyForms = {
     attachments: { entity_type: 'customer', code: '', label: '', purpose: 'evidence', allowed_extensions_csv: 'jpg,png,pdf', allowed_mime_types_csv: 'image/jpeg,image/png,application/pdf', max_file_mb: 10, storage_disk: 'local', path_prefix: 'business-attachments', is_required: false, is_sensitive: false, requires_signed_url: true, audit_downloads: true, visible_in_documents: false, visible_in_reports: false, permissions_text: '', metadata_text: '', retention_policy: 'standard', sort_order: 0, is_active: true },
     forms: { entity_type: 'customer', code: '', name: '', flow: 'customer_create', workflow_code: '', state_code: '', surface: 'form', description: '', submit_label: 'Guardar', layout_text: '', permissions_text: '', validations_text: '', metadata_text: '', sort_order: 0, is_active: true },
     formFields: { dynamic_form_definition_id: '', field_code: '', label_override: '', help_text: '', placeholder: '', is_required: false, is_visible: true, is_read_only: false, default_value_text: '', validation_rules_text: '', visibility_conditions_text: '', required_conditions_text: '', options_override_csv: '', sort_order: 0, is_active: true },
+    documentTemplates: { branch_id: '', document_type: 'sale_note', entity_type: '', code: '', name: '', paper_type: 'letter', thermal_width_mm: '', printer_area: 'cashier', copies: 1, layout_text: '', fields_csv: 'empresa,numero,cliente,items,total', columns_csv: 'descripcion,cantidad,precio,subtotal', legal_text: '', terms_text: '', permissions_text: '', metadata_text: '', is_default: false, is_active: true },
+    reportTemplates: { code: '', name: '', module: 'sales', entity_type: '', description: '', columns_csv: 'fecha,documento,cliente,total', filters_text: '', groupings_csv: '', metrics_text: '', permissions_text: '', metadata_text: '', cache_ttl_minutes: 10, is_exportable: false, is_default: false, is_active: true },
     customFields: { entity_type: 'product', code: '', label: '', help_text: '', placeholder: '', type: 'text', group: '', options_csv: '', validation_rules_text: '', default_value_text: '', format: '', min_value: '', max_value: '', relation_entity_type: '', metadata_text: '', is_required: false, visible_in_forms: true, visible_in_table: false, visible_in_documents: false, visible_in_reports: false, is_exportable: false, is_auditable: true, is_sensitive: false, is_encrypted: false, is_read_only: false, sort_order: 0, is_active: true },
     workflows: { entity_type: 'service_order', code: '', name: '', description: '', initial_state_code: '', final_state_codes_csv: '', settings_text: '', is_default: false, is_active: true },
     states: { entity_type: 'service_order', workflow_code: '', code: '', label: '', color: '#2563eb', state_type: 'intermediate', is_initial: false, is_final: false, allowed_transitions_csv: '', required_permission: '', entry_validations_text: '', actions_text: '', exit_actions_text: '', sort_order: 0, is_active: true },
@@ -53,6 +57,8 @@ export default function Index({
     attachments = [],
     forms = [],
     formFields = [],
+    documentTemplates = [],
+    reportTemplates = [],
     customFields = [],
     workflows = [],
     states = [],
@@ -73,7 +79,7 @@ export default function Index({
     const [activeSection, setActiveSection] = useState('customFields');
     const [editing, setEditing] = useState(null);
     const currentRouteSection = sectionOrder.find(([key]) => key === activeSection)?.[1] ?? 'custom-fields';
-    const rows = { entities, relationships, attachments, forms, formFields, customFields, workflows, states, workflowTransitions, resources, priceLists, commissions, notifications, currencies, printers, licenses, imports }[activeSection] ?? [];
+    const rows = { entities, relationships, attachments, forms, formFields, documentTemplates, reportTemplates, customFields, workflows, states, workflowTransitions, resources, priceLists, commissions, notifications, currencies, printers, licenses, imports }[activeSection] ?? [];
     const form = useForm(emptyForms[activeSection]);
 
     const sectionLabel = sectionOrder.find(([key]) => key === activeSection)?.[2] ?? 'Configuracion';
@@ -390,6 +396,53 @@ function DynamicFormFields({ section, form, options, branches, workers, products
         );
     }
 
+    if (section === 'documentTemplates') {
+        return (
+            <>
+                <BranchSelect value={form.data.branch_id} onChange={(value) => set('branch_id', value)} branches={branches} />
+                <OptionSelect label="Tipo de documento" value={form.data.document_type} onChange={(value) => set('document_type', value)} options={options.documentTypes} />
+                <OptionSelect label="Entidad relacionada" value={form.data.entity_type} onChange={(value) => set('entity_type', value)} options={{ '': 'Sin entidad directa', ...(options.entities ?? {}) }} />
+                <FormField label="Codigo interno" value={form.data.code} onChange={(event) => set('code', event.target.value)} error={form.errors.code} helpTooltip="Usa minusculas, numeros y guion bajo. Ejemplo: contrato_prestamo_base." />
+                <FormField label="Nombre" value={form.data.name} onChange={(event) => set('name', event.target.value)} error={form.errors.name} />
+                <OptionSelect label="Papel" value={form.data.paper_type} onChange={(value) => set('paper_type', value)} options={options.paperTypes} />
+                <FormField label="Ancho termico mm" type="number" value={form.data.thermal_width_mm} onChange={(event) => set('thermal_width_mm', event.target.value)} />
+                <OptionSelect label="Area de impresion" value={form.data.printer_area} onChange={(value) => set('printer_area', value)} options={{ '': 'Manual/sin area', ...(options.printerAreas ?? {}) }} />
+                <FormField label="Copias" type="number" value={form.data.copies} onChange={(event) => set('copies', event.target.value)} />
+                <FormField label="Layout JSON" value={form.data.layout_text} onChange={(event) => set('layout_text', event.target.value)} helpText='Ejemplo: {"font_size":11,"show_logo":true}' />
+                <FormField label="Campos visibles" value={form.data.fields_csv} onChange={(event) => set('fields_csv', event.target.value)} helpText="Separados por coma." />
+                <FormField label="Columnas visibles" value={form.data.columns_csv} onChange={(event) => set('columns_csv', event.target.value)} helpText="Separadas por coma." />
+                <FormField label="Texto legal" value={form.data.legal_text} onChange={(event) => set('legal_text', event.target.value)} />
+                <FormField label="Terminos y condiciones" value={form.data.terms_text} onChange={(event) => set('terms_text', event.target.value)} />
+                <FormField label="Permisos JSON" value={form.data.permissions_text} onChange={(event) => set('permissions_text', event.target.value)} />
+                <FormField label="Metadatos JSON" value={form.data.metadata_text} onChange={(event) => set('metadata_text', event.target.value)} />
+                {bool('is_default', 'Plantilla default')}
+                {bool('is_active', 'Activo')}
+            </>
+        );
+    }
+
+    if (section === 'reportTemplates') {
+        return (
+            <>
+                <FormField label="Codigo interno" value={form.data.code} onChange={(event) => set('code', event.target.value)} error={form.errors.code} />
+                <FormField label="Nombre" value={form.data.name} onChange={(event) => set('name', event.target.value)} error={form.errors.name} />
+                <OptionSelect label="Modulo" value={form.data.module} onChange={(value) => set('module', value)} options={{ '': 'General', ...(options.reportModules ?? {}) }} />
+                <OptionSelect label="Entidad relacionada" value={form.data.entity_type} onChange={(value) => set('entity_type', value)} options={{ '': 'Sin entidad directa', ...(options.entities ?? {}) }} />
+                <FormField label="Descripcion" value={form.data.description} onChange={(event) => set('description', event.target.value)} />
+                <FormField label="Columnas" value={form.data.columns_csv} onChange={(event) => set('columns_csv', event.target.value)} helpText="Separadas por coma. Ejemplo: fecha,cliente,total,margen." />
+                <FormField label="Filtros JSON" value={form.data.filters_text} onChange={(event) => set('filters_text', event.target.value)} helpText='Ejemplo: {"date_range":true,"branch":true}' />
+                <FormField label="Agrupaciones" value={form.data.groupings_csv} onChange={(event) => set('groupings_csv', event.target.value)} />
+                <FormField label="Metricas JSON" value={form.data.metrics_text} onChange={(event) => set('metrics_text', event.target.value)} helpText='Ejemplo: {"total":"sum","margen":"avg"}' />
+                <FormField label="Permisos JSON" value={form.data.permissions_text} onChange={(event) => set('permissions_text', event.target.value)} />
+                <FormField label="Metadatos JSON" value={form.data.metadata_text} onChange={(event) => set('metadata_text', event.target.value)} />
+                <FormField label="Cache TTL minutos" type="number" value={form.data.cache_ttl_minutes} onChange={(event) => set('cache_ttl_minutes', event.target.value)} />
+                {bool('is_exportable', 'Exportable')}
+                {bool('is_default', 'Reporte default')}
+                {bool('is_active', 'Activo')}
+            </>
+        );
+    }
+
     if (section === 'states') {
         return (
             <>
@@ -643,6 +696,8 @@ function sectionHelp(section) {
         attachments: 'Define documentos, fotos, contratos, firmas y evidencias por entidad. Crear la definicion no habilita subida de archivos en ferreteria hasta activar el motor de adjuntos.',
         forms: 'Define formularios por momento del flujo, por ejemplo crear cliente, aprobar prestamo, cerrar orden o finalizar tratamiento. No se usan en ferreteria hasta activar el motor de formularios.',
         formFields: 'Define que campos aparecen, son obligatorios o quedan solo lectura dentro de cada formulario por flujo.',
+        documentTemplates: 'Define plantillas documentales 2.0 por documento, entidad, sucursal, campos, columnas, textos legales e impresora destino. No reemplaza plantillas actuales hasta activar el motor documental.',
+        reportTemplates: 'Define columnas, filtros, agrupaciones y metricas por negocio. No cambia reportes actuales hasta activar plantillas de reportes.',
         customFields: 'Permite agregar datos propios por entidad, por ejemplo placa en taller, historia clinica en servicios o talla en tienda.',
         workflows: 'Define flujos por entidad, como reparacion, prestamo, comanda, tratamiento o alquiler. Un flujo controla estados y transiciones.',
         states: 'Define estados y transiciones para reservas, comandas, servicios o produccion sin escribir codigo nuevo.',
@@ -665,6 +720,8 @@ function columnsFor(section) {
         attachments: [{ key: 'label', label: 'Adjunto' }, { key: 'entity_type', label: 'Entidad' }, { key: 'purpose', label: 'Proposito' }, { key: 'max_file_mb', label: 'MB' }, { key: 'is_sensitive', label: 'Sensible' }],
         forms: [{ key: 'name', label: 'Formulario' }, { key: 'entity_type', label: 'Entidad' }, { key: 'flow', label: 'Flujo' }, { key: 'surface', label: 'Superficie' }, { key: 'is_active', label: 'Estado' }],
         formFields: [{ key: 'form.name', label: 'Formulario' }, { key: 'field_code', label: 'Campo' }, { key: 'is_required', label: 'Obligatorio' }, { key: 'is_read_only', label: 'Solo lectura' }, { key: 'is_active', label: 'Estado' }],
+        documentTemplates: [{ key: 'name', label: 'Plantilla' }, { key: 'document_type', label: 'Documento' }, { key: 'branch.name', label: 'Sucursal' }, { key: 'paper_type', label: 'Papel' }, { key: 'is_default', label: 'Default' }],
+        reportTemplates: [{ key: 'name', label: 'Reporte' }, { key: 'module', label: 'Modulo' }, { key: 'entity_type', label: 'Entidad' }, { key: 'columns', label: 'Columnas' }, { key: 'is_active', label: 'Estado' }],
         customFields: [{ key: 'label', label: 'Nombre' }, { key: 'entity_type', label: 'Entidad' }, { key: 'type', label: 'Tipo' }, { key: 'is_active', label: 'Estado' }],
         workflows: [{ key: 'name', label: 'Flujo' }, { key: 'entity_type', label: 'Entidad' }, { key: 'initial_state_code', label: 'Inicial' }, { key: 'is_default', label: 'Default' }],
         states: [{ key: 'label', label: 'Estado' }, { key: 'entity_type', label: 'Entidad' }, { key: 'is_initial', label: 'Inicial' }, { key: 'is_final', label: 'Final' }],
@@ -723,6 +780,14 @@ function formFromRow(section, row) {
 
     if (section === 'formFields') {
         return { ...base, ...pick(row, ['dynamic_form_definition_id', 'field_code', 'label_override', 'help_text', 'placeholder', 'is_required', 'is_visible', 'is_read_only', 'sort_order', 'is_active']), default_value_text: stringify(row.default_value), validation_rules_text: stringify(row.validation_rules), visibility_conditions_text: stringify(row.visibility_conditions), required_conditions_text: stringify(row.required_conditions), options_override_csv: (row.options_override ?? []).join(', ') };
+    }
+
+    if (section === 'documentTemplates') {
+        return { ...base, ...pick(row, ['branch_id', 'document_type', 'entity_type', 'code', 'name', 'paper_type', 'thermal_width_mm', 'printer_area', 'copies', 'legal_text', 'terms_text', 'is_default', 'is_active']), layout_text: stringify(row.layout), fields_csv: (row.fields ?? []).join(', '), columns_csv: (row.columns ?? []).join(', '), permissions_text: stringify(row.permissions), metadata_text: stringify(row.metadata) };
+    }
+
+    if (section === 'reportTemplates') {
+        return { ...base, ...pick(row, ['code', 'name', 'module', 'entity_type', 'description', 'cache_ttl_minutes', 'is_exportable', 'is_default', 'is_active']), columns_csv: (row.columns ?? []).join(', '), filters_text: stringify(row.filters), groupings_csv: (row.groupings ?? []).join(', '), metrics_text: stringify(row.metrics), permissions_text: stringify(row.permissions), metadata_text: stringify(row.metadata) };
     }
 
     if (section === 'states') {
