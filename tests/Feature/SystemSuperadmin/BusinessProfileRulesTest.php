@@ -4,6 +4,7 @@ use App\Models\User;
 use App\Modules\Branches\Models\Branch;
 use App\Modules\Inventory\Models\Product;
 use App\Modules\Inventory\Models\ProductBranchStock;
+use App\Modules\Inventory\Models\ProductUnit;
 use App\Modules\Sales\Models\Currency;
 use App\Modules\Sales\Models\Sale;
 use App\Modules\Sales\Models\SaleType;
@@ -275,6 +276,80 @@ it('revalida compatibilidad backend antes de aplicar un borrador', function () {
 
     expect($draft->refresh()->status)->not->toBe('applied')
         ->and(BusinessProfile::query()->where('status', 'active')->latest('applied_at')->first()?->id)->toBe($active->id);
+});
+
+it('bloquea aplicar un borrador si el checklist de activacion tiene pendientes criticos', function () {
+    $user = businessProfileUser(systemSuperadmin: true);
+    $active = activeBusinessProfile([]);
+    $configuration = BusinessProfileConfiguration::normalized([]);
+
+    $draft = BusinessProfileDraft::query()->create([
+        'name' => 'Borrador sin datos minimos',
+        'business_type' => 'hardware_store',
+        'configuration' => $configuration,
+        'source_profile_id' => $active->id,
+        'created_by' => $user->id,
+        'updated_by' => $user->id,
+    ]);
+
+    $this->actingAs($user)
+        ->from(route('system-superadmin.business-profiles.index'))
+        ->post(route('system-superadmin.business-profiles.drafts.apply', $draft))
+        ->assertRedirect(route('system-superadmin.business-profiles.index'))
+        ->assertSessionHasErrors('configuration');
+
+    expect($draft->refresh()->status)->not->toBe('applied')
+        ->and(BusinessProfile::query()->where('status', 'active')->latest('applied_at')->first()?->id)->toBe($active->id);
+});
+
+it('aplica un borrador cuando pasa compatibilidad y checklist sin cambiar defaults de ferreteria', function () {
+    $user = businessProfileUser(systemSuperadmin: true);
+    $active = activeBusinessProfile([]);
+    ProductUnit::query()->create(['name' => 'Unidad', 'symbol' => 'u', 'kind' => 'count', 'is_active' => true]);
+    Currency::query()->create([
+        'name' => 'Bolivianos',
+        'code' => 'BOB',
+        'symbol' => 'Bs',
+        'exchange_rate_to_bob' => 1,
+        'is_base' => true,
+        'is_active' => true,
+    ]);
+    Product::query()->create([
+        'name' => 'Producto base perfil',
+        'sku' => 'PERFIL-BASE',
+        'barcode' => 'PERFIL-BASE-BAR',
+        'inventory_tracking_mode' => Product::TRACKING_GLOBAL,
+        'base_unit' => 'unidad',
+        'sale_price' => 10,
+        'minimum_stock_meters' => 0,
+        'is_active' => true,
+    ]);
+
+    $configuration = BusinessProfileConfiguration::normalized([]);
+    $configuration['identity']['commercial_name'] = 'Ferreteria QA';
+
+    $draft = BusinessProfileDraft::query()->create([
+        'name' => 'Borrador ferreteria valido',
+        'business_type' => 'hardware_store',
+        'configuration' => $configuration,
+        'source_profile_id' => $active->id,
+        'created_by' => $user->id,
+        'updated_by' => $user->id,
+    ]);
+
+    $this->actingAs($user)
+        ->from(route('system-superadmin.business-profiles.index'))
+        ->post(route('system-superadmin.business-profiles.drafts.apply', $draft))
+        ->assertRedirect(route('system-superadmin.business-profiles.index'))
+        ->assertSessionHas('success');
+
+    $applied = BusinessProfile::query()->where('status', 'active')->latest('applied_at')->firstOrFail();
+
+    expect($draft->refresh()->status)->toBe('applied')
+        ->and($applied->name)->toBe('Borrador ferreteria valido')
+        ->and($applied->configuration['sales']['workflow'])->toBe('quotation_to_sale_note')
+        ->and($applied->configuration['feature_flags']['dynamic_entities_engine'])->toBeFalse()
+        ->and($applied->configuration['capabilities']['uses_dynamic_entities'])->toBeFalse();
 });
 
 it('guarda y reinicia una demo sandbox aislada por usuario', function () {

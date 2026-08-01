@@ -8,6 +8,7 @@ use App\Modules\SystemSuperadmin\Models\BusinessProfileDraft;
 use App\Modules\SystemSuperadmin\Models\BusinessProfilePreset;
 use App\Modules\SystemSuperadmin\Models\BusinessProfileSandboxSession;
 use App\Modules\SystemSuperadmin\Models\BusinessProfileVersion;
+use App\Modules\SystemSuperadmin\Services\BusinessProfileActivationChecklist;
 use App\Modules\SystemSuperadmin\Services\BusinessCapabilityCatalog;
 use App\Modules\SystemSuperadmin\Services\BusinessProfileCompatibilityValidator;
 use App\Modules\SystemSuperadmin\Services\BusinessProfileConfiguration;
@@ -55,9 +56,18 @@ class BusinessProfileController extends Controller
 
         $diffService = app(BusinessProfileDiffService::class);
 
+        $activationChecklist = app(BusinessProfileActivationChecklist::class);
+
         return Inertia::render('SystemSuperadmin/BusinessProfiles/Index', [
             'activeProfile' => $activeProfile,
             'drafts' => $drafts,
+            'activePreflight' => $activeProfile
+                ? $activationChecklist->evaluate($activeProfile->business_type, $activeProfile->configuration ?? [])
+                : null,
+            'draftPreflights' => $drafts
+                ->mapWithKeys(fn (BusinessProfileDraft $draft) => [
+                    $draft->id => $activationChecklist->evaluate($draft->business_type, $draft->configuration ?? []),
+                ]),
             'versions' => $versions,
             'versionComparisons' => $versions
                 ->mapWithKeys(fn (BusinessProfileVersion $version) => [
@@ -614,12 +624,22 @@ class BusinessProfileController extends Controller
     {
         $configuration = BusinessProfileConfiguration::normalized($draft->configuration ?? []);
         $compatibility = app(BusinessProfileCompatibilityValidator::class)->validate($draft->business_type, $configuration);
+        $preflight = app(BusinessProfileActivationChecklist::class)->evaluate($draft->business_type, $configuration);
 
         if (! $compatibility['valid']) {
             throw ValidationException::withMessages([
                 'configuration' => array_merge(
                     ['No se puede aplicar este borrador porque tiene reglas incompatibles. Corrigelo y vuelve a guardarlo.'],
                     $compatibility['errors'],
+                ),
+            ]);
+        }
+
+        if (! $preflight['ready']) {
+            throw ValidationException::withMessages([
+                'configuration' => array_merge(
+                    ['No se puede aplicar este borrador porque el checklist de activacion tiene pendientes criticos.'],
+                    collect($preflight['blockers'])->pluck('message')->all(),
                 ),
             ]);
         }

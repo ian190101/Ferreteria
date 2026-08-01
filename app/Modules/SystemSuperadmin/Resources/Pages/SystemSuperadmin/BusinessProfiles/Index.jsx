@@ -25,9 +25,10 @@ const configSteps = [
     ['summary', 'Resumen final'],
 ];
 
-export default function Index({ activeProfile, drafts, versions, presets = [], options, defaultConfiguration, sandboxSession = null, capabilitiesCatalog = {}, capabilitiesMatrix = {} }) {
+export default function Index({ activeProfile, drafts, versions, presets = [], options, defaultConfiguration, sandboxSession = null, capabilitiesCatalog = {}, capabilitiesMatrix = {}, activePreflight = null, draftPreflights = {} }) {
     const [selectedDraftId, setSelectedDraftId] = useState(drafts[0]?.id ?? null);
     const selectedDraft = drafts.find((draft) => draft.id === selectedDraftId) ?? null;
+    const selectedDraftPreflight = selectedDraft ? draftPreflights?.[selectedDraft.id] ?? null : activePreflight;
     const baseConfiguration = selectedDraft?.configuration ?? activeProfile?.configuration ?? defaultConfiguration;
     const form = useForm({
         name: selectedDraft?.name ?? `Demo ${options.businessTypes[activeProfile?.business_type] ?? 'nuevo negocio'}`,
@@ -545,7 +546,7 @@ export default function Index({ activeProfile, drafts, versions, presets = [], o
                                     title="Resumen final antes de guardar"
                                     description="Revisa el impacto completo del perfil. Guardar crea o actualiza un borrador; aplicar se hace despues desde la tarjeta de borradores y el backend vuelve a validar reglas de compatibilidad."
                                 >
-                                    <WizardActivationChecklist configuration={form.data.configuration} demo={demo} options={options} comparison={comparison} />
+                                    <WizardActivationChecklist configuration={form.data.configuration} demo={demo} options={options} comparison={comparison} preflight={selectedDraftPreflight} />
                                 </Section> : null}
 
                                 <ImpactSummary demo={demo} comparison={comparison} />
@@ -588,6 +589,7 @@ export default function Index({ activeProfile, drafts, versions, presets = [], o
                                     <div key={draft.id} className={`rounded-2xl border p-3 ${selectedDraftId === draft.id ? 'border-brand-primary bg-brand-primary/5' : 'border-slate-200 dark:border-slate-800'}`}>
                                         <button type="button" onClick={() => loadDraft(draft)} className="text-left text-sm font-semibold text-slate-900 hover:text-brand-primary dark:text-white">{draft.name}</button>
                                         <p className="text-xs text-slate-500">{options.businessTypes[draft.business_type] ?? draft.business_type} - {draft.status}</p>
+                                        <DraftPreflightBadge preflight={draftPreflights?.[draft.id]} />
                                         <div className="mt-3 flex flex-wrap gap-2">
                                             {draft.status !== 'applied' ? (
                                                 <button type="button" onClick={() => router.post(route('system-superadmin.business-profiles.drafts.apply', draft.id), {}, { preserveScroll: true })} className="rounded-full bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white" title="Aplica la ultima version guardada de este borrador.">
@@ -707,7 +709,7 @@ function ImpactSummary({ demo, comparison }) {
     );
 }
 
-function WizardActivationChecklist({ configuration, demo, options, comparison }) {
+function WizardActivationChecklist({ configuration, demo, options, comparison, preflight = null }) {
     const requirements = configuration.activation_checklist?.minimum_requirements ?? [];
     const changed = comparison.filter((row) => row.changed);
     const hiddenModules = demo.navigation.filter((item) => !item.enabled).slice(0, 10);
@@ -740,6 +742,32 @@ function WizardActivationChecklist({ configuration, demo, options, comparison })
 
     return (
         <div className="space-y-4 md:col-span-2 xl:col-span-3">
+            {preflight ? (
+                <div className={`rounded-2xl border p-4 text-sm ${preflight.ready ? 'border-emerald-200 bg-emerald-50 text-emerald-900 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-100' : 'border-rose-200 bg-rose-50 text-rose-900 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-100'}`}>
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                            <h4 className="font-semibold">{preflight.ready ? 'Preflight listo para aplicar' : 'Preflight bloqueado'}</h4>
+                            <p className="mt-1">
+                                Esta validacion viene del backend y se vuelve a ejecutar al aplicar el borrador. Si editaste sin guardar, actualiza el borrador para recalcularla.
+                            </p>
+                        </div>
+                        <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-slate-700 dark:bg-white/10 dark:text-white">
+                            {preflight.blockers?.length ?? 0} bloqueos / {preflight.warnings?.length ?? 0} advertencias
+                        </span>
+                    </div>
+                    {preflight.blockers?.length ? (
+                        <ul className="mt-3 space-y-1">
+                            {preflight.blockers.map((item) => <li key={`${item.code}-${item.message}`}>- {item.message}</li>)}
+                        </ul>
+                    ) : null}
+                    {preflight.warnings?.length ? (
+                        <ul className="mt-3 space-y-1 text-amber-700 dark:text-amber-200">
+                            {preflight.warnings.map((warning) => <li key={warning}>- {warning}</li>)}
+                        </ul>
+                    ) : null}
+                </div>
+            ) : null}
+
             <div className="grid gap-4 lg:grid-cols-3">
                 <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-950">
                     <h4 className="font-semibold text-slate-950 dark:text-white">Checklist minimo</h4>
@@ -805,6 +833,20 @@ function WizardActivationChecklist({ configuration, demo, options, comparison })
                     </ol>
                 </div>
             </div>
+        </div>
+    );
+}
+
+function DraftPreflightBadge({ preflight }) {
+    if (!preflight) {
+        return null;
+    }
+
+    return (
+        <div className={`mt-2 rounded-xl px-3 py-2 text-xs font-semibold ${preflight.ready ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-200' : 'bg-rose-50 text-rose-700 dark:bg-rose-500/10 dark:text-rose-200'}`}>
+            {preflight.ready
+                ? `Listo para aplicar - ${preflight.warnings?.length ?? 0} advertencias`
+                : `No aplicar aun - ${preflight.blockers?.length ?? 0} pendientes criticos`}
         </div>
     );
 }
