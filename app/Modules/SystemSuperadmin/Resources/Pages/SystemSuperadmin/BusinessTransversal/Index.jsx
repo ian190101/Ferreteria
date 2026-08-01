@@ -10,6 +10,8 @@ const sectionOrder = [
     ['entities', 'entities', 'Entidades'],
     ['relationships', 'relationships', 'Relaciones'],
     ['attachments', 'attachments', 'Adjuntos'],
+    ['forms', 'forms', 'Formularios'],
+    ['formFields', 'form-fields', 'Campos por formulario'],
     ['customFields', 'custom-fields', 'Campos personalizados'],
     ['workflows', 'workflows', 'Flujos'],
     ['states', 'states', 'Estados'],
@@ -28,6 +30,8 @@ const emptyForms = {
     entities: { code: '', label: '', plural_label: '', base_entity: '', module: '', icon: '', mode: 'optional', is_visible: true, is_editable: true, is_required: false, is_exportable: false, is_reportable: false, is_auditable: true, is_sensitive: false, retention_policy: 'standard', permissions_text: '', settings_text: '', sort_order: 0, is_active: true },
     relationships: { source_entity_type: 'customer', target_entity_type: 'product', code: '', label: '', type: 'one_to_many', inverse_label: '', is_required: false, allows_multiple: true, min_items: '', max_items: '', cascade_behavior: 'restrict', permissions_text: '', metadata_text: '', sort_order: 0, is_active: true },
     attachments: { entity_type: 'customer', code: '', label: '', purpose: 'evidence', allowed_extensions_csv: 'jpg,png,pdf', allowed_mime_types_csv: 'image/jpeg,image/png,application/pdf', max_file_mb: 10, storage_disk: 'local', path_prefix: 'business-attachments', is_required: false, is_sensitive: false, requires_signed_url: true, audit_downloads: true, visible_in_documents: false, visible_in_reports: false, permissions_text: '', metadata_text: '', retention_policy: 'standard', sort_order: 0, is_active: true },
+    forms: { entity_type: 'customer', code: '', name: '', flow: 'customer_create', workflow_code: '', state_code: '', surface: 'form', description: '', submit_label: 'Guardar', layout_text: '', permissions_text: '', validations_text: '', metadata_text: '', sort_order: 0, is_active: true },
+    formFields: { dynamic_form_definition_id: '', field_code: '', label_override: '', help_text: '', placeholder: '', is_required: false, is_visible: true, is_read_only: false, default_value_text: '', validation_rules_text: '', visibility_conditions_text: '', required_conditions_text: '', options_override_csv: '', sort_order: 0, is_active: true },
     customFields: { entity_type: 'product', code: '', label: '', help_text: '', placeholder: '', type: 'text', group: '', options_csv: '', validation_rules_text: '', default_value_text: '', format: '', min_value: '', max_value: '', relation_entity_type: '', metadata_text: '', is_required: false, visible_in_forms: true, visible_in_table: false, visible_in_documents: false, visible_in_reports: false, is_exportable: false, is_auditable: true, is_sensitive: false, is_encrypted: false, is_read_only: false, sort_order: 0, is_active: true },
     workflows: { entity_type: 'service_order', code: '', name: '', description: '', initial_state_code: '', final_state_codes_csv: '', settings_text: '', is_default: false, is_active: true },
     states: { entity_type: 'service_order', workflow_code: '', code: '', label: '', color: '#2563eb', state_type: 'intermediate', is_initial: false, is_final: false, allowed_transitions_csv: '', required_permission: '', entry_validations_text: '', actions_text: '', exit_actions_text: '', sort_order: 0, is_active: true },
@@ -47,6 +51,8 @@ export default function Index({
     entities = [],
     relationships = [],
     attachments = [],
+    forms = [],
+    formFields = [],
     customFields = [],
     workflows = [],
     states = [],
@@ -67,7 +73,7 @@ export default function Index({
     const [activeSection, setActiveSection] = useState('customFields');
     const [editing, setEditing] = useState(null);
     const currentRouteSection = sectionOrder.find(([key]) => key === activeSection)?.[1] ?? 'custom-fields';
-    const rows = { entities, relationships, attachments, customFields, workflows, states, workflowTransitions, resources, priceLists, commissions, notifications, currencies, printers, licenses, imports }[activeSection] ?? [];
+    const rows = { entities, relationships, attachments, forms, formFields, customFields, workflows, states, workflowTransitions, resources, priceLists, commissions, notifications, currencies, printers, licenses, imports }[activeSection] ?? [];
     const form = useForm(emptyForms[activeSection]);
 
     const sectionLabel = sectionOrder.find(([key]) => key === activeSection)?.[2] ?? 'Configuracion';
@@ -162,7 +168,7 @@ export default function Index({
                         </div>
 
                         <div className="grid gap-4 md:grid-cols-2">
-                            <DynamicFormFields section={activeSection} form={form} options={options} branches={branches} workers={workers} products={products} />
+                            <DynamicFormFields section={activeSection} form={form} options={options} branches={branches} workers={workers} products={products} forms={forms} />
                         </div>
 
                         <button type="submit" disabled={form.processing} className="mt-5 w-full rounded-2xl bg-brand-primary px-4 py-3 text-sm font-bold text-white shadow-sm shadow-brand-primary/20 disabled:opacity-60">
@@ -222,7 +228,7 @@ export default function Index({
     );
 }
 
-function DynamicFormFields({ section, form, options, branches, workers, products }) {
+function DynamicFormFields({ section, form, options, branches, workers, products, forms }) {
     const set = (key, value) => form.setData(key, value);
     const bool = (key, label, helpTooltip = null) => (
         <label className="flex min-h-[3.25rem] items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700 dark:border-slate-800 dark:bg-white/5 dark:text-slate-200">
@@ -334,6 +340,50 @@ function DynamicFormFields({ section, form, options, branches, workers, products
                 {bool('visible_in_reports', 'Visible en reportes')}
                 <FormField label="Permisos JSON" value={form.data.permissions_text} onChange={(event) => set('permissions_text', event.target.value)} helpText='Ejemplo: {"view":["doctor"],"download":["admin"]}' />
                 <FormField label="Metadatos JSON" value={form.data.metadata_text} onChange={(event) => set('metadata_text', event.target.value)} helpText='Ejemplo: {"requiere_firma":true,"lado":"frontal"}' />
+                <FormField label="Orden" type="number" value={form.data.sort_order} onChange={(event) => set('sort_order', event.target.value)} />
+                {bool('is_active', 'Activo')}
+            </>
+        );
+    }
+
+    if (section === 'forms') {
+        return (
+            <>
+                <OptionSelect label="Entidad" value={form.data.entity_type} onChange={(value) => set('entity_type', value)} options={options.entities} />
+                <FormField label="Codigo interno" value={form.data.code} onChange={(event) => set('code', event.target.value)} error={form.errors.code} helpTooltip="Usa minusculas, numeros y guion bajo. Ejemplo: cierre_orden, aprobar_prestamo." />
+                <FormField label="Nombre del formulario" value={form.data.name} onChange={(event) => set('name', event.target.value)} error={form.errors.name} />
+                <OptionSelect label="Momento del flujo" value={form.data.flow} onChange={(value) => set('flow', value)} options={{ '': 'General para la entidad', ...(options.formFlows ?? {}) }} />
+                <FormField label="Codigo de workflow" value={form.data.workflow_code} onChange={(event) => set('workflow_code', event.target.value)} helpText="Opcional. Ejemplo: reparacion, prestamo." />
+                <FormField label="Codigo de estado" value={form.data.state_code} onChange={(event) => set('state_code', event.target.value)} helpText="Opcional. Ejemplo: diagnostico, aprobado." />
+                <OptionSelect label="Superficie" value={form.data.surface} onChange={(value) => set('surface', value)} options={options.formSurfaces} />
+                <FormField label="Descripcion" value={form.data.description} onChange={(event) => set('description', event.target.value)} />
+                <FormField label="Texto del boton" value={form.data.submit_label} onChange={(event) => set('submit_label', event.target.value)} />
+                <FormField label="Layout JSON" value={form.data.layout_text} onChange={(event) => set('layout_text', event.target.value)} helpText='Ejemplo: {"columns":2,"sections":["Datos","Cierre"]}' />
+                <FormField label="Permisos JSON" value={form.data.permissions_text} onChange={(event) => set('permissions_text', event.target.value)} />
+                <FormField label="Validaciones JSON" value={form.data.validations_text} onChange={(event) => set('validations_text', event.target.value)} />
+                <FormField label="Metadatos JSON" value={form.data.metadata_text} onChange={(event) => set('metadata_text', event.target.value)} />
+                <FormField label="Orden" type="number" value={form.data.sort_order} onChange={(event) => set('sort_order', event.target.value)} />
+                {bool('is_active', 'Activo')}
+            </>
+        );
+    }
+
+    if (section === 'formFields') {
+        return (
+            <>
+                <FormSelect value={form.data.dynamic_form_definition_id} onChange={(value) => set('dynamic_form_definition_id', value)} forms={forms} />
+                <FormField label="Codigo de campo" value={form.data.field_code} onChange={(event) => set('field_code', event.target.value)} error={form.errors.field_code} helpText="Debe existir como campo personalizado activo en la misma entidad del formulario." />
+                <FormField label="Nombre alternativo" value={form.data.label_override} onChange={(event) => set('label_override', event.target.value)} />
+                <FormField label="Ayuda contextual" value={form.data.help_text} onChange={(event) => set('help_text', event.target.value)} />
+                <FormField label="Placeholder" value={form.data.placeholder} onChange={(event) => set('placeholder', event.target.value)} />
+                {bool('is_required', 'Obligatorio en este paso')}
+                {bool('is_visible', 'Visible en este paso')}
+                {bool('is_read_only', 'Solo lectura en este paso')}
+                <FormField label="Valor por defecto JSON/texto" value={form.data.default_value_text} onChange={(event) => set('default_value_text', event.target.value)} />
+                <FormField label="Validaciones adicionales JSON" value={form.data.validation_rules_text} onChange={(event) => set('validation_rules_text', event.target.value)} helpText='Ejemplo: ["min:3","max:180"]' />
+                <FormField label="Condiciones de visibilidad JSON" value={form.data.visibility_conditions_text} onChange={(event) => set('visibility_conditions_text', event.target.value)} />
+                <FormField label="Condiciones de obligatoriedad JSON" value={form.data.required_conditions_text} onChange={(event) => set('required_conditions_text', event.target.value)} />
+                <FormField label="Opciones override" value={form.data.options_override_csv} onChange={(event) => set('options_override_csv', event.target.value)} helpText="Separadas por coma si este paso necesita opciones distintas." />
                 <FormField label="Orden" type="number" value={form.data.sort_order} onChange={(event) => set('sort_order', event.target.value)} />
                 {bool('is_active', 'Activo')}
             </>
@@ -577,11 +627,22 @@ function WorkflowSelect({ value, onChange, workflows }) {
     );
 }
 
+function FormSelect({ value, onChange, forms }) {
+    return (
+        <SelectField label="Formulario" value={value ?? ''} onChange={(event) => onChange(event.target.value)}>
+            <option value="">Seleccionar formulario</option>
+            {forms.map((form) => <option key={form.id} value={form.id}>{form.name} ({form.entity_type})</option>)}
+        </SelectField>
+    );
+}
+
 function sectionHelp(section) {
     return {
         entities: 'Define entidades propias del negocio como paciente, vehiculo, mascota, prestamo, proyecto, garantia o equipo. Crear una entidad aqui no cambia ferreteria hasta que se active el motor correspondiente en el perfil.',
         relationships: 'Define vinculos entre entidades como cliente-vehiculo, paciente-tratamiento, prestamo-garantia, proyecto-etapa u orden-material. No se aplican en ferreteria hasta activar el motor de relaciones.',
         attachments: 'Define documentos, fotos, contratos, firmas y evidencias por entidad. Crear la definicion no habilita subida de archivos en ferreteria hasta activar el motor de adjuntos.',
+        forms: 'Define formularios por momento del flujo, por ejemplo crear cliente, aprobar prestamo, cerrar orden o finalizar tratamiento. No se usan en ferreteria hasta activar el motor de formularios.',
+        formFields: 'Define que campos aparecen, son obligatorios o quedan solo lectura dentro de cada formulario por flujo.',
         customFields: 'Permite agregar datos propios por entidad, por ejemplo placa en taller, historia clinica en servicios o talla en tienda.',
         workflows: 'Define flujos por entidad, como reparacion, prestamo, comanda, tratamiento o alquiler. Un flujo controla estados y transiciones.',
         states: 'Define estados y transiciones para reservas, comandas, servicios o produccion sin escribir codigo nuevo.',
@@ -602,6 +663,8 @@ function columnsFor(section) {
         entities: [{ key: 'label', label: 'Entidad' }, { key: 'code', label: 'Codigo' }, { key: 'mode', label: 'Modo' }, { key: 'is_active', label: 'Estado' }],
         relationships: [{ key: 'label', label: 'Relacion' }, { key: 'source_entity_type', label: 'Origen' }, { key: 'target_entity_type', label: 'Destino' }, { key: 'type', label: 'Tipo' }, { key: 'is_active', label: 'Estado' }],
         attachments: [{ key: 'label', label: 'Adjunto' }, { key: 'entity_type', label: 'Entidad' }, { key: 'purpose', label: 'Proposito' }, { key: 'max_file_mb', label: 'MB' }, { key: 'is_sensitive', label: 'Sensible' }],
+        forms: [{ key: 'name', label: 'Formulario' }, { key: 'entity_type', label: 'Entidad' }, { key: 'flow', label: 'Flujo' }, { key: 'surface', label: 'Superficie' }, { key: 'is_active', label: 'Estado' }],
+        formFields: [{ key: 'form.name', label: 'Formulario' }, { key: 'field_code', label: 'Campo' }, { key: 'is_required', label: 'Obligatorio' }, { key: 'is_read_only', label: 'Solo lectura' }, { key: 'is_active', label: 'Estado' }],
         customFields: [{ key: 'label', label: 'Nombre' }, { key: 'entity_type', label: 'Entidad' }, { key: 'type', label: 'Tipo' }, { key: 'is_active', label: 'Estado' }],
         workflows: [{ key: 'name', label: 'Flujo' }, { key: 'entity_type', label: 'Entidad' }, { key: 'initial_state_code', label: 'Inicial' }, { key: 'is_default', label: 'Default' }],
         states: [{ key: 'label', label: 'Estado' }, { key: 'entity_type', label: 'Entidad' }, { key: 'is_initial', label: 'Inicial' }, { key: 'is_final', label: 'Final' }],
@@ -652,6 +715,14 @@ function formFromRow(section, row) {
 
     if (section === 'attachments') {
         return { ...base, ...pick(row, ['entity_type', 'code', 'label', 'purpose', 'max_file_mb', 'storage_disk', 'path_prefix', 'is_required', 'is_sensitive', 'requires_signed_url', 'audit_downloads', 'visible_in_documents', 'visible_in_reports', 'retention_policy', 'sort_order', 'is_active']), allowed_extensions_csv: (row.allowed_extensions ?? []).join(', '), allowed_mime_types_csv: (row.allowed_mime_types ?? []).join(', '), permissions_text: stringify(row.permissions), metadata_text: stringify(row.metadata) };
+    }
+
+    if (section === 'forms') {
+        return { ...base, ...pick(row, ['entity_type', 'code', 'name', 'flow', 'workflow_code', 'state_code', 'surface', 'description', 'submit_label', 'sort_order', 'is_active']), layout_text: stringify(row.layout), permissions_text: stringify(row.permissions), validations_text: stringify(row.validations), metadata_text: stringify(row.metadata) };
+    }
+
+    if (section === 'formFields') {
+        return { ...base, ...pick(row, ['dynamic_form_definition_id', 'field_code', 'label_override', 'help_text', 'placeholder', 'is_required', 'is_visible', 'is_read_only', 'sort_order', 'is_active']), default_value_text: stringify(row.default_value), validation_rules_text: stringify(row.validation_rules), visibility_conditions_text: stringify(row.visibility_conditions), required_conditions_text: stringify(row.required_conditions), options_override_csv: (row.options_override ?? []).join(', ') };
     }
 
     if (section === 'states') {

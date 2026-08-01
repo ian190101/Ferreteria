@@ -157,6 +157,8 @@ class BusinessProfileConfiguration
             ],
             'forms' => [
                 'defaults_locked' => true,
+                'max_forms_per_entity' => 30,
+                'flow_specific_required_fields' => true,
                 'definitions' => [],
             ],
             'states' => [

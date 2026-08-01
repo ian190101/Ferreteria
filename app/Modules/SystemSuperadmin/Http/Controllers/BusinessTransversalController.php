@@ -11,6 +11,8 @@ use App\Modules\SystemSuperadmin\Models\BusinessStateDefinition;
 use App\Modules\SystemSuperadmin\Models\CommissionRule;
 use App\Modules\SystemSuperadmin\Models\CustomFieldDefinition;
 use App\Modules\SystemSuperadmin\Models\DynamicEntity;
+use App\Modules\SystemSuperadmin\Models\DynamicFormDefinition;
+use App\Modules\SystemSuperadmin\Models\DynamicFormFieldRule;
 use App\Modules\SystemSuperadmin\Models\DynamicRelationshipDefinition;
 use App\Modules\SystemSuperadmin\Models\ImportProfileTemplate;
 use App\Modules\SystemSuperadmin\Models\NotificationRule;
@@ -100,6 +102,8 @@ class BusinessTransversalController extends Controller
             'entities' => $this->validateEntity($request, $options, $current),
             'relationships' => $this->validateRelationship($request, $options, $current),
             'attachments' => $this->validateAttachmentDefinition($request, $options, $current),
+            'forms' => $this->validateDynamicForm($request, $options, $current),
+            'form-fields' => $this->validateDynamicFormFieldRule($request, $current),
             'custom-fields' => $this->validateCustomField($request, $options, $current),
             'workflows' => $this->validateWorkflow($request, $options, $current),
             'states' => $this->validateState($request, $options),
@@ -114,6 +118,128 @@ class BusinessTransversalController extends Controller
             'imports' => $this->validateImportTemplate($request, $options),
             default => abort(404),
         };
+    }
+
+    /**
+     * @param array<string, mixed> $options
+     * @return array<string, mixed>
+     */
+    private function validateDynamicForm(Request $request, array $options, ?Model $current = null): array
+    {
+        $entityOptions = array_keys(app(DynamicEntityRegistry::class)->options());
+        $uniqueCode = Rule::unique('dynamic_form_definitions', 'code')
+            ->where(fn ($query) => $query->where('entity_type', (string) $request->input('entity_type')));
+
+        if ($current instanceof DynamicFormDefinition) {
+            $uniqueCode->ignore($current->id);
+        }
+
+        $data = $request->validate([
+            'entity_type' => ['required', 'string', Rule::in($entityOptions)],
+            'code' => ['required', 'string', 'max:120', 'regex:/^[a-z0-9_]+$/', $uniqueCode],
+            'name' => ['required', 'string', 'max:180'],
+            'flow' => ['nullable', 'string', Rule::in(array_keys($options['formFlows']))],
+            'workflow_code' => ['nullable', 'string', 'max:120', 'regex:/^[a-z0-9_]+$/'],
+            'state_code' => ['nullable', 'string', 'max:120', 'regex:/^[a-z0-9_]+$/'],
+            'surface' => ['required', 'string', Rule::in(array_keys($options['formSurfaces']))],
+            'description' => ['nullable', 'string', 'max:1000'],
+            'submit_label' => ['nullable', 'string', 'max:120'],
+            'layout_text' => ['nullable', 'string', 'max:3000'],
+            'permissions_text' => ['nullable', 'string', 'max:3000'],
+            'validations_text' => ['nullable', 'string', 'max:3000'],
+            'metadata_text' => ['nullable', 'string', 'max:3000'],
+            'sort_order' => ['nullable', 'integer', 'min:0', 'max:999'],
+            'is_active' => ['boolean'],
+        ], [], [
+            'entity_type' => 'entidad',
+            'code' => 'codigo interno',
+            'name' => 'nombre del formulario',
+            'flow' => 'flujo operativo',
+            'surface' => 'superficie',
+        ]);
+
+        return [
+            'entity_type' => $data['entity_type'],
+            'code' => $data['code'],
+            'name' => $data['name'],
+            'flow' => $data['flow'] ?? null,
+            'workflow_code' => $data['workflow_code'] ?? null,
+            'state_code' => $data['state_code'] ?? null,
+            'surface' => $data['surface'],
+            'description' => $data['description'] ?? null,
+            'submit_label' => $data['submit_label'] ?? null,
+            'layout' => BusinessTransversalConfiguration::jsonFromText($data['layout_text'] ?? null),
+            'permissions' => BusinessTransversalConfiguration::jsonFromText($data['permissions_text'] ?? null),
+            'validations' => BusinessTransversalConfiguration::jsonFromText($data['validations_text'] ?? null),
+            'metadata' => BusinessTransversalConfiguration::jsonFromText($data['metadata_text'] ?? null),
+            'sort_order' => (int) ($data['sort_order'] ?? 0),
+            'is_active' => (bool) ($data['is_active'] ?? true),
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function validateDynamicFormFieldRule(Request $request, ?Model $current = null): array
+    {
+        $uniqueField = Rule::unique('dynamic_form_field_rules', 'field_code')
+            ->where(fn ($query) => $query->where('dynamic_form_definition_id', (int) $request->input('dynamic_form_definition_id')));
+
+        if ($current instanceof DynamicFormFieldRule) {
+            $uniqueField->ignore($current->id);
+        }
+
+        $data = $request->validate([
+            'dynamic_form_definition_id' => ['required', 'integer', 'exists:dynamic_form_definitions,id'],
+            'field_code' => ['required', 'string', 'max:120', 'regex:/^[a-z0-9_]+$/', $uniqueField],
+            'label_override' => ['nullable', 'string', 'max:180'],
+            'help_text' => ['nullable', 'string', 'max:1000'],
+            'placeholder' => ['nullable', 'string', 'max:180'],
+            'is_required' => ['boolean'],
+            'is_visible' => ['boolean'],
+            'is_read_only' => ['boolean'],
+            'default_value_text' => ['nullable', 'string', 'max:2000'],
+            'validation_rules_text' => ['nullable', 'string', 'max:3000'],
+            'visibility_conditions_text' => ['nullable', 'string', 'max:3000'],
+            'required_conditions_text' => ['nullable', 'string', 'max:3000'],
+            'options_override_csv' => ['nullable', 'string', 'max:1000'],
+            'sort_order' => ['nullable', 'integer', 'min:0', 'max:999'],
+            'is_active' => ['boolean'],
+        ], [], [
+            'dynamic_form_definition_id' => 'formulario',
+            'field_code' => 'campo personalizado',
+        ]);
+
+        $form = DynamicFormDefinition::query()->findOrFail($data['dynamic_form_definition_id']);
+        $fieldExists = CustomFieldDefinition::query()
+            ->where('entity_type', $form->entity_type)
+            ->where('code', $data['field_code'])
+            ->where('is_active', true)
+            ->exists();
+
+        if (! $fieldExists) {
+            throw ValidationException::withMessages([
+                'field_code' => 'El campo debe existir y estar activo para la entidad del formulario.',
+            ]);
+        }
+
+        return [
+            'dynamic_form_definition_id' => $form->id,
+            'field_code' => $data['field_code'],
+            'label_override' => $data['label_override'] ?? null,
+            'help_text' => $data['help_text'] ?? null,
+            'placeholder' => $data['placeholder'] ?? null,
+            'is_required' => (bool) ($data['is_required'] ?? false),
+            'is_visible' => (bool) ($data['is_visible'] ?? true),
+            'is_read_only' => (bool) ($data['is_read_only'] ?? false),
+            'default_value' => BusinessTransversalConfiguration::jsonFromText($data['default_value_text'] ?? null),
+            'validation_rules' => BusinessTransversalConfiguration::jsonFromText($data['validation_rules_text'] ?? null),
+            'visibility_conditions' => BusinessTransversalConfiguration::jsonFromText($data['visibility_conditions_text'] ?? null),
+            'required_conditions' => BusinessTransversalConfiguration::jsonFromText($data['required_conditions_text'] ?? null),
+            'options_override' => BusinessTransversalConfiguration::listFromCsv($data['options_override_csv'] ?? null),
+            'sort_order' => (int) ($data['sort_order'] ?? 0),
+            'is_active' => (bool) ($data['is_active'] ?? true),
+        ];
     }
 
     /**
@@ -802,6 +928,8 @@ class BusinessTransversalController extends Controller
             'entities' => DynamicEntity::class,
             'relationships' => DynamicRelationshipDefinition::class,
             'attachments' => AttachmentDefinition::class,
+            'forms' => DynamicFormDefinition::class,
+            'form-fields' => DynamicFormFieldRule::class,
             'custom-fields' => CustomFieldDefinition::class,
             'workflows' => WorkflowDefinition::class,
             'states' => BusinessStateDefinition::class,
@@ -834,6 +962,8 @@ class BusinessTransversalController extends Controller
             'entities' => 'Entidad configurable',
             'relationships' => 'Relacion entre entidades',
             'attachments' => 'Adjunto/evidencia',
+            'forms' => 'Formulario por flujo',
+            'form-fields' => 'Regla de campo de formulario',
             'custom-fields' => 'Campo personalizado',
             'workflows' => 'Flujo de estado',
             'states' => 'Estado personalizado',

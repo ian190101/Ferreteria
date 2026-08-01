@@ -9,6 +9,8 @@ use App\Modules\SystemSuperadmin\Models\BusinessProfileSandboxSession;
 use App\Modules\SystemSuperadmin\Models\BusinessStateDefinition;
 use App\Modules\SystemSuperadmin\Models\CustomFieldDefinition;
 use App\Modules\SystemSuperadmin\Models\DynamicEntity;
+use App\Modules\SystemSuperadmin\Models\DynamicFormDefinition;
+use App\Modules\SystemSuperadmin\Models\DynamicFormFieldRule;
 use App\Modules\SystemSuperadmin\Models\DynamicRelationshipDefinition;
 use App\Modules\SystemSuperadmin\Models\PrinterProfile;
 use App\Modules\SystemSuperadmin\Models\ReservableResource;
@@ -422,6 +424,104 @@ it('crea definiciones de adjuntos sin activar el perfil actual de ferreteria', f
         ->and($definition->metadata)->toBe(['lado' => 'frontal'])
         ->and($configuration['feature_flags']['attachments_engine'])->toBeFalse()
         ->and($configuration['capabilities']['uses_attachments'])->toBeFalse();
+});
+
+it('crea formularios por flujo sin activar el perfil actual de ferreteria', function () {
+    $user = transversalUser();
+    CustomFieldDefinition::query()->create([
+        'entity_type' => 'service_order',
+        'code' => 'diagnostico_final',
+        'label' => 'Diagnostico final',
+        'type' => 'text',
+        'visible_in_forms' => true,
+        'is_active' => true,
+    ]);
+
+    $this->actingAs($user)
+        ->post(route('system-superadmin.transversal-config.store', 'forms'), [
+            'entity_type' => 'service_order',
+            'code' => 'cierre_orden',
+            'name' => 'Cierre de orden de servicio',
+            'flow' => 'service_order_close',
+            'workflow_code' => 'reparacion',
+            'state_code' => 'listo',
+            'surface' => 'form',
+            'description' => 'Datos requeridos al cerrar la orden.',
+            'submit_label' => 'Cerrar orden',
+            'layout_text' => '{"columns":2,"sections":["Diagnostico","Entrega"]}',
+            'permissions_text' => '{"edit":["tecnico"]}',
+            'validations_text' => '{"requires_state":"listo"}',
+            'metadata_text' => '{"documento":"orden_servicio"}',
+            'sort_order' => 4,
+            'is_active' => true,
+        ])
+        ->assertRedirect();
+
+    $form = DynamicFormDefinition::query()->where('code', 'cierre_orden')->first();
+
+    $this->actingAs($user)
+        ->post(route('system-superadmin.transversal-config.store', 'form-fields'), [
+            'dynamic_form_definition_id' => $form->id,
+            'field_code' => 'diagnostico_final',
+            'label_override' => 'Diagnostico de cierre',
+            'help_text' => 'Debe explicar que se realizo antes de entregar.',
+            'placeholder' => 'Detalle tecnico',
+            'is_required' => true,
+            'is_visible' => true,
+            'is_read_only' => false,
+            'validation_rules_text' => '["min:5"]',
+            'visibility_conditions_text' => '{"state":"listo"}',
+            'required_conditions_text' => '{"delivery":true}',
+            'options_override_csv' => '',
+            'sort_order' => 1,
+            'is_active' => true,
+        ])
+        ->assertRedirect();
+
+    $fieldRule = DynamicFormFieldRule::query()->where('field_code', 'diagnostico_final')->first();
+    $configuration = BusinessProfileConfiguration::normalized([]);
+
+    expect($form)->not->toBeNull()
+        ->and($form->entity_type)->toBe('service_order')
+        ->and($form->layout)->toBe(['columns' => 2, 'sections' => ['Diagnostico', 'Entrega']])
+        ->and($fieldRule)->not->toBeNull()
+        ->and($fieldRule->is_required)->toBeTrue()
+        ->and($fieldRule->validation_rules)->toBe(['min:5'])
+        ->and($configuration['feature_flags']['dynamic_forms_engine'])->toBeFalse()
+        ->and($configuration['capabilities']['uses_dynamic_forms'])->toBeFalse();
+});
+
+it('bloquea campos de formulario que no pertenecen a la entidad del formulario', function () {
+    $user = transversalUser();
+    $form = DynamicFormDefinition::query()->create([
+        'entity_type' => 'service_order',
+        'code' => 'cierre_orden',
+        'name' => 'Cierre de orden',
+        'surface' => 'form',
+        'is_active' => true,
+    ]);
+    CustomFieldDefinition::query()->create([
+        'entity_type' => 'customer',
+        'code' => 'ci',
+        'label' => 'CI',
+        'type' => 'identity_document',
+        'visible_in_forms' => true,
+        'is_active' => true,
+    ]);
+
+    $this->actingAs($user)
+        ->from(route('system-superadmin.transversal-config.index'))
+        ->post(route('system-superadmin.transversal-config.store', 'form-fields'), [
+            'dynamic_form_definition_id' => $form->id,
+            'field_code' => 'ci',
+            'is_required' => true,
+            'is_visible' => true,
+            'is_active' => true,
+        ])
+        ->assertRedirect(route('system-superadmin.transversal-config.index'))
+        ->assertSessionHasErrors('field_code');
+
+    expect(DynamicFormFieldRule::query()->count())->toBe(0);
 });
 
 it('bloquea definiciones de adjuntos con extensiones o mime fuera de politica', function () {

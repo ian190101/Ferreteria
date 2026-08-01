@@ -10,6 +10,8 @@ use App\Modules\SystemSuperadmin\Models\BusinessProfile;
 use App\Modules\SystemSuperadmin\Models\BusinessStateDefinition;
 use App\Modules\SystemSuperadmin\Models\CustomFieldDefinition;
 use App\Modules\SystemSuperadmin\Models\DynamicEntity;
+use App\Modules\SystemSuperadmin\Models\DynamicFormDefinition;
+use App\Modules\SystemSuperadmin\Models\DynamicFormFieldRule;
 use App\Modules\SystemSuperadmin\Models\DynamicRelationshipDefinition;
 use App\Modules\SystemSuperadmin\Models\NotificationRule;
 use App\Modules\SystemSuperadmin\Models\PriceList;
@@ -26,6 +28,7 @@ use App\Modules\SystemSuperadmin\Services\BusinessPrinterProfileService;
 use App\Modules\SystemSuperadmin\Services\BusinessStateTransitionService;
 use App\Modules\SystemSuperadmin\Services\CustomFieldRuntimeService;
 use App\Modules\SystemSuperadmin\Services\DynamicRelationshipService;
+use App\Modules\SystemSuperadmin\Services\DynamicFormService;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Http\UploadedFile;
@@ -430,6 +433,84 @@ it('bloquea adjuntos con extension no permitida', function () {
     Cache::flush();
 
     app(BusinessAttachmentService::class)->store($definition, 1, UploadedFile::fake()->create('foto.jpg', 100, 'image/jpeg'), User::factory()->create());
+})->throws(ValidationException::class);
+
+it('resuelve formularios por flujo solo cuando el perfil activo habilita el motor', function () {
+    CustomFieldDefinition::query()->create([
+        'entity_type' => 'service_order',
+        'code' => 'diagnostico_final',
+        'label' => 'Diagnostico final',
+        'type' => 'text',
+        'visible_in_forms' => true,
+        'is_active' => true,
+    ]);
+    CustomFieldDefinition::query()->create([
+        'entity_type' => 'service_order',
+        'code' => 'costo_interno',
+        'label' => 'Costo interno',
+        'type' => 'currency',
+        'visible_in_forms' => true,
+        'is_sensitive' => true,
+        'is_active' => true,
+    ]);
+    $form = DynamicFormDefinition::query()->create([
+        'entity_type' => 'service_order',
+        'code' => 'cierre_orden',
+        'name' => 'Cierre de orden',
+        'flow' => 'service_order_close',
+        'surface' => 'form',
+        'submit_label' => 'Cerrar orden',
+        'is_active' => true,
+    ]);
+    DynamicFormFieldRule::query()->create([
+        'dynamic_form_definition_id' => $form->id,
+        'field_code' => 'diagnostico_final',
+        'label_override' => 'Diagnostico de cierre',
+        'is_required' => true,
+        'validation_rules' => ['min:5'],
+        'is_active' => true,
+    ]);
+    DynamicFormFieldRule::query()->create([
+        'dynamic_form_definition_id' => $form->id,
+        'field_code' => 'costo_interno',
+        'is_required' => true,
+        'is_active' => true,
+    ]);
+
+    $service = app(DynamicFormService::class);
+    $context = ['flow' => 'service_order_close', 'surface' => 'form'];
+
+    expect($service->formsFor('service_order', $context))->toBe([]);
+
+    BusinessProfile::query()->create([
+        'name' => 'Perfil formularios dinamicos',
+        'business_type' => 'technical_service',
+        'status' => 'active',
+        'configuration' => BusinessProfileConfiguration::normalized([
+            'capabilities' => [
+                'uses_dynamic_entities' => true,
+                'uses_dynamic_fields' => true,
+                'uses_dynamic_forms' => true,
+            ],
+            'feature_flags' => [
+                'dynamic_entities_engine' => true,
+                'dynamic_fields_engine' => true,
+                'dynamic_forms_engine' => true,
+            ],
+        ]),
+        'applied_at' => now(),
+    ]);
+    Cache::flush();
+
+    $resolved = $service->resolve('service_order', 'cierre_orden', null, $context);
+
+    expect($resolved)->not->toBeNull()
+        ->and($resolved['submit_label'])->toBe('Cerrar orden')
+        ->and(collect($resolved['fields'])->pluck('code')->all())->toBe(['diagnostico_final'])
+        ->and($service->rulesForValidation('service_order', 'cierre_orden', null, $context)['diagnostico_final'])->toContain('required')
+        ->and($service->validate('service_order', 'cierre_orden', ['diagnostico_final' => 'Trabajo finalizado'], null, $context))->toBe(['diagnostico_final' => 'Trabajo finalizado']);
+
+    $service->validate('service_order', 'cierre_orden', ['diagnostico_final' => 'abc'], null, $context);
 })->throws(ValidationException::class);
 
 it('resuelve workflows formales con permisos, validaciones y acciones', function () {
