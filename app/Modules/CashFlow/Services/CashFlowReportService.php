@@ -6,6 +6,8 @@ use App\Modules\Banks\Models\BankTransaction;
 use App\Modules\Expenses\Models\Expense;
 use App\Modules\Payments\Models\PurchasePayment;
 use App\Modules\Payments\Models\SalePayment;
+use App\Modules\Purchases\Models\Purchase;
+use App\Modules\Sales\Models\Sale;
 use App\Support\BranchAccess;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
@@ -41,8 +43,8 @@ class CashFlowReportService
     public function filters(Request $request): array
     {
         $smartFilter = $request->string('smart_filter')->toString();
-        $from = $request->date('from')?->startOfDay() ?? now()->startOfMonth();
-        $to = $request->date('to')?->endOfDay() ?? now()->endOfDay();
+        $from = $request->date('from')?->startOfDay();
+        $to = $request->date('to')?->endOfDay();
 
         if ($smartFilter === 'today') {
             $from = now()->startOfDay();
@@ -75,8 +77,8 @@ class CashFlowReportService
                 : 'all',
             'smart_filter' => $smartFilter,
             'search' => trim($request->string('search')->toString()),
-            'from' => $from->toDateString(),
-            'to' => $to->toDateString(),
+            'from' => $from?->toDateString() ?? '',
+            'to' => $to?->toDateString() ?? '',
             'from_at' => $from,
             'to_at' => $to,
             'per_page' => max(10, min($request->integer('per_page', 25), 100)),
@@ -89,10 +91,18 @@ class CashFlowReportService
 
         if ($filters['source'] === 'all' || $filters['source'] === 'sales') {
             $sources = $sources->merge($this->salePayments($request, $filters));
+
+            if (! $filters['payment_method_id']) {
+                $sources = $sources->merge($this->legacySaleCollections($request, $filters));
+            }
         }
 
         if ($filters['source'] === 'all' || $filters['source'] === 'purchases') {
             $sources = $sources->merge($this->purchasePayments($request, $filters));
+
+            if (! $filters['payment_method_id']) {
+                $sources = $sources->merge($this->legacyPurchasePayments($request, $filters));
+            }
         }
 
         if ($filters['source'] === 'all' || $filters['source'] === 'expenses') {
@@ -157,6 +167,72 @@ class CashFlowReportService
                 'amount' => (float) $payment->amount,
                 'signed_amount' => -1 * (float) $payment->amount,
                 'related_url' => $payment->purchase_id ? route('purchases.show', $payment->purchase_id) : null,
+            ]);
+    }
+
+    private function legacySaleCollections(Request $request, array $filters): Collection
+    {
+        return $this->basePaymentQuery(Sale::query(), $request, $filters, 'sold_at')
+            ->where('document_type', 'sale_note')
+            ->where('total', '>', 0)
+            ->whereColumn('balance_due', '<', 'total')
+            ->where(fn (Builder $builder) => $builder->whereNull('status')->orWhere('status', '!=', 'void'))
+            ->doesntHave('payments')
+            ->with(['branch:id,name', 'user:id,name'])
+            ->get()
+            ->map(function (Sale $sale) {
+                $amount = max(round(((float) $sale->total - (float) $sale->balance_due) * (float) $sale->exchange_rate_to_bob, 2), 0);
+
+                return [
+                    'key' => 'legacy-sale-'.$sale->id,
+                    'date' => $sale->sold_at?->toIso8601String(),
+                    'type' => self::TYPE_INCOME,
+                    'source' => 'sales',
+                    'source_label' => 'Cobro cliente heredado',
+                    'document' => $sale->receipt_number,
+                    'description' => ($sale->customer_name ?: 'Cliente ocasional').' - cobro registrado en la nota',
+                    'branch_id' => $sale->branch_id,
+                    'branch_name' => $sale->branch?->name ?? 'Sin sucursal',
+                    'method_id' => null,
+                    'method_name' => 'Registrado en venta',
+                    'user_name' => $sale->user?->name ?? '-',
+                    'reference' => null,
+                    'notes' => 'Movimiento inferido desde venta sin registro detallado de pago.',
+                    'amount' => $amount,
+                    'signed_amount' => $amount,
+                    'related_url' => route('sales.show', $sale->id),
+                ];
+            })
+            ->filter(fn (array $movement) => $movement['amount'] > 0)
+            ->values();
+    }
+
+    private function legacyPurchasePayments(Request $request, array $filters): Collection
+    {
+        return $this->basePaymentQuery(Purchase::query(), $request, $filters, 'purchase_date')
+            ->where('paid_amount', '>', 0)
+            ->where(fn (Builder $builder) => $builder->whereNull('status')->orWhere('status', '!=', 'void'))
+            ->doesntHave('payments')
+            ->with(['branch:id,name', 'user:id,name'])
+            ->get()
+            ->map(fn (Purchase $purchase) => [
+                'key' => 'legacy-purchase-'.$purchase->id,
+                'date' => $purchase->purchase_date?->toIso8601String(),
+                'type' => self::TYPE_EXPENSE,
+                'source' => 'purchases',
+                'source_label' => 'Pago proveedor heredado',
+                'document' => $purchase->document_number ?? 'Compra '.$purchase->id,
+                'description' => 'Pago registrado en la compra',
+                'branch_id' => $purchase->branch_id,
+                'branch_name' => $purchase->branch?->name ?? 'Sin sucursal',
+                'method_id' => null,
+                'method_name' => 'Registrado en compra',
+                'user_name' => $purchase->user?->name ?? '-',
+                'reference' => null,
+                'notes' => 'Movimiento inferido desde compra sin registro detallado de pago.',
+                'amount' => (float) $purchase->paid_amount,
+                'signed_amount' => -1 * (float) $purchase->paid_amount,
+                'related_url' => route('purchases.show', $purchase->id),
             ]);
     }
 
@@ -226,10 +302,8 @@ class CashFlowReportService
             ->when(true, fn (Builder $builder) => BranchAccess::apply($builder, $request->user()))
             ->when($filters['branch_id'], fn (Builder $builder) => $builder->where('branch_id', $filters['branch_id']))
             ->when($filters['payment_method_id'] && $dateColumn !== 'transacted_at', fn (Builder $builder) => $builder->where('payment_method_id', $filters['payment_method_id']))
-            ->whereBetween($dateColumn, [
-                Carbon::parse($filters['from_at'])->startOfDay(),
-                Carbon::parse($filters['to_at'])->endOfDay(),
-            ]);
+            ->when($filters['from_at'], fn (Builder $builder) => $builder->where($dateColumn, '>=', Carbon::parse($filters['from_at'])->startOfDay()))
+            ->when($filters['to_at'], fn (Builder $builder) => $builder->where($dateColumn, '<=', Carbon::parse($filters['to_at'])->endOfDay()));
     }
 
     private function applyCollectionFilters(Collection $movements, array $filters): Collection

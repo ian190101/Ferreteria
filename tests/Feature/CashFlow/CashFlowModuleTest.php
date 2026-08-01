@@ -149,6 +149,38 @@ function cashFlowSeedMovements(User $user, Branch $branch): void
     ]);
 }
 
+function cashFlowSeedLegacyMovements(User $user, Branch $branch): void
+{
+    Sale::query()->create([
+        'branch_id' => $branch->id,
+        'user_id' => $user->id,
+        'receipt_number' => 'NV-LEGACY-'.uniqid(),
+        'document_type' => 'sale_note',
+        'customer_name' => 'Cliente historico',
+        'sold_at' => now()->subMonths(2),
+        'exchange_rate_to_bob' => 1,
+        'subtotal' => 300,
+        'discount_total' => 0,
+        'advance_percentage' => 0,
+        'advance_amount' => 0,
+        'balance_due' => 0,
+        'total' => 300,
+        'status' => 'paid',
+    ]);
+
+    Purchase::query()->create([
+        'branch_id' => $branch->id,
+        'user_id' => $user->id,
+        'document_number' => 'COM-LEGACY-'.uniqid(),
+        'purchase_date' => now()->subMonths(2),
+        'total_amount' => 120,
+        'paid_amount' => 120,
+        'balance_due' => 0,
+        'payment_status' => 'paid',
+        'status' => 'received',
+    ]);
+}
+
 it('muestra ingresos egresos neto y detalle del flujo de efectivo', function () {
     activeCashFlowProfile();
     $user = cashFlowUser(['cash-flow.view']);
@@ -164,6 +196,34 @@ it('muestra ingresos egresos neto y detalle del flujo de efectivo', function () 
             ->where('summary.expense', 200)
             ->where('summary.net', 320)
             ->has('movements.data', 4)
+        );
+});
+
+it('muestra historial completo y movimientos heredados cuando no se filtra por fecha', function () {
+    activeCashFlowProfile();
+    $user = cashFlowUser(['cash-flow.view']);
+
+    cashFlowSeedLegacyMovements($user, $user->branch);
+
+    $this->actingAs($user)
+        ->get(route('cash-flow.index'))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('filters.from', '')
+            ->where('filters.to', '')
+            ->where('summary.income', 300)
+            ->where('summary.expense', 120)
+            ->where('summary.net', 180)
+            ->has('movements.data', 2)
+        );
+
+    $this->actingAs($user)
+        ->get(route('cash-flow.index', ['smart_filter' => 'today']))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('summary.income', 0)
+            ->where('summary.expense', 0)
+            ->has('movements.data', 0)
         );
 });
 

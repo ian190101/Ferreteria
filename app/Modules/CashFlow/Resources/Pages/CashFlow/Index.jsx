@@ -106,8 +106,12 @@ export default function Index({
                         <option value="">Todos</option>
                         {paymentMethods.map((method) => <option key={method.id} value={method.id}>{method.name}</option>)}
                     </SelectField>
-                    <FormField label="Desde" name="from" type="date" value={filterForm.data.from} onChange={(event) => filterForm.setData('from', event.target.value)} />
-                    <FormField label="Hasta" name="to" type="date" value={filterForm.data.to} onChange={(event) => filterForm.setData('to', event.target.value)} />
+                    <FormField label="Desde" name="from" type="date" value={filterForm.data.from} onChange={(event) => {
+                        filterForm.setData({ ...filterForm.data, from: event.target.value, smart_filter: '' });
+                    }} />
+                    <FormField label="Hasta" name="to" type="date" value={filterForm.data.to} onChange={(event) => {
+                        filterForm.setData({ ...filterForm.data, to: event.target.value, smart_filter: '' });
+                    }} />
                     <FormField label="Buscar" name="search" value={filterForm.data.search} onChange={(event) => filterForm.setData('search', event.target.value)} placeholder="Documento, cliente, referencia" />
                     <div className="flex items-end gap-2">
                         <button disabled={filterForm.processing} className="rounded-md bg-brand-primary px-4 py-2 text-sm font-semibold text-white" type="submit">
@@ -117,6 +121,9 @@ export default function Index({
                             Limpiar
                         </button>
                     </div>
+                    <p className="text-sm text-slate-500 dark:text-slate-400 sm:col-span-2 xl:col-span-8">
+                        Si no eliges fechas, se muestra todo el historial permitido. Usa los botones rapidos para revisar periodos concretos como hoy, esta semana o este mes.
+                    </p>
                 </form>
 
                 <div className="mb-6 grid gap-6 xl:grid-cols-3">
