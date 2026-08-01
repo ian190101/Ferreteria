@@ -576,6 +576,7 @@ class BusinessProfileController extends Controller
         $data['configuration']['capabilities']['uses_pos'] = (bool) ($data['configuration']['modules']['pos'] ?? false);
         $data['configuration']['capabilities']['uses_billing'] = (bool) ($data['configuration']['modules']['billing'] ?? false);
         $data['configuration']['capabilities']['uses_cash'] = (bool) ($data['configuration']['modules']['cash'] ?? false);
+        $data['configuration']['capabilities']['uses_cash_flow'] = (bool) ($data['configuration']['modules']['cash_flow'] ?? false);
         $data['configuration']['capabilities']['uses_banks'] = (bool) ($data['configuration']['modules']['banks'] ?? false);
         $data['configuration']['capabilities']['uses_delivery'] = (bool) ($data['configuration']['modules']['deliveries'] ?? false);
         $data['configuration']['capabilities']['uses_services'] = (bool) ($data['configuration']['modules']['services'] ?? false);

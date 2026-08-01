@@ -30,6 +30,7 @@ class BusinessCapabilityCatalog
             self::capability('uses_barcode_scanner', 'POS', 'Lector de barras', 'Optimiza busqueda rapida por codigo de barras.', ['supermarket', 'store', 'hardware_store'], ['uses_pos']),
             self::capability('requires_cash_session', 'Caja', 'Caja obligatoria', 'Exige caja abierta antes de vender o cobrar.', ['hardware_store', 'supermarket', 'restaurant'], ['uses_cash']),
             self::capability('uses_cash', 'Caja', 'Caja', 'Gestiona apertura, cierre y cuadre de efectivo por alcance.', ['hardware_store', 'supermarket', 'restaurant', 'store']),
+            self::capability('uses_cash_flow', 'Finanzas', 'Flujo de efectivo', 'Consolida ingresos, egresos, resultado neto y detalles por sucursal, fecha, origen y metodo.', ['hardware_store', 'supermarket', 'restaurant', 'store']),
             self::capability('uses_banks', 'Bancos', 'Bancos/QR', 'Registra QR, transferencias y conciliacion bancaria.', ['hardware_store', 'restaurant', 'store']),
             self::capability('uses_billing', 'Facturacion', 'Facturacion SIAT', 'Activa documentos fiscales y validaciones SIAT.', ['hardware_store', 'supermarket', 'store']),
             self::capability('uses_commissions', 'Finanzas', 'Comisiones', 'Calcula comisiones por vendedor, mesero, tecnico, producto o margen.', ['restaurant', 'services', 'store']),

@@ -27,6 +27,7 @@ return Application::configure(basePath: dirname(__DIR__))
             __DIR__.'/../app/Modules/Billing/routes/web.php',
             __DIR__.'/../app/Modules/Branches/routes/web.php',
             __DIR__.'/../app/Modules/Cash/routes/web.php',
+            __DIR__.'/../app/Modules/CashFlow/routes/web.php',
             __DIR__.'/../app/Modules/Customers/routes/web.php',
             __DIR__.'/../app/Modules/Expenses/routes/web.php',
             __DIR__.'/../app/Modules/Exports/routes/web.php',

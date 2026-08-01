@@ -47,6 +47,7 @@ class DatabaseSeeder extends Seeder
             'branches.manage',
             'cash.view',
             'cash.manage',
+            'cash-flow.view',
             'customers.view',
             'customers.manage',
             'credit-notes.view',
