@@ -18,8 +18,8 @@ class StoreProductCoilRequest extends FormRequest
         return [
             'branch_id' => ['required', 'integer', 'exists:branches,id'],
             'product_id' => ['required', 'integer', 'exists:products,id'],
-            'barcode' => ['required', 'string', 'max:80', 'unique:product_coils,barcode'],
-            'lot_number' => ['required', 'string', 'max:80'],
+            'barcode' => ['nullable', 'string', 'max:80', 'unique:product_coils,barcode'],
+            'lot_number' => ['nullable', 'string', 'max:80'],
             'initial_kg' => ['nullable', 'numeric', 'gt:0', 'max:999999999999.999'],
             'initial_meters' => ['required', 'numeric', 'gt:0', 'max:999999999999.999'],
         ];

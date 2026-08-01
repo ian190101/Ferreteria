@@ -30,7 +30,7 @@ export default function Form({ branches, products }) {
             <Head title="Nuevo lote/unidad fisica" />
 
             <section className="mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:px-8">
-                <ModuleHeader title="Nuevo lote/unidad fisica" description="Registra un lote, caja, paquete, rollo o pieza con barcode y cantidad inicial en la unidad del producto." />
+                <ModuleHeader title="Nuevo lote/unidad fisica" description="Registra un lote, caja, paquete, rollo o pieza. Barcode y numero de lote son opcionales, pero ayudan a ubicar el material despues." />
 
                 <form onSubmit={submit} className="grid gap-5 rounded-lg border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:grid-cols-2">
                     <SelectField label="Sucursal" name="branch_id" value={data.branch_id} onChange={(event) => setData('branch_id', event.target.value)} error={errors.branch_id} required>
@@ -49,8 +49,8 @@ export default function Form({ branches, products }) {
                             </option>
                         ))}
                     </SelectField>
-                    <FormField label="Barcode" name="barcode" value={data.barcode} onChange={(event) => setData('barcode', event.target.value)} error={errors.barcode} required />
-                    <FormField label="Numero de lote" name="lot_number" value={data.lot_number} onChange={(event) => setData('lot_number', event.target.value)} error={errors.lot_number} required />
+                    <FormField label="Barcode opcional" name="barcode" value={data.barcode} onChange={(event) => setData('barcode', event.target.value)} error={errors.barcode} />
+                    <FormField label="Numero de lote opcional" name="lot_number" value={data.lot_number} onChange={(event) => setData('lot_number', event.target.value)} error={errors.lot_number} />
                     <FormField label="Peso inicial kg (opcional)" name="initial_kg" type="number" step={decimalStep(decimalFormat.decimalsFor('weight'))} value={data.initial_kg} onChange={(event) => setData('initial_kg', event.target.value)} error={errors.initial_kg} />
                     <FormField label={`Cantidad inicial (${selectedUnit})`} name="initial_meters" type="number" step={decimalStep(decimalFormat.decimalsFor(quantityKind))} value={data.initial_meters} onChange={(event) => setData('initial_meters', event.target.value)} error={errors.initial_meters} required />
 

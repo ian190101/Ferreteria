@@ -42,6 +42,10 @@ class StoreProductRequest extends FormRequest
             'duration_minutes' => ['nullable', 'integer', 'min:0', 'max:525600'],
             'preparation_minutes' => ['nullable', 'integer', 'min:0', 'max:10080'],
             'attributes' => ['nullable', 'array'],
+            'catalog_settings' => ['nullable', 'array'],
+            'requires_lot' => ['required', 'boolean'],
+            'requires_expiration_date' => ['required', 'boolean'],
+            'is_rentable' => ['required', 'boolean'],
             'custom_attributes' => ['nullable', 'array'],
             'custom_attributes.*.code' => ['nullable', 'string', 'max:80'],
             'custom_attributes.*.name' => ['required_with:custom_attributes', 'string', 'max:120'],
@@ -112,6 +116,10 @@ class StoreProductRequest extends FormRequest
             'duration_minutes' => $this->filled('duration_minutes') ? $this->integer('duration_minutes') : null,
             'preparation_minutes' => $this->filled('preparation_minutes') ? $this->integer('preparation_minutes') : null,
             'attributes' => $this->normalizedAttributes(),
+            'catalog_settings' => $this->normalizedCatalogSettings(),
+            'requires_lot' => $this->boolean('requires_lot', $this->normalizedItemType() === 'rental'),
+            'requires_expiration_date' => $this->boolean('requires_expiration_date', false),
+            'is_rentable' => $this->boolean('is_rentable', $this->normalizedItemType() === 'rental'),
             'custom_attributes' => $this->normalizedCustomAttributes(),
             'unit_conversions' => app(ProductWorkflowPolicy::class)->unitEquivalencesEnabled() ? $this->normalizedUnitConversions($unit?->id) : [],
             'allowed_units' => app(ProductWorkflowPolicy::class)->unitEquivalencesEnabled() ? $this->normalizedAllowedUnits($unit?->symbol) : array_values(array_filter([$unit?->symbol])),
@@ -131,6 +139,14 @@ class StoreProductRequest extends FormRequest
     private function normalizedAttributes(): array
     {
         return collect($this->input('attributes', []))
+            ->mapWithKeys(fn ($value, $key) => [Str::slug((string) $key, '_') => is_string($value) ? trim($value) : $value])
+            ->all();
+    }
+
+    private function normalizedCatalogSettings(): array
+    {
+        return collect($this->input('catalog_settings', []))
+            ->filter(fn ($value, $key) => is_string($key) && preg_match('/^[a-zA-Z0-9_.-]+$/', $key))
             ->mapWithKeys(fn ($value, $key) => [Str::slug((string) $key, '_') => is_string($value) ? trim($value) : $value])
             ->all();
     }
@@ -287,6 +303,30 @@ class StoreProductRequest extends FormRequest
 
         if ($this->input('item_type') === 'service' && ! $policy->allowServiceItems()) {
             $validator->errors()->add('item_type', 'Este perfil no permite crear servicios dentro del catalogo de productos.');
+        }
+
+        if ($this->input('item_type') === 'rental' && ! $policy->rentalsEnabled()) {
+            $validator->errors()->add('item_type', 'Este perfil no permite productos alquilables.');
+        }
+
+        if ($this->boolean('requires_lot') && ! $policy->lotsEnabled()) {
+            $validator->errors()->add('requires_lot', 'El perfil no tiene activado el rastreo por lote o unidad fisica.');
+        }
+
+        if ($this->boolean('requires_expiration_date') && ! $policy->expirationDatesEnabled()) {
+            $validator->errors()->add('requires_expiration_date', 'El perfil no tiene activadas fechas de vencimiento.');
+        }
+
+        if ($this->boolean('is_rentable') && ! $policy->rentalsEnabled()) {
+            $validator->errors()->add('is_rentable', 'El perfil no tiene activados alquileres.');
+        }
+
+        if ($this->input('item_type') === 'service' && $this->boolean('is_inventory_item')) {
+            $validator->errors()->add('is_inventory_item', 'Un servicio no debe manejar stock directo. Si usa materiales, registra esos materiales como insumos.');
+        }
+
+        if ($this->boolean('requires_expiration_date') && ! $this->boolean('requires_lot')) {
+            $validator->errors()->add('requires_expiration_date', 'Para controlar vencimiento tambien debe controlarse lote o unidad fisica.');
         }
 
         $variantSkus = collect($this->input('variants', []))->pluck('sku')->filter()->map(fn ($value) => trim((string) $value));

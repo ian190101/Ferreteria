@@ -126,6 +126,7 @@ class StorePurchaseRequest extends FormRequest
             'items.*.meters' => ['nullable', 'numeric', 'gt:0', 'max:999999999999.999'],
             'items.*.display_quantity' => ['nullable', 'numeric', 'gt:0', 'max:999999999999.999'],
             'items.*.display_unit_label' => ['nullable', 'string', 'max:24'],
+            'items.*.purchase_stock_mode' => ['nullable', Rule::in([Product::TRACKING_GLOBAL, Product::TRACKING_COIL])],
             'items.*.calculation_mode' => ['nullable', 'in:direct,length,weight'],
             'items.*.item_attributes' => ['nullable', 'array'],
             'items.*.item_attributes.*.code' => ['required_with:items.*.item_attributes', 'string', 'max:80'],
@@ -169,6 +170,7 @@ class StorePurchaseRequest extends FormRequest
             'items.*.meters' => 'cantidad calculada del item',
             'items.*.display_quantity' => 'cantidad del item',
             'items.*.display_unit_label' => 'unidad del item',
+            'items.*.purchase_stock_mode' => 'tipo de ingreso de stock',
             'items.*.calculation_mode' => 'tipo de calculo del item',
             'items.*.unit_cost' => 'costo del item',
             'items.*.lot_number' => 'lote del item',
@@ -256,15 +258,9 @@ class StorePurchaseRequest extends FormRequest
                         }
                     }
 
-                    if (($newProduct['inventory_tracking_mode'] ?? $category?->default_tracking_mode) === Product::TRACKING_COIL) {
-                        if (blank($item['lot_number'] ?? null)) {
-                            $validator->errors()->add("items.{$index}.lot_number", 'El rastreo por lote/unidad requiere numero de lote.');
-                        }
-
-                        if (blank($item['coil_barcode'] ?? null)) {
-                            $validator->errors()->add("items.{$index}.coil_barcode", 'El rastreo por lote/unidad requiere barcode unico.');
-                        }
-                    }
+                    $newProductTracking = $workflow->purchaseStockModeChoiceEnabled()
+                        ? ($item['purchase_stock_mode'] ?? $newProduct['inventory_tracking_mode'] ?? $category?->default_tracking_mode)
+                        : ($newProduct['inventory_tracking_mode'] ?? $category?->default_tracking_mode);
 
                     if (blank($item['meters'] ?? null) && blank($item['kilograms'] ?? null)) {
                         $validator->errors()->add("items.{$index}.meters", 'Debes ingresar cantidad o peso para el producto nuevo.');
@@ -296,14 +292,13 @@ class StorePurchaseRequest extends FormRequest
                     $validator->errors()->add("items.{$index}.kilograms", 'El producto necesita espesor para convertir peso a metros.');
                 }
 
-                if ($product->inventory_tracking_mode === Product::TRACKING_COIL) {
-                    if (blank($item['lot_number'] ?? null)) {
-                        $validator->errors()->add("items.{$index}.lot_number", 'El rastreo individual requiere numero de lote.');
-                    }
-
-                    if (blank($item['coil_barcode'] ?? null)) {
-                        $validator->errors()->add("items.{$index}.coil_barcode", 'El rastreo individual requiere barcode unico.');
-                    }
+                if ($workflow->purchaseStockModeChoiceEnabled() && filled($item['purchase_stock_mode'] ?? null) && $item['purchase_stock_mode'] !== $product->inventory_tracking_mode) {
+                    $validator->errors()->add(
+                        "items.{$index}.purchase_stock_mode",
+                        $product->inventory_tracking_mode === Product::TRACKING_COIL
+                            ? 'Este producto ya esta configurado para entrar por lote/unidad fisica. Selecciona compra por lote o cambia el rastreo desde Productos.'
+                            : 'Este producto ya esta configurado para entrar como stock general. Para comprar por lote, primero cambia el rastreo desde Productos o crea un producto trazable.'
+                    );
                 }
             }
         });

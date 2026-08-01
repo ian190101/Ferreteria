@@ -36,6 +36,10 @@ function reservationConfiguration(array $overrides = []): array
             'calendar_enabled' => true,
             'resource_required' => true,
             'advance_mode' => 'optional',
+            'confirmation_enabled' => true,
+            'reminders_enabled' => false,
+            'allowed_channels' => ['mostrador', 'telefono', 'whatsapp'],
+            'appointment_kinds' => ['cita', 'reserva', 'servicio'],
         ],
         'rentals' => [
             'enabled' => true,
@@ -112,6 +116,96 @@ it('muestra reservas y alquileres cuando el perfil activa recursos reservables',
             ->where('resources.0.name', 'Salon principal'));
 });
 
+it('gestiona citas con confirmacion recordatorio no asistencia y reprogramacion', function () {
+    $user = reservationUser(reservationConfiguration([
+        'reservations' => [
+            'reminders_enabled' => true,
+            'appointment_kinds' => ['consulta', 'servicio'],
+            'allowed_channels' => ['telefono', 'whatsapp'],
+        ],
+        'rentals' => ['deposit_required' => false, 'condition_check_required' => false],
+    ]));
+    $customer = Customer::query()->create(['name' => 'Paciente agenda', 'phone' => '70000002', 'is_active' => true]);
+    $resource = reservableResourceFor($user->branch_id, ['name' => 'Consultorio 1', 'type' => 'consultorio']);
+
+    $this->actingAs($user)
+        ->post(route('reservations.store'), [
+            'branch_id' => $user->branch_id,
+            'customer_id' => $customer->id,
+            'reservable_resource_id' => $resource->id,
+            'type' => BusinessReservation::TYPE_RESERVATION,
+            'appointment_kind' => 'consulta',
+            'channel' => 'whatsapp',
+            'title' => 'Consulta dental',
+            'start_at' => '2026-08-06 10:00:00',
+            'end_at' => '2026-08-06 10:45:00',
+            'reminder_at' => '2026-08-06 09:00:00',
+            'amount' => 150,
+        ])
+        ->assertRedirect();
+
+    $reservation = BusinessReservation::query()->firstOrFail();
+    expect($reservation->appointment_kind)->toBe('consulta')
+        ->and($reservation->confirmation_status)->toBe(BusinessReservation::CONFIRMATION_PENDING)
+        ->and($reservation->reminder_at?->format('Y-m-d H:i:s'))->toBe('2026-08-06 09:00:00');
+
+    $this->actingAs($user)
+        ->patch(route('reservations.status', $reservation), [
+            'status' => BusinessReservation::STATUS_CONFIRMED,
+            'confirmation_status' => BusinessReservation::CONFIRMATION_CONFIRMED,
+        ])
+        ->assertRedirect();
+
+    expect($reservation->fresh()->confirmed_at)->not->toBeNull();
+
+    $this->actingAs($user)
+        ->patch(route('reservations.schedule', $reservation), [
+            'reservable_resource_id' => $resource->id,
+            'start_at' => '2026-08-06 11:00:00',
+            'end_at' => '2026-08-06 11:45:00',
+            'reminder_at' => '2026-08-06 10:30:00',
+            'notes' => 'Cliente pidio mover la cita.',
+        ])
+        ->assertRedirect();
+
+    expect($reservation->fresh()->status)->toBe(BusinessReservation::STATUS_RESCHEDULED)
+        ->and($reservation->fresh()->rescheduled_at)->not->toBeNull()
+        ->and($reservation->fresh()->start_at?->format('Y-m-d H:i:s'))->toBe('2026-08-06 11:00:00');
+
+    $this->actingAs($user)
+        ->patch(route('reservations.status', $reservation), ['status' => BusinessReservation::STATUS_NO_SHOW])
+        ->assertRedirect();
+
+    expect($reservation->fresh()->no_show_at)->not->toBeNull();
+});
+
+it('bloquea canales tipos de cita y recordatorios no permitidos por perfil', function () {
+    $user = reservationUser(reservationConfiguration([
+        'reservations' => [
+            'reminders_enabled' => false,
+            'appointment_kinds' => ['servicio'],
+            'allowed_channels' => ['telefono'],
+        ],
+        'rentals' => ['deposit_required' => false, 'condition_check_required' => false],
+    ]));
+    $resource = reservableResourceFor($user->branch_id, ['type' => 'box']);
+
+    $this->actingAs($user)
+        ->post(route('reservations.store'), [
+            'branch_id' => $user->branch_id,
+            'reservable_resource_id' => $resource->id,
+            'type' => BusinessReservation::TYPE_RESERVATION,
+            'appointment_kind' => 'consulta',
+            'channel' => 'instagram',
+            'customer_name' => 'Cliente agenda',
+            'title' => 'Cita restringida',
+            'start_at' => '2026-08-07 10:00:00',
+            'end_at' => '2026-08-07 10:30:00',
+            'reminder_at' => '2026-08-07 09:00:00',
+        ])
+        ->assertSessionHasErrors(['appointment_kind', 'channel', 'reminder_at']);
+});
+
 it('bloquea reservas operativas cuando las capacidades estan desactivadas', function () {
     $user = reservationUser([
         'identity' => ['business_type' => 'hardware_store'],
@@ -161,6 +255,105 @@ it('registra reserva y bloquea solapamientos del mismo recurso', function () {
             'start_at' => '2026-08-01 10:30:00',
             'end_at' => '2026-08-01 11:30:00',
         ])
+        ->assertSessionHasErrors('reservable_resource_id');
+});
+
+it('respeta disponibilidad avanzada, mantenimiento y recursos globales', function () {
+    $user = reservationUser(reservationConfiguration([
+        'rentals' => ['deposit_required' => false, 'condition_check_required' => false],
+    ]));
+    $customer = Customer::query()->create(['name' => 'Cliente agenda', 'phone' => '70000001', 'is_active' => true]);
+    $resource = ReservableResource::query()->create([
+        'branch_id' => null,
+        'type' => 'room',
+        'code' => 'GLOBAL-01',
+        'name' => 'Consultorio global',
+        'capacity' => 1,
+        'status' => 'available',
+        'maintenance_starts_at' => '2026-08-03 12:00:00',
+        'maintenance_ends_at' => '2026-08-03 13:00:00',
+        'availability_rules' => [
+            'days' => [1, 2, 3, 4, 5],
+            'time_ranges' => [['start' => '08:00', 'end' => '18:00']],
+            'buffer_minutes' => 15,
+        ],
+        'is_active' => true,
+    ]);
+
+    $basePayload = [
+        'branch_id' => $user->branch_id,
+        'customer_id' => $customer->id,
+        'reservable_resource_id' => $resource->id,
+        'type' => BusinessReservation::TYPE_RESERVATION,
+        'title' => 'Reserva global',
+        'amount' => 100,
+    ];
+
+    $this->actingAs($user)
+        ->post(route('reservations.store'), [
+            ...$basePayload,
+            'start_at' => '2026-08-03 09:00:00',
+            'end_at' => '2026-08-03 10:00:00',
+        ])
+        ->assertRedirect();
+
+    $this->actingAs($user)
+        ->post(route('reservations.store'), [
+            ...$basePayload,
+            'title' => 'Reserva con buffer',
+            'start_at' => '2026-08-03 10:05:00',
+            'end_at' => '2026-08-03 11:00:00',
+        ])
+        ->assertSessionHasErrors('reservable_resource_id');
+
+    $this->actingAs($user)
+        ->post(route('reservations.store'), [
+            ...$basePayload,
+            'title' => 'Reserva fuera de horario',
+            'start_at' => '2026-08-03 19:00:00',
+            'end_at' => '2026-08-03 20:00:00',
+        ])
+        ->assertSessionHasErrors('start_at');
+
+    $this->actingAs($user)
+        ->post(route('reservations.store'), [
+            ...$basePayload,
+            'title' => 'Reserva en mantenimiento',
+            'start_at' => '2026-08-03 12:15:00',
+            'end_at' => '2026-08-03 12:45:00',
+        ])
+        ->assertSessionHasErrors('reservable_resource_id');
+});
+
+it('permite capacidad paralela cuando el recurso lo configura explicitamente', function () {
+    $user = reservationUser(reservationConfiguration([
+        'rentals' => ['deposit_required' => false, 'condition_check_required' => false],
+    ]));
+    $resource = reservableResourceFor($user->branch_id, [
+        'name' => 'Salon compartido',
+        'type' => 'hall',
+        'availability_rules' => ['parallel_capacity' => 2],
+    ]);
+
+    $payload = [
+        'branch_id' => $user->branch_id,
+        'reservable_resource_id' => $resource->id,
+        'type' => BusinessReservation::TYPE_RESERVATION,
+        'start_at' => '2026-08-05 10:00:00',
+        'end_at' => '2026-08-05 11:00:00',
+        'amount' => 80,
+    ];
+
+    $this->actingAs($user)
+        ->post(route('reservations.store'), [...$payload, 'customer_name' => 'Cliente A', 'title' => 'Evento A'])
+        ->assertRedirect();
+
+    $this->actingAs($user)
+        ->post(route('reservations.store'), [...$payload, 'customer_name' => 'Cliente B', 'title' => 'Evento B'])
+        ->assertRedirect();
+
+    $this->actingAs($user)
+        ->post(route('reservations.store'), [...$payload, 'customer_name' => 'Cliente C', 'title' => 'Evento C'])
         ->assertSessionHasErrors('reservable_resource_id');
 });
 

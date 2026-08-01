@@ -7,7 +7,6 @@ use App\Modules\Banks\Services\BankReconciliationService;
 use App\Modules\Finance\Services\FinancialLedgerService;
 use App\Modules\Payments\Http\Requests\StoreSalePaymentRequest;
 use App\Modules\Payments\Http\Requests\VoidSalePaymentRequest;
-use App\Modules\Payments\Models\CreditNote;
 use App\Modules\Payments\Models\PaymentMethod;
 use App\Modules\Payments\Models\SalePayment;
 use App\Modules\Sales\Models\Sale;
@@ -72,24 +71,14 @@ class PaymentController extends Controller
             $sale = Sale::query()->lockForUpdate()->findOrFail($request->integer('sale_id'));
             $amount = round((float) $request->input('amount'), 2);
 
-            $payment = SalePayment::query()->create([
-                'sale_id' => $sale->id,
-                'branch_id' => $sale->branch_id,
-                'user_id' => $request->user()->id,
-                'payment_method_id' => $request->integer('payment_method_id'),
-                'paid_at' => now(),
-                'amount' => $amount,
-                'exchange_rate_to_bob' => $sale->exchange_rate_to_bob,
-                'amount_bob' => round($amount * (float) $sale->exchange_rate_to_bob, 2),
-                'reference' => $request->string('reference')->toString() ?: null,
-                'notes' => $request->string('notes')->toString() ?: null,
-            ]);
-
-            $newBalance = max(round((float) $sale->balance_due - $amount, 2), 0);
-            $sale->update([
-                'balance_due' => $newBalance,
-                'status' => $newBalance <= 0 ? 'paid' : 'partial_paid',
-            ]);
+            $payment = $ledger->registerSalePayment(
+                sale: $sale,
+                userId: (int) $request->user()->id,
+                paymentMethodId: $request->integer('payment_method_id'),
+                amount: $amount,
+                reference: $request->string('reference')->toString() ?: null,
+                notes: $request->string('notes')->toString() ?: null,
+            );
 
             $banks->recordSalePayment($payment);
             $ledger->bumpFinancialCaches();
@@ -115,26 +104,9 @@ class PaymentController extends Controller
             $payment = SalePayment::query()->lockForUpdate()->findOrFail($payment->id);
             $sale = Sale::query()->lockForUpdate()->findOrFail($payment->sale_id);
             $voidReason = 'Anulado por '.$request->user()->name.': '.$request->string('reason')->toString();
-            $notes = trim(implode("\n", array_filter([
-                $payment->notes,
-                $voidReason,
-            ])));
 
             $banks->voidForSource($payment, $voidReason);
-            $payment->update(['notes' => $notes]);
-            $payment->delete();
-
-            $activeCredits = (float) CreditNote::query()
-                ->where('sale_id', $sale->id)
-                ->sum('amount');
-            $totalToCollect = max(round((float) $sale->total, 2), 0);
-            $newBalance = max(round((float) $sale->balance_due + (float) $payment->amount, 2), 0);
-            $newBalance = min($newBalance, max(round($totalToCollect - $activeCredits, 2), 0));
-
-            $sale->update([
-                'balance_due' => $newBalance,
-                'status' => $this->statusForBalance($newBalance, $totalToCollect),
-            ]);
+            $ledger->voidSalePayment($payment, $sale, $voidReason);
 
             $ledger->bumpFinancialCaches();
         });
@@ -142,12 +114,4 @@ class PaymentController extends Controller
         return redirect()->back()->with('success', 'Pago anulado correctamente.');
     }
 
-    private function statusForBalance(float $balance, float $totalToCollect): string
-    {
-        if ($balance <= 0) {
-            return 'paid';
-        }
-
-        return $balance < $totalToCollect ? 'partial_paid' : 'issued';
-    }
 }

@@ -23,6 +23,8 @@ export default function Index({ branches = [], selectedBranchId, saleTypes = [],
     const scannerRequired = posPolicy.scannerMode === 'required';
     const modeLabel = posPolicy.modeLabel ?? 'POS dinamico';
     const manualSelectionAllowed = posPolicy.manualSelectionAllowed !== false;
+    const allowsPartialBalance = posPolicy.allowsPartialBalance === true;
+    const activeChannels = posPolicy.availableChannels ?? ['counter'];
     const scanner = useRef({ buffer: '', lastAt: 0 });
     const productsByBarcode = useMemo(() => {
         const map = new Map();
@@ -190,6 +192,24 @@ export default function Index({ branches = [], selectedBranchId, saleTypes = [],
             return;
         }
 
+        if (!allowsPartialBalance && Math.abs(amountToCharge - total) > 0.01) {
+            setNotice('Este perfil POS exige cobrar el total completo.');
+            setCheckoutErrors({ pos_payment_amount: 'Este perfil POS exige cobrar el total completo en un solo cierre.' });
+            return;
+        }
+
+        if (posPolicy.requiresResource && !selectedTable.trim()) {
+            setNotice('Este modo POS requiere mesa, recurso o ambiente.');
+            setCheckoutErrors({ 'pos_context.resource': 'Selecciona mesa, recurso o ambiente antes de finalizar.' });
+            return;
+        }
+
+        if (posPolicy.requiresAssignedPerson && !assignedPerson.trim()) {
+            setNotice('Este modo POS requiere registrar el responsable asignado.');
+            setCheckoutErrors({ 'pos_context.assigned': 'Registra el responsable asignado antes de finalizar.' });
+            return;
+        }
+
         const payload = buildCheckoutPayload({
             selectedBranchId,
             saleTypeId: saleTypes[0].id,
@@ -201,6 +221,7 @@ export default function Index({ branches = [], selectedBranchId, saleTypes = [],
             defaultTerms: documentPolicy.termsByDocument?.ticket ?? documentPolicy.termsByDocument?.sale_note ?? documentPolicy.defaultTerms ?? '',
             context: {
                 mode: posPolicy.mode ?? 'retail',
+                channel: activeChannels[0] ?? 'counter',
                 table: selectedTable,
                 reference: serviceReference,
                 assigned: assignedPerson,
@@ -376,7 +397,7 @@ export default function Index({ branches = [], selectedBranchId, saleTypes = [],
                     </div>
                 ) : null}
 
-                {(posPolicy.usesTables || posPolicy.supportsServices || posPolicy.usesKitchen || posPolicy.usesSplitPayments) ? (
+                {(posPolicy.usesTables || posPolicy.supportsServices || posPolicy.usesKitchen || posPolicy.usesSplitPayments || posPolicy.billingEnabled || posPolicy.usesDelivery) ? (
                     <div className="mb-5 grid gap-3 lg:grid-cols-3">
                         {posPolicy.usesTables ? (
                             <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
@@ -397,15 +418,19 @@ export default function Index({ branches = [], selectedBranchId, saleTypes = [],
                             </div>
                         ) : null}
 
-                        {(posPolicy.usesKitchen || posPolicy.usesSplitPayments) ? (
+                        {(posPolicy.usesKitchen || posPolicy.usesSplitPayments || posPolicy.billingEnabled || posPolicy.usesDelivery) ? (
                             <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
                                 <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Capacidades activas</p>
                                 <div className="mt-3 flex flex-wrap gap-2">
                                     {posPolicy.usesKitchen ? <span className="rounded-full bg-orange-100 px-3 py-1 text-xs font-bold text-orange-700 dark:bg-orange-500/20 dark:text-orange-100">Cocina/barra</span> : null}
                                     {posPolicy.usesSplitPayments ? <span className="rounded-full bg-sky-100 px-3 py-1 text-xs font-bold text-sky-700 dark:bg-sky-500/20 dark:text-sky-100">Pago mixto</span> : null}
                                     {posPolicy.usesTips ? <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-bold text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-100">Propinas</span> : null}
+                                    {posPolicy.usesDelivery ? <span className="rounded-full bg-violet-100 px-3 py-1 text-xs font-bold text-violet-700 dark:bg-violet-500/20 dark:text-violet-100">Delivery</span> : null}
+                                    {posPolicy.billingEnabled ? <span className="rounded-full bg-slate-200 px-3 py-1 text-xs font-bold text-slate-700 dark:bg-slate-700 dark:text-slate-100">Facturacion</span> : null}
                                 </div>
-                                <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">Las reglas financieras profundas se aplican en sus fases especificas para mantener trazabilidad.</p>
+                                <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                                    Canales: {activeChannels.map(channelLabel).join(', ')}. Cobro: {allowsPartialBalance ? 'parcial o mixto' : 'total obligatorio'}.
+                                </p>
                             </div>
                         ) : null}
                     </div>
@@ -553,6 +578,7 @@ function buildCheckoutPayload({ selectedBranchId, saleTypeId, currencyId, paymen
     ].filter(Boolean).join(' ');
 
     return {
+            from_pos: true,
             document_type: 'sale_note',
             branch_id: selectedBranchId,
             sale_type_id: saleTypeId,
@@ -567,6 +593,13 @@ function buildCheckoutPayload({ selectedBranchId, saleTypeId, currencyId, paymen
             pos_payment_method_id: paymentMethodId,
             pos_payment_amount: amountToCharge,
             pos_payment_reference: paymentReference,
+            pos_context: {
+                mode: context.mode ?? 'retail',
+                channel: context.channel ?? 'counter',
+                resource: context.table ?? '',
+                reference: context.reference ?? '',
+                assigned: context.assigned ?? '',
+            },
             items: cart.map((item) => ({
                 product_id: item.product_id ?? item.id,
                 product_coil_id: '',
@@ -581,6 +614,16 @@ function buildCheckoutPayload({ selectedBranchId, saleTypeId, currencyId, paymen
                 discount_amount: 0,
             })),
     };
+}
+
+function channelLabel(channel) {
+    return ({
+        counter: 'mostrador',
+        table: 'mesa',
+        delivery: 'delivery',
+        reservation: 'reserva',
+        service_order: 'orden de servicio',
+    })[channel] ?? channel;
 }
 
 function normalizeCartItem(product, variant = null) {

@@ -9,7 +9,6 @@ use App\Modules\Expenses\Http\Requests\VoidExpenseRequest;
 use App\Modules\Expenses\Models\Expense;
 use App\Modules\Expenses\Models\ExpenseCategory;
 use App\Modules\Finance\Services\FinancialLedgerService;
-use App\Modules\HumanResources\Models\SalaryPayment;
 use App\Modules\HumanResources\Models\Worker;
 use App\Modules\Sales\Services\SalesDocumentPolicy;
 use App\Support\BranchAccess;
@@ -72,47 +71,28 @@ class ExpenseController extends Controller
 
     public function store(StoreExpenseRequest $request, BankReconciliationService $banks, FinancialLedgerService $ledger): RedirectResponse
     {
-        DB::transaction(function () use ($request, $banks) {
+        DB::transaction(function () use ($request, $banks, $ledger) {
             $data = $request->validated();
             $category = ExpenseCategory::query()
                 ->whereKey($data['expense_category_id'])
                 ->lockForUpdate()
                 ->firstOrFail();
 
-            $expense = Expense::query()->create([
-                ...collect($data)->only([
-                    'branch_id',
-                    'expense_category_id',
-                    'payment_method_id',
-                    'description',
-                    'amount',
-                    'reference',
-                    'notes',
-                ])->all(),
-                'user_id' => $request->user()->id,
-                'spent_at' => now(),
-                'status' => Expense::STATUS_REGISTERED,
-            ]);
+            $expense = $ledger->registerExpense($data, (int) $request->user()->id);
 
             $banks->recordExpense($expense);
 
             if ($category->code === ExpenseCategory::SALARY_PAYROLL_CODE) {
                 $worker = Worker::query()->whereKey($data['worker_id'])->lockForUpdate()->firstOrFail();
 
-                SalaryPayment::query()->create([
-                    'worker_id' => $worker->id,
+                $ledger->registerSalaryPayment($worker, [
+                    ...$data,
                     'branch_id' => $expense->branch_id,
                     'payment_method_id' => $expense->payment_method_id,
-                    'expense_id' => $expense->id,
-                    'user_id' => $request->user()->id,
-                    'period_from' => $data['period_from'] ?? null,
-                    'period_to' => $data['period_to'] ?? null,
-                    'paid_at' => $expense->spent_at,
                     'amount' => $expense->amount,
                     'reference' => $expense->reference,
-                    'status' => SalaryPayment::STATUS_PAID,
                     'notes' => $expense->notes,
-                ]);
+                ], (int) $request->user()->id, $expense);
             }
         });
 
@@ -125,30 +105,16 @@ class ExpenseController extends Controller
     {
         abort_unless(BranchAccess::canAccess($request->user(), (int) $expense->branch_id), 403);
 
-        DB::transaction(function () use ($request, $expense, $banks) {
+        DB::transaction(function () use ($request, $expense, $banks, $ledger) {
             $expense = Expense::query()
                 ->with('salaryPayment')
                 ->whereKey($expense->id)
                 ->lockForUpdate()
                 ->firstOrFail();
             $voidReason = 'Anulado por '.$request->user()->name.': '.$request->string('reason')->toString();
-            $notes = trim(implode("\n", array_filter([
-                $expense->notes,
-                $voidReason,
-            ])));
 
             $banks->voidForSource($expense, $voidReason);
-            $expense->update([
-                'status' => Expense::STATUS_VOID,
-                'notes' => $notes,
-            ]);
-
-            if ($expense->salaryPayment && $expense->salaryPayment->status !== SalaryPayment::STATUS_VOID) {
-                $expense->salaryPayment->update([
-                    'status' => SalaryPayment::STATUS_VOID,
-                    'notes' => trim(implode("\n", array_filter([$expense->salaryPayment->notes, $voidReason]))),
-                ]);
-            }
+            $ledger->voidExpense($expense, $voidReason);
         });
 
         $ledger->bumpFinancialCaches();

@@ -13,7 +13,7 @@ use Inertia\Testing\AssertableInertia as Assert;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 
-function printingUser(array $permissions, bool $enabled = true): User
+function printingUser(array $permissions, bool $enabled = true, array $activeDocuments = ['ticket_pos', 'barcode_label']): User
 {
     BusinessProfile::query()->update(['status' => 'archived']);
     BusinessProfile::query()->create([
@@ -22,6 +22,7 @@ function printingUser(array $permissions, bool $enabled = true): User
         'status' => 'active',
         'configuration' => BusinessProfileConfiguration::normalized([
             'capabilities' => ['uses_printer_profiles' => $enabled],
+            'documents' => ['active' => $activeDocuments],
         ]),
         'applied_at' => now(),
     ]);
@@ -62,6 +63,7 @@ it('muestra el modulo de impresion cuando la capacidad esta activa', function ()
         ->assertInertia(fn (Assert $page) => $page
             ->component('Printing/Index', false)
             ->has('documentTypes')
+            ->where('documentTypes.ticket_pos', 'Ticket POS')
             ->has('areas')
         );
 });
@@ -72,6 +74,66 @@ it('bloquea el modulo de impresion si el perfil no lo permite', function () {
     $this->actingAs($user)
         ->get(route('printing.index'))
         ->assertNotFound();
+});
+
+it('oculta y bloquea documentos de impresion que no estan activos en el perfil', function () {
+    $user = printingUser(['printing.view', 'printing.manage', 'printing.jobs.manage'], true, ['barcode_label']);
+
+    $this->actingAs($user)
+        ->get(route('printing.index'))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('documentTypes.barcode_label', 'Etiqueta codigo de barras')
+            ->missing('documentTypes.ticket_pos')
+        );
+
+    $this->actingAs($user)
+        ->post(route('printing.templates.store'), [
+            'branch_id' => $user->branch_id,
+            'document_type' => 'ticket_pos',
+            'name' => 'Ticket no permitido',
+            'paper_type' => 'thermal_80',
+            'thermal_width_mm' => 80,
+            'font_size' => 10,
+            'margin_mm' => 3,
+            'show_logo' => false,
+            'show_barcode' => false,
+            'color' => '#000000',
+            'fields' => ['empresa', 'numero'],
+            'is_default' => true,
+            'is_active' => true,
+        ])
+        ->assertSessionHasErrors('document_type');
+
+    expect(PrintDocumentTemplate::query()->where('name', 'Ticket no permitido')->exists())->toBeFalse();
+});
+
+it('renderiza documentos especializados solo cuando estan activos', function () {
+    $user = printingUser(['printing.view', 'printing.manage'], true, ['dental_chart', 'medical_record']);
+
+    $this->actingAs($user)
+        ->post(route('printing.templates.store'), [
+            'branch_id' => $user->branch_id,
+            'document_type' => 'dental_chart',
+            'name' => 'Odontograma',
+            'paper_type' => 'letter',
+            'thermal_width_mm' => null,
+            'font_size' => 11,
+            'margin_mm' => 6,
+            'show_logo' => false,
+            'show_barcode' => false,
+            'color' => '#000000',
+            'fields' => ['numero', 'paciente', 'tipo_paciente', 'piezas', 'tratamientos'],
+            'is_default' => true,
+            'is_active' => true,
+        ])
+        ->assertRedirect();
+
+    $template = PrintDocumentTemplate::query()->where('name', 'Odontograma')->firstOrFail();
+
+    expect((string) app(\App\Modules\Printing\Services\PrintRenderService::class)->render($template))
+        ->toContain('Odontograma')
+        ->toContain('Paciente');
 });
 
 it('crea impresora plantilla regla y trabajo de impresion', function () {

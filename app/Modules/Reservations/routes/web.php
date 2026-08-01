@@ -18,4 +18,8 @@ Route::middleware(['auth', 'verified'])
         Route::patch('/{reservation}/status', [ReservationController::class, 'updateStatus'])
             ->middleware(['business_capability:uses_reservations,uses_reservable_resources,uses_rentals', 'permission:reservations.manage'])
             ->name('status');
+
+        Route::patch('/{reservation}/schedule', [ReservationController::class, 'reschedule'])
+            ->middleware(['business_capability:uses_reservations,uses_reservable_resources,uses_rentals', 'permission:reservations.manage'])
+            ->name('schedule');
     });

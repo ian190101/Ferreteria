@@ -12,20 +12,20 @@ Route::middleware(['auth', 'verified'])
     ->name('sales.')
     ->group(function () {
         Route::get('/', [SaleController::class, 'index'])
-            ->middleware(['business_feature:sales_notes', 'permission:sales.view'])
+            ->middleware(['business_feature:sales_notes|quotes', 'permission:sales.view'])
             ->name('index');
 
         Route::get('/create', [SaleController::class, 'create'])
-            ->middleware(['business_feature:sales_notes', 'permission:sales.manage'])
+            ->middleware(['business_feature:sales_notes|quotes', 'permission:sales.manage'])
             ->name('create');
         Route::post('/', [SaleController::class, 'store'])
-            ->middleware(['business_feature:sales_notes', 'permission:sales.manage'])
+            ->middleware(['business_feature:sales_notes|quotes', 'permission:sales.manage'])
             ->name('store');
         Route::patch('/{sale}/void', [SaleController::class, 'void'])
-            ->middleware(['business_feature:sales_notes', 'permission:sales.manage'])
+            ->middleware(['business_feature:sales_notes|quotes', 'permission:sales.manage'])
             ->name('void');
         Route::post('/{sale}/convert', [SaleController::class, 'convert'])
-            ->middleware(['business_feature:sales_notes', 'permission:sales.manage'])
+            ->middleware(['business_feature:sales_notes|quotes', 'permission:sales.manage'])
             ->name('convert');
 
         Route::get('/returns', [SaleReturnController::class, 'index'])
@@ -55,27 +55,27 @@ Route::middleware(['auth', 'verified'])
             ->name('deliveries.trucks.update');
 
         Route::get('/settings/catalogs', [SalesSettingController::class, 'index'])
-            ->middleware(['business_feature:sales_notes', 'permission:settings.manage'])
+            ->middleware(['business_feature:sales_notes|quotes', 'permission:settings.manage'])
             ->name('settings.index');
         Route::post('/settings/catalogs', [SalesSettingController::class, 'store'])
-            ->middleware(['business_feature:sales_notes', 'permission:settings.manage'])
+            ->middleware(['business_feature:sales_notes|quotes', 'permission:settings.manage'])
             ->name('settings.store');
         Route::put('/settings/catalogs/{kind}/{setting}', [SalesSettingController::class, 'update'])
             ->whereIn('kind', ['sale_type', 'currency', 'advance_option', 'document_sequence'])
-            ->middleware(['business_feature:sales_notes', 'permission:settings.manage'])
+            ->middleware(['business_feature:sales_notes|quotes', 'permission:settings.manage'])
             ->name('settings.update');
         Route::put('/settings/catalogs/decimals', [SalesSettingController::class, 'updateDecimals'])
-            ->middleware(['business_feature:sales_notes', 'permission:settings.manage'])
+            ->middleware(['business_feature:sales_notes|quotes', 'permission:settings.manage'])
             ->name('settings.decimals.update');
         Route::put('/settings/catalogs/item-merge', [SalesSettingController::class, 'updateItemMerge'])
-            ->middleware(['business_feature:sales_notes', 'permission:settings.manage'])
+            ->middleware(['business_feature:sales_notes|quotes', 'permission:settings.manage'])
             ->name('settings.item-merge.update');
         Route::delete('/settings/catalogs/{kind}/{setting}', [SalesSettingController::class, 'destroy'])
             ->whereIn('kind', ['sale_type', 'currency', 'advance_option', 'document_sequence'])
-            ->middleware(['business_feature:sales_notes', 'permission:settings.manage'])
+            ->middleware(['business_feature:sales_notes|quotes', 'permission:settings.manage'])
             ->name('settings.destroy');
 
-        Route::middleware(['business_feature:sales_notes', 'permission:settings.manage'])->group(function () {
+        Route::middleware(['business_feature:sales_notes|quotes', 'permission:settings.manage'])->group(function () {
             Route::get('/templates', [ReceiptTemplateController::class, 'index'])->name('templates.index');
             Route::get('/templates/create', [ReceiptTemplateController::class, 'create'])->name('templates.create');
             Route::post('/templates', [ReceiptTemplateController::class, 'store'])->name('templates.store');
@@ -85,6 +85,6 @@ Route::middleware(['auth', 'verified'])
         });
 
         Route::get('/{sale}', [SaleController::class, 'show'])
-            ->middleware(['business_feature:sales_notes', 'permission:sales.view'])
+            ->middleware(['business_feature:sales_notes|quotes', 'permission:sales.view'])
             ->name('show');
     });

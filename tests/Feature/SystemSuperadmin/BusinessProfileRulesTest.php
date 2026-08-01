@@ -2,17 +2,25 @@
 
 use App\Models\User;
 use App\Modules\Branches\Models\Branch;
+use App\Modules\Inventory\Models\Product;
+use App\Modules\Inventory\Models\ProductBranchStock;
+use App\Modules\Sales\Models\Currency;
+use App\Modules\Sales\Models\Sale;
+use App\Modules\Sales\Models\SaleType;
 use App\Modules\SystemSuperadmin\Models\BusinessProfile;
 use App\Modules\SystemSuperadmin\Models\BusinessProfileDraft;
 use App\Modules\SystemSuperadmin\Models\BusinessProfilePreset;
 use App\Modules\SystemSuperadmin\Models\BusinessProfileSandboxSession;
 use App\Modules\Exports\Services\ExportDatasetService;
+use App\Modules\SystemSuperadmin\Services\ActiveBusinessProfile;
+use App\Modules\SystemSuperadmin\Services\BusinessProfileCompatibilityValidator;
 use App\Modules\SystemSuperadmin\Services\BusinessProfileConfiguration;
 use App\Modules\SystemSuperadmin\Services\BusinessProfileSandboxService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Http\Request;
 use App\Support\RouteSecurityAuditService;
 use App\Support\SystemRoles;
+use Illuminate\Support\Facades\Cache;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 
@@ -356,4 +364,222 @@ it('bloquea el configurador maestro dentro de la demo completa para evitar demos
         ->get(route('system-superadmin.business-profiles.index'))
         ->assertRedirect(route('dashboard'))
         ->assertSessionHas('warning', 'El configurador maestro no esta disponible dentro de la demo completa. Sal de la demo para cambiar la configuracion del negocio.');
+});
+
+it('permite crear y visualizar cotizaciones y notas de venta dentro de la demo completa sin generar 404', function () {
+    if (DB::getDriverName() !== 'mysql') {
+        $this->markTestSkipped('La demo completa requiere MySQL o MariaDB.');
+    }
+
+    $user = businessProfileUser(['dashboard.view', 'sales.view', 'sales.manage'], systemSuperadmin: true);
+    activeBusinessProfile([
+        'modules' => [
+            'dashboard' => true,
+            'sales_notes' => true,
+            'quotes' => true,
+            'cash' => false,
+        ],
+        'sales' => [
+            'workflow' => 'quotation_to_sale_note',
+            'quotation_mode' => 'required',
+            'customer_mode' => 'optional',
+            'inventory_discount_timing' => 'sale_note',
+        ],
+        'cash' => [
+            'required_to_sell' => false,
+        ],
+    ]);
+
+    $saleType = SaleType::query()->create(['name' => 'Ocasionales demo', 'is_active' => true]);
+    $currency = Currency::query()->create([
+        'name' => 'Bolivianos demo',
+        'code' => 'BOB-DEMO',
+        'symbol' => 'Bs',
+        'exchange_rate_to_bob' => 1,
+        'is_base' => true,
+        'is_active' => true,
+    ]);
+    $product = Product::query()->create([
+        'name' => 'Producto cotizacion sandbox',
+        'sku' => 'SANDBOX-COT',
+        'barcode' => 'SANDBOX-COT-BAR',
+        'inventory_tracking_mode' => Product::TRACKING_GLOBAL,
+        'base_unit' => 'unidad',
+        'allowed_units' => ['unidad'],
+        'sale_price' => 12,
+        'minimum_stock_meters' => 0,
+        'is_active' => true,
+    ]);
+    ProductBranchStock::query()->create([
+        'branch_id' => $user->branch_id,
+        'product_id' => $product->id,
+        'available_meters' => 20,
+        'reserved_meters' => 0,
+        'is_enabled' => true,
+    ]);
+
+    $this->actingAs($user)
+        ->post(route('system-superadmin.business-profiles.sandbox-full.enter'))
+        ->assertRedirect(route('dashboard'))
+        ->assertSessionHas('business_full_sandbox_id');
+
+    $response = $this->actingAs($user)
+        ->post(route('sales.store'), [
+            'document_type' => 'quotation',
+            'branch_id' => $user->branch_id,
+            'sale_type_id' => $saleType->id,
+            'currency_id' => $currency->id,
+            'advance_mode' => 'none',
+            'receipt_number' => 'COT-SANDBOX-001',
+            'customer_name' => 'Cliente sandbox',
+            'customer_document' => '123',
+            'customer_contact' => '70000000',
+            'terms' => 'Cotizacion sandbox.',
+            'items' => [[
+                'product_id' => $product->id,
+                'product_coil_id' => null,
+                'description' => 'Producto cotizacion sandbox',
+                'unit_label' => 'unidad',
+                'display_quantity' => 2,
+                'display_unit_label' => 'unidad',
+                'calculation_mode' => 'direct',
+                'meters' => 2,
+                'unit_price' => 12,
+                'discount_amount' => 0,
+            ]],
+        ])
+        ->assertRedirect()
+        ->assertSessionHasNoErrors();
+
+    $sandboxSale = Sale::query()->where('receipt_number', 'COT-SANDBOX-001')->firstOrFail();
+
+    $this->actingAs($user)
+        ->get(route('sales.show', $sandboxSale))
+        ->assertOk();
+
+    $noteResponse = $this->actingAs($user)
+        ->post(route('sales.store'), [
+            'document_type' => 'sale_note',
+            'source_quotation_id' => $sandboxSale->id,
+            'branch_id' => $user->branch_id,
+            'sale_type_id' => $saleType->id,
+            'currency_id' => $currency->id,
+            'advance_mode' => 'none',
+            'receipt_number' => 'NV-SANDBOX-001',
+            'customer_name' => 'Cliente sandbox',
+            'customer_document' => '123',
+            'customer_contact' => '70000000',
+            'terms' => 'Nota sandbox.',
+            'items' => [[
+                'product_id' => $product->id,
+                'product_coil_id' => null,
+                'description' => 'Producto cotizacion sandbox',
+                'unit_label' => 'unidad',
+                'display_quantity' => 2,
+                'display_unit_label' => 'unidad',
+                'calculation_mode' => 'direct',
+                'meters' => 2,
+                'unit_price' => 12,
+                'discount_amount' => 0,
+            ]],
+        ])
+        ->assertRedirect()
+        ->assertSessionHasNoErrors();
+
+    $sandboxNote = Sale::query()->where('receipt_number', 'NV-SANDBOX-001')->firstOrFail();
+
+    expect($noteResponse->headers->get('Location'))->toBe(route('sales.show', $sandboxNote));
+
+    $this->actingAs($user)
+        ->get(route('sales.show', $sandboxNote))
+        ->assertOk();
+});
+
+it('permite abrir cotizaciones cuando el perfil tiene solo el modulo de cotizaciones activo', function () {
+    $user = businessProfileUser(['sales.view', 'sales.manage']);
+    activeBusinessProfile([
+        'modules' => [
+            'sales_notes' => false,
+            'quotes' => true,
+        ],
+        'sales' => [
+            'workflow' => 'quotation_to_sale_note',
+            'quotation_mode' => 'required',
+            'customer_mode' => 'optional',
+        ],
+    ]);
+
+    $this->actingAs($user)
+        ->get(route('sales.create', ['type' => 'quotation']))
+        ->assertOk();
+});
+
+it('normaliza el nucleo de negocio 2 sin activar motores nuevos en ferreteria por defecto', function () {
+    $configuration = BusinessProfileConfiguration::normalized([]);
+
+    expect($configuration['schema_version'])->toBe(2)
+        ->and($configuration['identity']['business_type'])->toBe('hardware_store')
+        ->and($configuration['modules']['quotes'])->toBeTrue()
+        ->and($configuration['modules']['sales_notes'])->toBeTrue()
+        ->and($configuration['sales']['workflow'])->toBe('quotation_to_sale_note')
+        ->and($configuration['feature_flags']['business_profile_v2_core'])->toBeTrue()
+        ->and($configuration['feature_flags']['dynamic_entities_engine'])->toBeFalse()
+        ->and($configuration['capabilities']['uses_dynamic_entities'])->toBeFalse()
+        ->and($configuration['entities']['defaults_locked'])->toBeTrue()
+        ->and($configuration['fields']['max_fields_per_entity'])->toBe(80)
+        ->and($configuration['governance']['soft_delete_by_default'])->toBeTrue()
+        ->and($configuration['attachments']['enabled'])->toBeFalse()
+        ->and($configuration['migration']['preserve_legacy_behavior'])->toBeTrue()
+        ->and($configuration['performance']['paginated_dynamic_lists'])->toBeTrue();
+});
+
+it('expone feature flags del perfil activo sin cambiar el comportamiento operativo de ferreteria', function () {
+    activeBusinessProfile([]);
+    Cache::flush();
+
+    $payload = ActiveBusinessProfile::payload();
+
+    expect($payload['businessType'])->toBe('mixed')
+        ->and($payload['schemaVersion'])->toBe(2)
+        ->and($payload['modules']['quotes'])->toBeTrue()
+        ->and($payload['modules']['sales_notes'])->toBeTrue()
+        ->and($payload['sales']['workflow'])->toBe('quotation_to_sale_note')
+        ->and($payload['feature_flags']['business_profile_v2_core'])->toBeTrue()
+        ->and(ActiveBusinessProfile::featureEnabled('business_profile_v2_core'))->toBeTrue()
+        ->and(ActiveBusinessProfile::featureEnabled('dynamic_entities_engine'))->toBeFalse()
+        ->and(ActiveBusinessProfile::capable('uses_dynamic_entities'))->toBeFalse();
+});
+
+it('bloquea capacidades avanzadas si el motor tecnico correspondiente no esta habilitado', function () {
+    $configuration = BusinessProfileConfiguration::normalized([
+        'capabilities' => [
+            'uses_dynamic_entities' => true,
+        ],
+        'feature_flags' => [
+            'dynamic_entities_engine' => false,
+        ],
+    ]);
+
+    $result = app(BusinessProfileCompatibilityValidator::class)->validate('mixed', $configuration);
+
+    expect($result['valid'])->toBeFalse()
+        ->and(implode(' ', $result['errors']))->toContain('dynamic_entities_engine');
+});
+
+it('permite capacidades avanzadas cuando su feature flag tecnico esta habilitado', function () {
+    $configuration = BusinessProfileConfiguration::normalized([
+        'capabilities' => [
+            'uses_dynamic_entities' => true,
+            'uses_dynamic_fields' => true,
+        ],
+        'feature_flags' => [
+            'dynamic_entities_engine' => true,
+            'dynamic_fields_engine' => true,
+        ],
+    ]);
+
+    $result = app(BusinessProfileCompatibilityValidator::class)->validate('mixed', $configuration);
+
+    expect($result['valid'])->toBeTrue()
+        ->and($result['errors'])->toBe([]);
 });

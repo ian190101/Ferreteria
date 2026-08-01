@@ -8,11 +8,13 @@ use App\Modules\Inventory\Models\Product;
 use App\Modules\Inventory\Models\ProductBranchStock;
 use App\Modules\Inventory\Models\ProductCoil;
 use App\Modules\Payments\Models\PaymentMethod;
+use App\Modules\Pos\Services\PosWorkflowPolicy;
 use App\Modules\Sales\Models\AdvanceOption;
 use App\Modules\Sales\Models\Sale;
 use App\Modules\Sales\Services\DeliveryWorkflowPolicy;
 use App\Modules\Sales\Services\SalesDocumentPolicy;
 use App\Modules\Sales\Services\SalesWorkflowPolicy;
+use App\Modules\SystemSuperadmin\Services\ActiveBusinessProfile;
 use App\Support\BranchAccess;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -119,9 +121,16 @@ class StoreSaleDocumentRequest extends FormRequest
             'terms' => ['nullable', 'string', 'max:2000'],
             'internal_notes' => ['nullable', 'string', 'max:2000'],
             'requires_delivery' => ['nullable', 'boolean'],
+            'from_pos' => ['nullable', 'boolean'],
             'pos_payment_method_id' => ['nullable', 'integer', 'exists:payment_methods,id'],
             'pos_payment_amount' => ['nullable', 'numeric', 'gt:0', 'max:999999999999.99'],
             'pos_payment_reference' => ['nullable', 'string', 'max:120'],
+            'pos_context' => ['nullable', 'array'],
+            'pos_context.mode' => ['nullable', 'string', 'max:80'],
+            'pos_context.channel' => ['nullable', 'string', 'max:80'],
+            'pos_context.resource' => ['nullable', 'string', 'max:120'],
+            'pos_context.assigned' => ['nullable', 'string', 'max:120'],
+            'pos_context.reference' => ['nullable', 'string', 'max:120'],
             'items' => ['required', 'array', 'min:1'],
             'items.*.product_id' => ['required', 'integer', 'exists:products,id'],
             'items.*.product_coil_id' => ['nullable', 'integer', 'exists:product_coils,id'],
@@ -166,9 +175,12 @@ class StoreSaleDocumentRequest extends FormRequest
             'advance_option_id' => 'porcentaje de anticipo',
             'advance_amount_input' => 'monto de anticipo',
             'requires_delivery' => 'tipo de entrega',
+            'from_pos' => 'origen POS',
             'pos_payment_method_id' => 'metodo de pago POS',
             'pos_payment_amount' => 'monto cobrado POS',
             'pos_payment_reference' => 'referencia POS',
+            'pos_context.resource' => 'recurso POS',
+            'pos_context.assigned' => 'responsable POS',
             'items' => 'items',
             'items.*.product_id' => 'producto del item',
             'items.*.description' => 'descripcion del item',
@@ -221,6 +233,38 @@ class StoreSaleDocumentRequest extends FormRequest
                 $validator->errors()->add('pos_payment_method_id', 'Selecciona el metodo de pago para finalizar desde POS.');
             }
 
+            $fromPos = $this->boolean('from_pos') || $this->filled('pos_payment_method_id') || $this->filled('pos_payment_amount');
+            $posPolicy = app(PosWorkflowPolicy::class);
+
+            if ($fromPos) {
+                if (! ActiveBusinessProfile::enabled('pos') && ! ActiveBusinessProfile::capable('uses_pos')) {
+                    $validator->errors()->add('from_pos', 'El perfil de negocio actual no tiene habilitado el POS.');
+                }
+
+                if ($documentType !== 'sale_note') {
+                    $validator->errors()->add('document_type', 'El POS solo puede generar notas de venta o tickets internos.');
+                }
+
+                if ($posPolicy->requiresResource() && blank(data_get($this->input('pos_context', []), 'resource'))) {
+                    $validator->errors()->add('pos_context.resource', 'Este modo POS requiere seleccionar mesa, recurso o ambiente.');
+                }
+
+                if ($posPolicy->requiresAssignedPerson() && blank(data_get($this->input('pos_context', []), 'assigned'))) {
+                    $validator->errors()->add('pos_context.assigned', 'Este modo POS requiere registrar el responsable asignado.');
+                }
+
+                $posTotal = $this->requestedDocumentTotal();
+                $posPayment = (float) $this->input('pos_payment_amount', 0);
+
+                if ($this->filled('pos_payment_amount') && ! $posPolicy->allowsPartialBalance() && abs($posPayment - $posTotal) > 0.01) {
+                    $validator->errors()->add('pos_payment_amount', 'Este perfil POS exige cobrar el total completo en un solo cierre.');
+                }
+
+                if ($this->filled('pos_payment_amount') && $posPayment > ($posTotal + 0.01)) {
+                    $validator->errors()->add('pos_payment_amount', 'El cobro POS no puede superar el total del documento.');
+                }
+            }
+
             if ($this->filled('pos_payment_method_id')) {
                 $method = PaymentMethod::query()->find($this->integer('pos_payment_method_id'));
 
@@ -241,7 +285,7 @@ class StoreSaleDocumentRequest extends FormRequest
             $productIds = $items->pluck('product_id')->filter()->unique()->values();
             $products = Product::query()
                 ->whereIn('id', $productIds)
-                ->get(['id', 'base_unit', 'allowed_units', 'inventory_tracking_mode'])
+                ->get(['id', 'base_unit', 'allowed_units', 'inventory_tracking_mode', 'item_type', 'is_sellable', 'is_active'])
                 ->keyBy('id');
 
             $sourceQuotation = $this->filled('source_quotation_id')
@@ -292,6 +336,16 @@ class StoreSaleDocumentRequest extends FormRequest
 
                 if (! in_array($unit, $allowedUnits, true)) {
                     $validator->errors()->add("items.{$index}.display_unit_label", 'La unidad seleccionada no esta habilitada para este producto.');
+                }
+
+                if ($fromPos) {
+                    if (! $product->is_active || ! $product->is_sellable) {
+                        $validator->errors()->add("items.{$index}.product_id", 'El POS solo puede vender items activos y vendibles.');
+                    }
+
+                    if (! in_array($product->item_type ?: 'physical', $posPolicy->allowedItemTypes(), true)) {
+                        $validator->errors()->add("items.{$index}.product_id", 'Este tipo de item no esta permitido en el POS del perfil actual.');
+                    }
                 }
             }
 
@@ -399,5 +453,15 @@ class StoreSaleDocumentRequest extends FormRequest
                 }
             }
         });
+    }
+
+    private function requestedDocumentTotal(): float
+    {
+        return round(collect($this->input('items', []))->sum(function (array $item): float {
+            $gross = (float) ($item['meters'] ?? 0) * (float) ($item['unit_price'] ?? 0);
+            $discount = (float) ($item['discount_amount'] ?? 0);
+
+            return max($gross - $discount, 0);
+        }), 2);
     }
 }

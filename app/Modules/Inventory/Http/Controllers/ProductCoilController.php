@@ -52,6 +52,8 @@ class ProductCoilController extends Controller
     {
         DB::transaction(function () use ($request) {
             $data = $request->validated();
+            $data['barcode'] = filled($data['barcode'] ?? null) ? $data['barcode'] : null;
+            $data['lot_number'] = filled($data['lot_number'] ?? null) ? $data['lot_number'] : null;
             $data['available_meters'] = $data['initial_meters'];
             $data['status'] = 'available';
 

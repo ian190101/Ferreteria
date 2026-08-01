@@ -3,7 +3,7 @@
 namespace App\Modules\Sales\Services;
 
 use App\Modules\Banks\Services\BankReconciliationService;
-use App\Modules\Payments\Models\SalePayment;
+use App\Modules\Finance\Services\FinancialLedgerService;
 use App\Modules\Sales\Models\Sale;
 use Illuminate\Validation\ValidationException;
 
@@ -11,6 +11,7 @@ class SalePaymentService
 {
     public function __construct(
         private readonly BankReconciliationService $banks,
+        private readonly FinancialLedgerService $ledger,
         private readonly SaleInventoryService $inventory,
         private readonly SalesWorkflowPolicy $workflow,
     ) {
@@ -30,24 +31,14 @@ class SalePaymentService
             ]);
         }
 
-        $payment = SalePayment::query()->create([
-            'sale_id' => $sale->id,
-            'branch_id' => $sale->branch_id,
-            'user_id' => $userId,
-            'payment_method_id' => $paymentMethodId,
-            'paid_at' => now(),
-            'amount' => $amount,
-            'exchange_rate_to_bob' => $sale->exchange_rate_to_bob,
-            'amount_bob' => round($amount * (float) $sale->exchange_rate_to_bob, 2),
-            'reference' => $reference ?: null,
-            'notes' => 'Cobro generado desde POS rapido.',
-        ]);
-
-        $newBalance = max(round((float) $sale->balance_due - $amount, 2), 0);
-        $sale->update([
-            'balance_due' => $newBalance,
-            'status' => $newBalance <= 0 ? 'paid' : 'partial_paid',
-        ]);
+        $payment = $this->ledger->registerSalePayment(
+            sale: $sale,
+            userId: $userId,
+            paymentMethodId: $paymentMethodId,
+            amount: $amount,
+            reference: $reference,
+            notes: 'Cobro generado desde POS rapido.',
+        );
 
         $this->banks->recordSalePayment($payment);
 

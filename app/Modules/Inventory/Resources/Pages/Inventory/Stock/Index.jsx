@@ -6,7 +6,7 @@ import SelectField from '../../../../../Shared/Resources/Components/SelectField'
 import { Head, router, useForm } from '@inertiajs/react';
 import { useDecimalFormatter } from '@/Utils/formatters';
 
-export default function Index({ globalStocks, coilSummary, branches, filters }) {
+export default function Index({ globalStocks, coilStocks = [], coilSummary, branches, filters }) {
     const decimalFormat = useDecimalFormatter('inventory');
     const { data, setData, get, processing } = useForm({
         branch_id: filters.branch_id ?? '',
@@ -41,7 +41,7 @@ export default function Index({ globalStocks, coilSummary, branches, filters }) 
                     </div>
                 </form>
 
-                <StockTable stocks={globalStocks.data} decimalFormat={decimalFormat} />
+                <StockTable stocks={mergeStocks(globalStocks.data, coilStocks)} decimalFormat={decimalFormat} />
                 <div className="mt-4"><Pagination links={globalStocks.links} /></div>
 
                 <section className="mt-8 rounded-lg border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
@@ -92,6 +92,7 @@ function StockTable({ stocks, decimalFormat }) {
                                 <td className="px-4 py-3">
                                     <p className="font-semibold text-slate-950 dark:text-white">{stock.product?.name ?? '-'}</p>
                                     <p className="text-xs text-slate-500">{stock.product?.sku ?? '-'} / {stock.product?.barcode ?? '-'}</p>
+                                    {stock.source === 'coils' ? <p className="mt-1 text-xs font-semibold text-emerald-600">Agregado desde lotes/unidades fisicas</p> : null}
                                 </td>
                                 <td className="px-4 py-3">{stock.branch?.name ?? '-'}</td>
                                 <td className="px-4 py-3 text-right">{formatStockQuantity(available, unit, decimalFormat)} {unit}</td>
@@ -104,6 +105,20 @@ function StockTable({ stocks, decimalFormat }) {
             </table>
         </div>
     );
+}
+
+function mergeStocks(globalStocks, coilStocks) {
+    const coilKeys = new Set(coilStocks.map((stock) => stockKey(stock)));
+    const filteredGlobal = globalStocks.filter((stock) => {
+        const isTrackedByCoils = stock.product?.inventory_tracking_mode === 'coil';
+        return !isTrackedByCoils || !coilKeys.has(stockKey(stock));
+    });
+
+    return [...coilStocks, ...filteredGlobal];
+}
+
+function stockKey(stock) {
+    return `${stock.branch_id}-${stock.product_id}`;
 }
 
 function unitLabel(product) {

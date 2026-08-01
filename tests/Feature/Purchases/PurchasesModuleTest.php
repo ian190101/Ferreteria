@@ -118,6 +118,114 @@ it('ingresa compra por bobina y crea rollo fisico trazable', function () {
         ->and(InventoryMovement::query()->where('type', 'purchase_entry_coil')->exists())->toBeTrue();
 });
 
+it('permite compra por lote sin numero de lote ni barcode', function () {
+    $user = purchasesUser(['purchases.view', 'purchases.manage']);
+    $product = Product::query()->create([
+        'name' => 'Lote sin codigo',
+        'sku' => 'LOTE-SIN-CODIGO',
+        'barcode' => 'PR-LOTE-SIN-CODIGO',
+        'inventory_tracking_mode' => Product::TRACKING_COIL,
+        'minimum_stock_meters' => 0,
+        'is_active' => true,
+    ]);
+
+    $this->actingAs($user)
+        ->post(route('purchases.store'), [
+            'branch_id' => $user->branch_id,
+            'supplier_id' => null,
+            'document_number' => 'COMP-LOTE-OPC-001',
+            'purchase_date' => now()->format('Y-m-d'),
+            'status' => 'received',
+            'items' => [[
+                'product_id' => $product->id,
+                'purchase_stock_mode' => Product::TRACKING_COIL,
+                'meters' => 75,
+                'unit_cost' => 4,
+                'lot_number' => null,
+                'coil_barcode' => null,
+                'description' => 'Ingreso trazable sin identificadores',
+            ]],
+        ])
+        ->assertRedirect();
+
+    $coil = ProductCoil::query()->where('product_id', $product->id)->firstOrFail();
+
+    expect($coil->lot_number)->toBeNull()
+        ->and($coil->barcode)->toBeNull()
+        ->and((float) $coil->available_meters)->toBe(75.0);
+});
+
+it('muestra lotes existentes para reutilizarlos en compras', function () {
+    $user = purchasesUser(['purchases.view', 'purchases.manage']);
+    $product = Product::query()->create([
+        'name' => 'Producto con lote previo',
+        'sku' => 'LOTE-PREVIO',
+        'barcode' => 'PR-LOTE-PREVIO',
+        'inventory_tracking_mode' => Product::TRACKING_COIL,
+        'minimum_stock_meters' => 0,
+        'is_active' => true,
+    ]);
+
+    ProductBranchStock::query()->create([
+        'branch_id' => $user->branch_id,
+        'product_id' => $product->id,
+        'available_meters' => 0,
+        'reserved_meters' => 0,
+        'is_enabled' => true,
+    ]);
+    ProductCoil::query()->create([
+        'branch_id' => $user->branch_id,
+        'product_id' => $product->id,
+        'barcode' => 'COIL-LOTE-COMUN',
+        'lot_number' => 'LOTE-COMUN-2026',
+        'initial_meters' => 10,
+        'available_meters' => 10,
+        'status' => 'available',
+    ]);
+
+    $this->actingAs($user)
+        ->get(route('purchases.create'))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('lotOptions.0', 'LOTE-COMUN-2026')
+        );
+});
+
+it('bloquea compra por lote si el producto existente esta configurado como stock general', function () {
+    $user = purchasesUser(['purchases.view', 'purchases.manage']);
+    $product = Product::query()->create([
+        'name' => 'Producto global seguro',
+        'sku' => 'GLOBAL-SEGURO',
+        'barcode' => 'PR-GLOBAL-SEGURO',
+        'inventory_tracking_mode' => Product::TRACKING_GLOBAL,
+        'minimum_stock_meters' => 0,
+        'is_active' => true,
+    ]);
+
+    $this->actingAs($user)
+        ->from(route('purchases.create'))
+        ->post(route('purchases.store'), [
+            'branch_id' => $user->branch_id,
+            'supplier_id' => null,
+            'document_number' => 'COMP-MODO-001',
+            'purchase_date' => now()->format('Y-m-d'),
+            'status' => 'received',
+            'items' => [[
+                'product_id' => $product->id,
+                'purchase_stock_mode' => Product::TRACKING_COIL,
+                'meters' => 10,
+                'unit_cost' => 5,
+                'lot_number' => 'LOT-FORZADO',
+                'coil_barcode' => 'COIL-FORZADO-001',
+                'description' => 'Intento por lote',
+            ]],
+        ])
+        ->assertRedirect(route('purchases.create'))
+        ->assertSessionHasErrors('items.0.purchase_stock_mode');
+
+    expect(ProductCoil::query()->where('barcode', 'COIL-FORZADO-001')->exists())->toBeFalse();
+});
+
 it('lista y filtra proveedores con conteo de compras', function () {
     $user = purchasesUser(['purchases.view']);
     Supplier::query()->create([

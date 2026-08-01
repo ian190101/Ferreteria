@@ -61,24 +61,14 @@ class PurchasePaymentController extends Controller
             $purchase = Purchase::query()->lockForUpdate()->findOrFail($request->integer('purchase_id'));
             $amount = round((float) $request->input('amount'), 2);
 
-            $payment = PurchasePayment::query()->create([
-                'purchase_id' => $purchase->id,
-                'branch_id' => $purchase->branch_id,
-                'user_id' => $request->user()->id,
-                'payment_method_id' => $request->integer('payment_method_id'),
-                'paid_at' => now(),
-                'amount' => $amount,
-                'reference' => $request->string('reference')->toString() ?: null,
-                'notes' => $request->string('notes')->toString() ?: null,
-            ]);
-
-            $paidAmount = round((float) $purchase->paid_amount + $amount, 2);
-            $newBalance = max(round((float) $purchase->total_amount - $paidAmount, 2), 0);
-            $purchase->update([
-                'paid_amount' => $paidAmount,
-                'balance_due' => $newBalance,
-                'payment_status' => $this->statusForBalance($newBalance, (float) $purchase->total_amount),
-            ]);
+            $payment = $ledger->registerPurchasePayment(
+                purchase: $purchase,
+                userId: (int) $request->user()->id,
+                paymentMethodId: $request->integer('payment_method_id'),
+                amount: $amount,
+                reference: $request->string('reference')->toString() ?: null,
+                notes: $request->string('notes')->toString() ?: null,
+            );
 
             $banks->recordPurchasePayment($payment);
             $ledger->bumpFinancialCaches();
@@ -99,23 +89,9 @@ class PurchasePaymentController extends Controller
             $payment = PurchasePayment::query()->lockForUpdate()->findOrFail($payment->id);
             $purchase = Purchase::query()->lockForUpdate()->findOrFail($payment->purchase_id);
             $voidReason = 'Anulado por '.$request->user()->name.': '.$request->string('reason')->toString();
-            $notes = trim(implode("\n", array_filter([
-                $payment->notes,
-                $voidReason,
-            ])));
 
             $banks->voidForSource($payment, $voidReason);
-            $payment->update(['notes' => $notes]);
-            $payment->delete();
-
-            $paidAmount = max(round((float) $purchase->paid_amount - (float) $payment->amount, 2), 0);
-            $newBalance = max(round((float) $purchase->total_amount - $paidAmount, 2), 0);
-
-            $purchase->update([
-                'paid_amount' => round($paidAmount, 2),
-                'balance_due' => $newBalance,
-                'payment_status' => $this->statusForBalance($newBalance, (float) $purchase->total_amount),
-            ]);
+            $ledger->voidPurchasePayment($payment, $purchase, $voidReason);
 
             $ledger->bumpFinancialCaches();
         });
@@ -123,12 +99,4 @@ class PurchasePaymentController extends Controller
         return redirect()->back()->with('success', 'Pago de compra anulado correctamente.');
     }
 
-    private function statusForBalance(float $balance, float $total): string
-    {
-        if ($balance <= 0) {
-            return 'paid';
-        }
-
-        return $balance < $total ? 'partial_paid' : 'unpaid';
-    }
 }

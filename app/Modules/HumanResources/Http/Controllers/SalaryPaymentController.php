@@ -4,7 +4,6 @@ namespace App\Modules\HumanResources\Http\Controllers;
 
 use App\Http\Controllers\Controller;
 use App\Modules\Banks\Services\BankReconciliationService;
-use App\Modules\Expenses\Models\Expense;
 use App\Modules\Expenses\Models\ExpenseCategory;
 use App\Modules\Finance\Services\FinancialLedgerService;
 use App\Modules\HumanResources\Models\SalaryPayment;
@@ -77,7 +76,7 @@ class SalaryPaymentController extends Controller
             throw ValidationException::withMessages(['reference' => 'La referencia es obligatoria para este metodo de pago.']);
         }
 
-        DB::transaction(function () use ($data, $request, $banks) {
+        DB::transaction(function () use ($data, $request, $banks, $ledger) {
             $worker = Worker::query()->findOrFail($data['worker_id']);
             abort_unless(BranchAccess::canAccess($request->user(), (int) $worker->branch_id), 403);
 
@@ -95,29 +94,20 @@ class SalaryPaymentController extends Controller
                     ['name' => ExpenseCategory::SALARY_PAYROLL_NAME, 'is_active' => true],
                 );
 
-                $expense = Expense::query()->create([
+                $expense = $ledger->registerExpense([
                     'branch_id' => $data['branch_id'],
                     'expense_category_id' => $category->id,
                     'payment_method_id' => $data['payment_method_id'] ?? null,
-                    'user_id' => $request->user()->id,
-                    'spent_at' => now(),
                     'description' => 'Pago de sueldo: '.$worker->name,
                     'amount' => $data['amount'],
                     'reference' => $data['reference'] ?? null,
-                    'status' => Expense::STATUS_REGISTERED,
                     'notes' => $data['notes'] ?? null,
-                ]);
+                ], (int) $request->user()->id);
 
                 $banks->recordExpense($expense);
             }
 
-            SalaryPayment::query()->create([
-                ...$data,
-                'expense_id' => $expense?->id,
-                'user_id' => $request->user()->id,
-                'paid_at' => now(),
-                'status' => SalaryPayment::STATUS_PAID,
-            ]);
+            $ledger->registerSalaryPayment($worker, $data, (int) $request->user()->id, $expense);
         });
 
         $ledger->bumpFinancialCaches();
@@ -133,32 +123,20 @@ class SalaryPaymentController extends Controller
 
         abort_unless(BranchAccess::canAccess($request->user(), (int) $payment->branch_id), 403);
 
-        DB::transaction(function () use ($request, $payment, $banks, $data) {
+        DB::transaction(function () use ($request, $payment, $banks, $ledger, $data) {
             $payment = SalaryPayment::query()
                 ->with('expense')
                 ->whereKey($payment->id)
                 ->lockForUpdate()
                 ->firstOrFail();
 
-            if ($payment->status === SalaryPayment::STATUS_VOID) {
-                return;
-            }
-
             $voidReason = 'Pago de sueldo anulado por '.$request->user()->name.': '.($data['reason'] ?? 'Sin motivo registrado');
-            $notes = trim(implode("\n", array_filter([$payment->notes, $voidReason])));
 
             if ($payment->expense) {
                 $banks->voidForSource($payment->expense, $voidReason);
-                $payment->expense->update([
-                    'status' => Expense::STATUS_VOID,
-                    'notes' => trim(implode("\n", array_filter([$payment->expense->notes, $voidReason]))),
-                ]);
             }
 
-            $payment->update([
-                'status' => SalaryPayment::STATUS_VOID,
-                'notes' => $notes,
-            ]);
+            $ledger->voidSalaryPaymentRecord($payment, $voidReason);
         });
 
         $ledger->bumpFinancialCaches();

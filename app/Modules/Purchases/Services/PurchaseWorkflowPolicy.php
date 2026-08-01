@@ -48,6 +48,11 @@ class PurchaseWorkflowPolicy
         return (bool) (ActiveBusinessProfile::payload()['purchases']['register_expense_when_paid'] ?? true);
     }
 
+    public function purchaseStockModeChoiceEnabled(): bool
+    {
+        return (bool) (ActiveBusinessProfile::payload()['purchases']['purchase_stock_mode_choice'] ?? true);
+    }
+
     public function summary(): array
     {
         return [
@@ -58,6 +63,7 @@ class PurchaseWorkflowPolicy
             'supplierRequired' => $this->supplierRequired(),
             'supplierHidden' => $this->supplierHidden(),
             'registerExpenseWhenPaid' => $this->registerExpenseWhenPaid(),
+            'purchaseStockModeChoiceEnabled' => $this->purchaseStockModeChoiceEnabled(),
             'productPolicy' => $this->products->summary(),
         ];
     }

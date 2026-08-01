@@ -9,6 +9,7 @@ class BusinessProfileCompatibilityValidator
         $configuration = BusinessProfileConfiguration::normalized($configuration);
         $modules = $configuration['modules'] ?? [];
         $capabilities = $configuration['capabilities'] ?? [];
+        $featureFlags = $configuration['feature_flags'] ?? [];
         $sales = $configuration['sales'] ?? [];
         $billing = $configuration['billing'] ?? [];
         $cash = $configuration['cash'] ?? [];
@@ -18,6 +19,7 @@ class BusinessProfileCompatibilityValidator
         $warnings = [];
 
         $enabled = fn (string $key): bool => (bool) ($capabilities[$key] ?? false);
+        $flag = fn (string $key): bool => (bool) ($featureFlags[$key] ?? false);
         $module = fn (string $key): bool => (bool) ($modules[$key] ?? false);
 
         foreach (BusinessCapabilityCatalog::all() as $code => $capability) {
@@ -76,6 +78,41 @@ class BusinessProfileCompatibilityValidator
 
         if ($enabled('uses_production') && ! $module('production')) {
             $errors[] = 'Produccion activa requiere el modulo Produccion.';
+        }
+
+        $engineRequirements = [
+            'uses_dynamic_entities' => 'dynamic_entities_engine',
+            'uses_dynamic_fields' => 'dynamic_fields_engine',
+            'uses_dynamic_relationships' => 'dynamic_relationships_engine',
+            'uses_dynamic_forms' => 'dynamic_forms_engine',
+            'uses_report_templates' => 'report_templates_engine',
+            'uses_approval_flows' => 'approval_engine',
+            'uses_automation_rules' => 'automation_engine',
+            'uses_attachments' => 'attachments_engine',
+            'uses_field_level_permissions' => 'field_permissions_engine',
+            'uses_integrations' => 'integrations_engine',
+        ];
+
+        foreach ($engineRequirements as $capability => $requiredFlag) {
+            if ($enabled($capability) && ! $flag($requiredFlag)) {
+                $errors[] = "La capacidad {$capability} requiere habilitar el motor tecnico {$requiredFlag}.";
+            }
+        }
+
+        if (($configuration['fields']['max_fields_per_entity'] ?? 0) > ($configuration['performance']['max_dynamic_fields_per_entity'] ?? 80)) {
+            $errors[] = 'El limite de campos por entidad no puede superar el limite de rendimiento configurado.';
+        }
+
+        if (($configuration['attachments']['enabled'] ?? false) && ! $flag('attachments_engine')) {
+            $errors[] = 'Adjuntos activos requieren habilitar el motor tecnico de adjuntos.';
+        }
+
+        if (($configuration['approvals']['enabled'] ?? false) && ! $flag('approval_engine')) {
+            $errors[] = 'Aprobaciones activas requieren habilitar el motor tecnico de aprobaciones.';
+        }
+
+        if (($configuration['automations']['enabled'] ?? false) && ! $flag('automation_engine')) {
+            $errors[] = 'Automatizaciones activas requieren habilitar el motor tecnico de automatizaciones.';
         }
 
         return [

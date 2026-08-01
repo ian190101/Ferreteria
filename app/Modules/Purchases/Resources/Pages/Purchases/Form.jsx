@@ -25,12 +25,13 @@ const DEFAULT_ITEM = {
     cost_mode: 'meter',
     cost_per_ton: '',
     unit_cost: '0',
+    purchase_stock_mode: '',
     lot_number: '',
     coil_barcode: '',
     description: '',
 };
 
-export default function Form({ branches = [], suppliers = [], units = [], categories = [], thicknesses = [], products = [], attributeDefinitions = [], workflow = {}, documentPolicy = {} }) {
+export default function Form({ branches = [], suppliers = [], units = [], categories = [], thicknesses = [], products = [], attributeDefinitions = [], lotOptions = [], workflow = {}, documentPolicy = {} }) {
     const catalogsReady = categories.length > 0 && units.length > 0;
     const decimalFormat = useDecimalFormatter('purchases');
     const [barcodeQuery, setBarcodeQuery] = useState('');
@@ -62,6 +63,7 @@ export default function Form({ branches = [], suppliers = [], units = [], catego
             product_category_id: product?.product_category_id ?? item.product_category_id,
             product_id: value,
             display_unit_label: productUnitSymbol(product),
+            purchase_stock_mode: product?.inventory_tracking_mode ?? '',
             item_attributes: defaultItemAttributes(product),
             calculation_mode: 'direct',
             meters: '',
@@ -98,8 +100,35 @@ export default function Form({ branches = [], suppliers = [], units = [], catego
                 product_mode: mode,
                 product_id: mode === 'new' ? '' : item.product_id,
                 display_unit_label: mode === 'new' ? (item.new_product?.base_unit ?? item.display_unit_label) : item.display_unit_label,
+                purchase_stock_mode: mode === 'new' ? (item.purchase_stock_mode || item.new_product?.inventory_tracking_mode || 'global') : item.purchase_stock_mode,
                 new_product: item.new_product?.name ? item.new_product : buildProductFormData({ categories, units, branches }),
             };
+        }));
+    };
+    const setPurchaseStockMode = (index, value) => {
+        setData('items', data.items.map((item, itemIndex) => {
+            if (itemIndex !== index) {
+                return item;
+            }
+
+            const next = {
+                ...item,
+                purchase_stock_mode: value,
+            };
+
+            if (item.product_mode === 'new') {
+                next.new_product = {
+                    ...(item.new_product ?? {}),
+                    inventory_tracking_mode: value,
+                };
+            }
+
+            if (value !== 'coil') {
+                next.lot_number = '';
+                next.coil_barcode = '';
+            }
+
+            return next;
         }));
     };
     const setNewProductData = (index, fieldOrData, value) => {
@@ -120,6 +149,7 @@ export default function Form({ branches = [], suppliers = [], units = [], catego
                 ...item,
                 product_category_id: nextProduct.product_category_id ?? item.product_category_id,
                 display_unit_label: nextProduct.base_unit ?? item.display_unit_label,
+                purchase_stock_mode: nextProduct.inventory_tracking_mode ?? item.purchase_stock_mode,
                 description: item.description || nextProduct.name || '',
                 new_product: nextProduct,
             };
@@ -196,7 +226,7 @@ export default function Form({ branches = [], suppliers = [], units = [], catego
                 <ModuleHeader title="Nueva compra" description="Ingresa la cantidad en la unidad real del producto. Usa calculo por largo o peso solo cuando corresponda." />
 
                 <div className="mb-5 rounded-lg border border-sky-200 bg-sky-50 p-4 text-sm text-sky-900 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-100">
-                    Perfil activo de compras: {workflow.barcodeEntryEnabled ? 'entrada rapida por barcode habilitada' : 'compra tradicional'}; proveedor {supplierModeLabel}; {workflow.allowCreateProduct ? 'puedes crear productos desde compras' : 'solo productos ya registrados'}; {workflow.productPolicy?.unitEquivalencesEnabled === false ? 'sin equivalencias de unidades' : 'con equivalencias de unidades'}.
+                    Perfil activo de compras: {workflow.barcodeEntryEnabled ? 'entrada rapida por barcode habilitada' : 'compra tradicional'}; proveedor {supplierModeLabel}; {workflow.allowCreateProduct ? 'puedes crear productos desde compras' : 'solo productos ya registrados'}; {workflow.productPolicy?.unitEquivalencesEnabled === false ? 'sin equivalencias de unidades' : 'con equivalencias de unidades'}; {workflow.purchaseStockModeChoiceEnabled ? 'puedes elegir ingreso por producto o por lote' : 'el ingreso usa el rastreo del producto'}.
                 </div>
 
                 <form onSubmit={submit} className="space-y-6">
@@ -270,7 +300,8 @@ export default function Form({ branches = [], suppliers = [], units = [], catego
                                 const product = item.product_mode === 'new'
                                     ? draftProductFromItem(item, categories, units, thicknesses)
                                     : productMap.get(String(item.product_id));
-                                const isCoil = product?.inventory_tracking_mode === 'coil';
+                                const purchaseStockMode = selectedPurchaseStockMode(item, product);
+                                const isCoil = purchaseStockMode === 'coil';
                                 const summary = purchaseItemSummary(item, product);
 
                                 return (
@@ -312,6 +343,20 @@ export default function Form({ branches = [], suppliers = [], units = [], catego
                                                     {productsForCategory(products, item.product_category_id, data.branch_id).map((product) => <option key={product.id} value={product.id}>{product.name} ({product.sku}) - {trackingLabel(product)}</option>)}
                                                 </SelectField>
                                             </>
+                                        )}
+                                        {workflow?.purchaseStockModeChoiceEnabled ? (
+                                            <PurchaseStockModeSelector
+                                                item={item}
+                                                product={product}
+                                                value={purchaseStockMode}
+                                                error={errors[`items.${index}.purchase_stock_mode`]}
+                                                onChange={(value) => setPurchaseStockMode(index, value)}
+                                            />
+                                        ) : (
+                                            <div className="rounded-md border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300">
+                                                <span className="block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Ingreso de stock</span>
+                                                Se usara el rastreo configurado en el producto: {stockModeLabel(product?.inventory_tracking_mode ?? 'global')}.
+                                            </div>
                                         )}
                                         {item.calculation_mode === 'weight' ? (
                                             <div className="rounded-md border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300">
@@ -367,8 +412,12 @@ export default function Form({ branches = [], suppliers = [], units = [], catego
                                         ) : (
                                             <FormField label={item.calculation_mode === 'direct' ? 'Costo/unidad' : 'Costo/metro'} name={`items.${index}.unit_cost`} type="number" step={decimalStep(decimalFormat.decimalsFor('cost'))} value={item.unit_cost} onChange={(event) => updateItem(index, 'unit_cost', event.target.value)} error={errors[`items.${index}.unit_cost`]} required />
                                         )}
-                                        <FormField label="Lote" name={`items.${index}.lot_number`} value={item.lot_number} onChange={(event) => updateItem(index, 'lot_number', event.target.value)} error={errors[`items.${index}.lot_number`]} />
-                                        <FormField label="Barcode lote/unidad" name={`items.${index}.coil_barcode`} value={item.coil_barcode} disabled={!isCoil} onChange={(event) => updateItem(index, 'coil_barcode', event.target.value)} error={errors[`items.${index}.coil_barcode`]} />
+                                        <SelectField label="Lote existente" name={`items.${index}.existing_lot`} value={lotOptions.includes(item.lot_number) ? item.lot_number : ''} disabled={!isCoil} onChange={(event) => updateItem(index, 'lot_number', event.target.value)} helpTitle="Lotes ya ingresados" helpTooltip="Si varios productos vienen en el mismo lote, selecciona aqui el lote ya usado. Si es nuevo, escribe el numero en el campo Lote opcional." helpText="La lista se alimenta automaticamente con lotes registrados antes en compras o inventario.">
+                                            <option value="">Sin seleccionar</option>
+                                            {lotOptions.map((lot) => <option key={lot} value={lot}>{lot}</option>)}
+                                        </SelectField>
+                                        <FormField label="Lote opcional" name={`items.${index}.lot_number`} value={item.lot_number} disabled={!isCoil} onChange={(event) => updateItem(index, 'lot_number', event.target.value)} error={errors[`items.${index}.lot_number`]} />
+                                        <FormField label="Barcode opcional" name={`items.${index}.coil_barcode`} value={item.coil_barcode} disabled={!isCoil} onChange={(event) => updateItem(index, 'coil_barcode', event.target.value)} error={errors[`items.${index}.coil_barcode`]} />
                                         <div className="sm:col-span-7">
                                             <div className="mb-3 rounded-md border border-slate-200 bg-slate-50 px-4 py-3 text-sm dark:border-slate-800 dark:bg-slate-950">
                                                 <p className="text-slate-500 dark:text-slate-400">{item.calculation_mode === 'direct' ? 'Cantidad' : 'Equivalente'}: <span className="font-semibold text-emerald-600">{item.calculation_mode === 'direct' ? formatDocumentQuantity(summary.meters, item, product, units, decimalFormat) : `${decimalFormat.measure(summary.meters)} m`}</span></p>
@@ -412,6 +461,7 @@ function preparePurchaseItem(item, products, decimalFormat, units, categories, t
         display_unit_label: item.display_unit_label || productUnitSymbol(product),
         calculation_mode: item.calculation_mode || 'direct',
         item_attributes: normalizedItemAttributes(item, product),
+        purchase_stock_mode: item.purchase_stock_mode || product?.inventory_tracking_mode || 'global',
         weight_unit: item.weight_unit,
         kilograms: item.calculation_mode === 'weight' ? item.kilograms : '',
         meters: summary.meters ? decimalFormat.fixed(summary.meters, item.calculation_mode === 'direct' ? quantityKindForItem(item, product, units) : 'measure') : item.meters,
@@ -460,6 +510,7 @@ function addOrIncrementProductItem(items, product, units = [], categories = [], 
         item_attributes: defaultItemAttributes(product),
         meters: '',
         unit_cost: String(product.purchase_price ?? 0),
+        purchase_stock_mode: product.inventory_tracking_mode ?? 'global',
         description: product.name ?? '',
     };
 
@@ -535,6 +586,42 @@ function AttributeField({ attribute, value, onChange }) {
             value={value ?? ''}
             onChange={(event) => onChange(event.target.value)}
         />
+    );
+}
+
+function PurchaseStockModeSelector({ item, product, value, error, onChange }) {
+    const existingProduct = item.product_mode !== 'new' && product;
+    const mismatch = existingProduct && value && value !== product.inventory_tracking_mode;
+
+    return (
+        <div className="rounded-md border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-100">
+            <div className="mb-2 flex items-center gap-2">
+                <span className="text-xs font-semibold uppercase tracking-wide">Ingreso de stock</span>
+                <ContextHelp title="Compra por producto o por lote">
+                    <p><strong>Por producto:</strong> suma la cantidad al stock general del producto en la sucursal.</p>
+                    <p className="mt-2"><strong>Por lote/unidad fisica:</strong> crea un lote, rollo o unidad trazable. El numero de lote y el barcode son opcionales, pero ayudan a ubicar el material despues.</p>
+                    <p className="mt-2">Si varios productos llegan en el mismo lote, selecciona el lote existente para mantener la trazabilidad del documento del proveedor.</p>
+                    <p className="mt-2">En productos existentes esta eleccion debe coincidir con el rastreo configurado del producto. Para cambiarlo, edita el producto desde Inventario.</p>
+                </ContextHelp>
+            </div>
+            <select
+                value={value}
+                onChange={(event) => onChange(event.target.value)}
+                className="mt-1 block w-full rounded-md border-slate-300 text-sm shadow-sm focus:border-brand-primary focus:ring-brand-primary dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+            >
+                <option value="global">Comprar por producto / stock general</option>
+                <option value="coil">Comprar por lote o unidad fisica</option>
+            </select>
+            <p className="mt-2 text-xs leading-5 text-sky-800 dark:text-sky-100">
+                {stockModeHelp(value)}
+            </p>
+            {mismatch ? (
+                <p className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-100">
+                    Este producto existe como {stockModeLabel(product.inventory_tracking_mode)}. La compra se bloqueara si intentas usar otro modo sin cambiar primero el producto.
+                </p>
+            ) : null}
+            {error ? <p className="mt-2 text-xs font-semibold text-red-600 dark:text-red-300">{error}</p> : null}
+        </div>
     );
 }
 
@@ -630,7 +717,7 @@ function draftProductFromItem(item, categories = [], units = [], thicknesses = [
         product_unit_id: unit?.id ?? null,
         name: payload.name ?? '',
         sku: payload.sku ?? '',
-        inventory_tracking_mode: payload.inventory_tracking_mode ?? category?.default_tracking_mode ?? 'global',
+        inventory_tracking_mode: item.purchase_stock_mode || payload.inventory_tracking_mode || category?.default_tracking_mode || 'global',
         base_unit: symbol,
         allowed_units: [symbol],
         unit,
@@ -793,6 +880,22 @@ function trackingLabel(product) {
     return product?.inventory_tracking_mode === 'coil'
         ? 'Stock por sucursal + lote/unidad'
         : 'Stock por sucursal';
+}
+
+function selectedPurchaseStockMode(item, product) {
+    return item.purchase_stock_mode || product?.inventory_tracking_mode || item.new_product?.inventory_tracking_mode || 'global';
+}
+
+function stockModeLabel(mode) {
+    return mode === 'coil' ? 'lote/unidad fisica' : 'stock general del producto';
+}
+
+function stockModeHelp(mode) {
+    if (mode === 'coil') {
+        return 'Puedes seleccionar un lote existente, escribir uno nuevo o dejarlo vacio. El barcode tambien es opcional.';
+    }
+
+    return 'Se sumara directamente al stock disponible del producto en la sucursal seleccionada.';
 }
 
 function productsForCategory(products, categoryId, branchId) {

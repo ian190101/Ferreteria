@@ -58,6 +58,11 @@ class PosWorkflowPolicy
         return (string) data_get($this->payload, 'pos.payment_flow', 'single_or_mixed');
     }
 
+    public function salesWorkflow(): string
+    {
+        return (string) data_get($this->payload, 'sales.workflow', 'pos');
+    }
+
     public function cartMergeRule(): string
     {
         return (string) data_get($this->payload, 'pos.cart_merge_rule', 'same_product_and_unit');
@@ -103,9 +108,84 @@ class PosWorkflowPolicy
             || $this->paymentFlow() === 'single_or_mixed';
     }
 
+    public function usesMixedPayments(): bool
+    {
+        return $this->paymentFlow() === 'single_or_mixed';
+    }
+
+    public function allowsPartialBalance(): bool
+    {
+        return $this->usesMixedPayments()
+            || (string) data_get($this->payload, 'sales.credit_limit_policy', 'disabled') !== 'disabled';
+    }
+
+    public function allowsDiscounts(): bool
+    {
+        return (bool) data_get($this->payload, 'submodules.sales_discounts', true)
+            && (string) data_get($this->payload, 'sales.discount_policy', 'permission') !== 'never';
+    }
+
+    public function allowsPriceChanges(): bool
+    {
+        return (bool) data_get($this->payload, 'submodules.manual_price_change', true)
+            && (string) data_get($this->payload, 'sales.allow_price_override', 'permission') !== 'never';
+    }
+
+    public function allowsAdvance(): bool
+    {
+        return (bool) data_get($this->payload, 'submodules.advances', true);
+    }
+
+    public function requiresResource(): bool
+    {
+        return (bool) data_get($this->payload, 'reservations.resource_required', false)
+            || in_array($this->mode(), ['restaurant_table'], true);
+    }
+
+    public function requiresAssignedPerson(): bool
+    {
+        return (bool) data_get($this->payload, 'services.technician_required', false)
+            || (bool) data_get($this->payload, 'capabilities.uses_waiters', false);
+    }
+
     public function usesDelivery(): bool
     {
         return (bool) data_get($this->payload, 'capabilities.uses_delivery', false);
+    }
+
+    public function billingEnabled(): bool
+    {
+        return (bool) data_get($this->payload, 'billing.enabled', false)
+            || (bool) data_get($this->payload, 'capabilities.uses_billing', false);
+    }
+
+    public function reservationEnabled(): bool
+    {
+        return (bool) data_get($this->payload, 'capabilities.uses_reservations', false)
+            && (bool) data_get($this->payload, 'modules.reservations', false);
+    }
+
+    public function availableChannels(): array
+    {
+        $channels = ['counter'];
+
+        if ($this->usesTables()) {
+            $channels[] = 'table';
+        }
+
+        if ($this->usesDelivery()) {
+            $channels[] = 'delivery';
+        }
+
+        if ($this->reservationEnabled()) {
+            $channels[] = 'reservation';
+        }
+
+        if ($this->supportsServices()) {
+            $channels[] = 'service_order';
+        }
+
+        return array_values(array_unique($channels));
     }
 
     public function usesImages(): bool
@@ -142,6 +222,7 @@ class PosWorkflowPolicy
         return [
             'mode' => $this->mode(),
             'modeLabel' => $this->modeLabel(),
+            'salesWorkflow' => $this->salesWorkflow(),
             'scannerMode' => $this->scannerMode(),
             'offlineMode' => $this->offlineMode(),
             'customerPrompt' => $this->customerPrompt(),
@@ -153,7 +234,17 @@ class PosWorkflowPolicy
             'usesKitchen' => $this->usesKitchen(),
             'usesTips' => $this->usesTips(),
             'usesSplitPayments' => $this->usesSplitPayments(),
+            'usesMixedPayments' => $this->usesMixedPayments(),
+            'allowsPartialBalance' => $this->allowsPartialBalance(),
+            'allowsDiscounts' => $this->allowsDiscounts(),
+            'allowsPriceChanges' => $this->allowsPriceChanges(),
+            'allowsAdvance' => $this->allowsAdvance(),
+            'requiresResource' => $this->requiresResource(),
+            'requiresAssignedPerson' => $this->requiresAssignedPerson(),
             'usesDelivery' => $this->usesDelivery(),
+            'billingEnabled' => $this->billingEnabled(),
+            'reservationEnabled' => $this->reservationEnabled(),
+            'availableChannels' => $this->availableChannels(),
             'usesImages' => $this->usesImages(),
             'usesVariants' => $this->usesVariants(),
             'supportsServices' => $this->supportsServices(),

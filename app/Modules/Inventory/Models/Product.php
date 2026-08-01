@@ -39,6 +39,10 @@ class Product extends AuditableModel
         'duration_minutes',
         'preparation_minutes',
         'attributes',
+        'catalog_settings',
+        'requires_lot',
+        'requires_expiration_date',
+        'is_rentable',
         'custom_attributes',
         'allowed_units',
         'purchase_price',
@@ -49,6 +53,10 @@ class Product extends AuditableModel
 
     protected $casts = [
         'attributes' => 'array',
+        'catalog_settings' => 'array',
+        'requires_lot' => 'boolean',
+        'requires_expiration_date' => 'boolean',
+        'is_rentable' => 'boolean',
         'custom_attributes' => 'array',
         'allowed_units' => 'array',
         'is_sellable' => 'boolean',

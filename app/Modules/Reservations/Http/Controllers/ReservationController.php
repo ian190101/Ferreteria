@@ -53,6 +53,7 @@ class ReservationController extends Controller
                 'customer:id,name,phone',
                 'resource:id,branch_id,type,code,name,capacity',
                 'worker:id,name,position',
+                'rescheduledFrom:id,reservation_number,start_at,end_at',
                 'items.product:id,name,sku,base_unit,item_type',
             ])
             ->where('branch_id', $branchId)
@@ -77,12 +78,14 @@ class ReservationController extends Controller
             'policy' => $policy->summary(),
             'reservations' => $reservations,
             'statuses' => $this->stateOptions(),
+            'confirmationStatuses' => $this->confirmationOptions(),
             'resources' => ReservableResource::query()
-                ->where('branch_id', $branchId)
+                ->where(fn ($query) => $query->where('branch_id', $branchId)->orWhereNull('branch_id'))
                 ->where('is_active', true)
+                ->where('status', 'available')
                 ->orderBy('type')
                 ->orderBy('name')
-                ->get(['id', 'branch_id', 'type', 'code', 'name', 'capacity']),
+                ->get(['id', 'branch_id', 'assigned_worker_id', 'type', 'code', 'name', 'capacity', 'status', 'location']),
             'workers' => Worker::query()
                 ->where('branch_id', $branchId)
                 ->where('is_active', true)
@@ -134,6 +137,7 @@ class ReservationController extends Controller
                 'user_id' => $request->user()->id,
                 'reservation_number' => $this->nextReservationNumber($type),
                 'status' => BusinessReservation::STATUS_PENDING,
+                'confirmation_status' => BusinessReservation::CONFIRMATION_PENDING,
                 'amount' => round($baseAmount + $itemsTotal, 4),
                 'penalty_amount' => $penaltyAmount,
                 'deposit_amount' => $depositAmount,
@@ -177,9 +181,11 @@ class ReservationController extends Controller
 
         $data = $request->validate([
             'status' => ['required', 'string', Rule::in(array_keys($this->stateOptions()))],
+            'confirmation_status' => ['nullable', 'string', Rule::in(array_keys($this->confirmationOptions()))],
             'condition_after' => ['nullable', 'string', 'max:4000'],
         ], [], [
             'status' => 'estado',
+            'confirmation_status' => 'confirmacion',
             'condition_after' => 'estado despues de devolver',
         ]);
 
@@ -193,11 +199,21 @@ class ReservationController extends Controller
         $timestamps = match ($data['status']) {
             BusinessReservation::STATUS_IN_PROGRESS => ['checked_out_at' => now()],
             BusinessReservation::STATUS_COMPLETED => ['returned_at' => now()],
+            BusinessReservation::STATUS_CANCELLED => ['cancelled_at' => now()],
+            BusinessReservation::STATUS_NO_SHOW => ['no_show_at' => now()],
             default => [],
         };
 
+        $confirmationStatus = $data['confirmation_status'] ?? ($data['status'] === BusinessReservation::STATUS_CONFIRMED
+            ? BusinessReservation::CONFIRMATION_CONFIRMED
+            : $reservation->confirmation_status);
+
         $reservation->update([
             'status' => $data['status'],
+            'confirmation_status' => $confirmationStatus,
+            'confirmed_at' => $confirmationStatus === BusinessReservation::CONFIRMATION_CONFIRMED
+                ? ($reservation->confirmed_at ?? now())
+                : $reservation->confirmed_at,
             'condition_after' => $data['condition_after'] ?? $reservation->condition_after,
             ...$timestamps,
         ]);
@@ -205,6 +221,48 @@ class ReservationController extends Controller
         SystemCacheInvalidator::bumpOperational();
 
         return back()->with('success', 'Estado actualizado correctamente.');
+    }
+
+    public function reschedule(Request $request, BusinessReservation $reservation, ReservationAvailabilityService $availability): RedirectResponse
+    {
+        abort_unless(BranchAccess::canAccess($request->user(), (int) $reservation->branch_id), 403);
+
+        $data = $request->validate([
+            'reservable_resource_id' => ['nullable', 'integer', 'exists:reservable_resources,id'],
+            'start_at' => ['required', 'date'],
+            'end_at' => ['required', 'date'],
+            'reminder_at' => ['nullable', 'date'],
+            'notes' => ['nullable', 'string', 'max:4000'],
+        ], [], [
+            'reservable_resource_id' => 'recurso reservable',
+            'start_at' => 'nuevo inicio',
+            'end_at' => 'nuevo fin',
+            'reminder_at' => 'recordatorio',
+        ]);
+
+        $resourceId = (int) ($data['reservable_resource_id'] ?? $reservation->reservable_resource_id);
+        $branchData = ['branch_id' => $reservation->branch_id, 'reservable_resource_id' => $resourceId];
+        $this->validateResourceBranch($branchData);
+
+        $startAt = Carbon::parse($data['start_at']);
+        $endAt = Carbon::parse($data['end_at']);
+        $availability->ensureResourceAvailable($resourceId ?: null, $startAt, $endAt, $reservation->id);
+
+        $reservation->update([
+            'reservable_resource_id' => $resourceId ?: null,
+            'start_at' => $startAt,
+            'end_at' => $endAt,
+            'reminder_at' => $data['reminder_at'] ?? $reservation->reminder_at,
+            'status' => BusinessReservation::STATUS_RESCHEDULED,
+            'rescheduled_at' => now(),
+            'notes' => filled($data['notes'] ?? null)
+                ? trim((string) $reservation->notes."\n".$data['notes'])
+                : $reservation->notes,
+        ]);
+
+        SystemCacheInvalidator::bumpOperational();
+
+        return back()->with('success', 'Reserva reprogramada correctamente.');
     }
 
     private function validated(Request $request, ReservationWorkflowPolicy $policy): array
@@ -219,7 +277,9 @@ class ReservationController extends Controller
             'reservable_resource_id' => [$resourceRequired ? 'required' : 'nullable', 'integer', 'exists:reservable_resources,id'],
             'worker_id' => ['nullable', 'integer', 'exists:workers,id'],
             'type' => ['required', 'string', Rule::in([BusinessReservation::TYPE_RESERVATION, BusinessReservation::TYPE_RENTAL])],
-            'channel' => ['nullable', 'string', 'max:60'],
+            'appointment_kind' => ['nullable', 'string', Rule::in($policy->appointmentKinds($type))],
+            'channel' => ['nullable', 'string', Rule::in($policy->allowedChannels())],
+            'reminder_at' => [$policy->remindersEnabled() ? 'nullable' : 'prohibited', 'date'],
             'customer_name' => ['nullable', 'string', 'max:160'],
             'customer_phone' => ['nullable', 'string', 'max:80'],
             'title' => ['required', 'string', 'max:180'],
@@ -245,6 +305,9 @@ class ReservationController extends Controller
             'reservable_resource_id' => 'recurso reservable',
             'worker_id' => 'responsable',
             'type' => 'tipo',
+            'appointment_kind' => 'tipo de cita',
+            'channel' => 'canal',
+            'reminder_at' => 'recordatorio',
             'title' => 'titulo',
             'start_at' => 'inicio',
             'end_at' => 'fin o devolucion',
@@ -271,7 +334,7 @@ class ReservationController extends Controller
         }
 
         $resource = ReservableResource::query()->findOrFail($data['reservable_resource_id']);
-        if ((int) $resource->branch_id !== (int) $data['branch_id']) {
+        if ($resource->branch_id !== null && (int) $resource->branch_id !== (int) $data['branch_id']) {
             throw ValidationException::withMessages([
                 'reservable_resource_id' => 'El recurso debe pertenecer a la sucursal seleccionada.',
             ]);
@@ -302,6 +365,15 @@ class ReservationController extends Controller
             ->all();
 
         return $custom ?: self::FALLBACK_STATUSES;
+    }
+
+    private function confirmationOptions(): array
+    {
+        return [
+            BusinessReservation::CONFIRMATION_PENDING => 'Pendiente',
+            BusinessReservation::CONFIRMATION_CONFIRMED => 'Confirmada',
+            BusinessReservation::CONFIRMATION_REJECTED => 'Rechazada',
+        ];
     }
 
     private function usesCustomStates(string $entityType): bool

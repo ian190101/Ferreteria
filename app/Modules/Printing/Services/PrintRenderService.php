@@ -10,17 +10,9 @@ class PrintRenderService
 {
     public function documentTypes(): array
     {
-        return [
-            'ticket_pos' => 'Ticket POS',
-            'kitchen_order' => 'Comanda / orden de cocina',
-            'service_order' => 'Orden de servicio',
-            'advance_receipt' => 'Recibo de anticipo',
-            'reservation_receipt' => 'Recibo de reserva',
-            'simple_contract' => 'Contrato simple',
-            'delivery_receipt' => 'Comprobante de entrega',
-            'barcode_label' => 'Etiqueta codigo de barras',
-            'cash_closing' => 'Reporte de cierre de caja',
-        ];
+        return collect(PrintDocumentTemplate::DOCUMENT_TYPES)
+            ->mapWithKeys(fn (string $type) => [$type => app(BusinessDocumentPolicy::class)->label($type)])
+            ->all();
     }
 
     public function areas(): array
@@ -75,7 +67,7 @@ class PrintRenderService
         $html .= $this->logo($layout, $payload);
         $html .= '<header style="border-bottom:1px solid #111;padding-bottom:8px;margin-bottom:8px;">';
         $html .= '<strong style="font-size:1.15em;">'.e($payload['empresa'] ?? 'Empresa').'</strong>';
-        $html .= '<div>'.e($this->documentTypes()[$template->document_type] ?? $template->document_type).'</div>';
+        $html .= '<div>'.e(app(BusinessDocumentPolicy::class)->label($template->document_type)).'</div>';
         $html .= '<div>Nro.: '.e($payload['numero'] ?? '000001').'</div>';
         $html .= '</header>';
 
@@ -139,6 +131,25 @@ class PrintRenderService
                 'materiales' => 'Materiales opcionales segun avance.',
                 'garantia' => 'Garantia segun condiciones acordadas.',
             ],
+            'siat_invoice' => [
+                'empresa' => 'Factura',
+                'numero' => 'FAC-000001',
+                'cliente' => 'Cliente con datos fiscales',
+                'nit' => '99001',
+                'cuf' => 'CUF-DEMO',
+                'items' => $baseItems,
+                'total' => 'Bs 130,0',
+                'leyenda' => 'Leyenda fiscal segun SIAT.',
+            ],
+            'credit_note' => [
+                'empresa' => 'Nota de credito',
+                'numero' => 'NC-000001',
+                'cliente' => 'Cliente demo',
+                'documento_original' => 'FAC-000001',
+                'motivo' => 'Devolucion o ajuste autorizado.',
+                'items' => $baseItems,
+                'total' => 'Bs 130,0',
+            ],
             'reservation_receipt' => [
                 'empresa' => 'Reservas',
                 'numero' => 'RES-000001',
@@ -174,6 +185,89 @@ class PrintRenderService
                 'efectivo' => 'Bs 1.200,0',
                 'qr_banco' => 'Bs 350,0',
                 'diferencia' => 'Bs 0,0',
+            ],
+            'medical_record' => [
+                'empresa' => 'Ficha medica',
+                'numero' => 'HM-000001',
+                'paciente' => 'Paciente demo',
+                'motivo_consulta' => 'Consulta inicial.',
+                'diagnostico' => 'Diagnostico pendiente.',
+                'tratamiento' => 'Tratamiento indicado.',
+                'proxima_cita' => now()->addWeek()->format('d/m/Y H:i'),
+            ],
+            'dental_chart' => [
+                'empresa' => 'Odontograma',
+                'numero' => 'ODO-000001',
+                'paciente' => 'Paciente demo',
+                'tipo_paciente' => 'Adulto',
+                'piezas' => '11, 12, 21',
+                'tratamientos' => 'Limpieza / control.',
+                'observaciones' => 'Sin observaciones criticas.',
+            ],
+            'medical_prescription' => [
+                'empresa' => 'Receta medica',
+                'numero' => 'REC-000001',
+                'paciente' => 'Paciente demo',
+                'diagnostico' => 'Diagnostico demo.',
+                'indicaciones' => 'Indicaciones configurables.',
+                'profesional' => 'Profesional responsable.',
+            ],
+            'consent_form' => [
+                'empresa' => 'Consentimiento',
+                'numero' => 'CONS-000001',
+                'paciente' => 'Paciente demo',
+                'procedimiento' => 'Procedimiento demo.',
+                'riesgos' => 'Riesgos explicados al cliente.',
+                'condiciones' => 'Condiciones aceptadas.',
+                'firma_cliente' => 'Firma cliente',
+                'firma_empresa' => 'Firma profesional',
+            ],
+            'loan_contract' => [
+                'empresa' => 'Prestamo',
+                'numero' => 'PRE-000001',
+                'cliente' => 'Cliente demo',
+                'monto' => 'Bs 1.000,0',
+                'interes' => '3%',
+                'garantia' => 'Garantia registrada',
+                'cuotas' => '4 cuotas',
+                'firma_cliente' => 'Firma cliente',
+                'firma_empresa' => 'Firma empresa',
+            ],
+            'rental_contract' => [
+                'empresa' => 'Alquiler',
+                'numero' => 'ALQ-000001',
+                'cliente' => 'Cliente demo',
+                'recurso' => 'Equipo alquilable',
+                'inicio' => now()->format('d/m/Y H:i'),
+                'fin' => now()->addDay()->format('d/m/Y H:i'),
+                'garantia' => 'Bs 200,0',
+                'penalidad' => 'Penalidad por retraso configurada.',
+            ],
+            'guarantee_receipt' => [
+                'empresa' => 'Garantia',
+                'numero' => 'GAR-000001',
+                'cliente' => 'Cliente demo',
+                'garantia' => 'Equipo o documento recibido.',
+                'valor_garantia' => 'Bs 1.500,0',
+                'estado' => 'Recibida',
+            ],
+            'construction_budget' => [
+                'empresa' => 'Presupuesto de obra',
+                'numero' => 'OBR-000001',
+                'cliente' => 'Cliente demo',
+                'proyecto' => 'Proyecto demo',
+                'materiales' => 'Materiales calculados',
+                'mano_obra' => 'Mano de obra estimada',
+                'total' => 'Bs 3.500,0',
+            ],
+            'production_order' => [
+                'empresa' => 'Orden de produccion',
+                'numero' => 'PROD-000001',
+                'producto' => 'Producto terminado',
+                'insumos' => 'Insumos requeridos',
+                'merma' => '2%',
+                'mano_obra' => 'Mano de obra',
+                'costo' => 'Bs 850,0',
             ],
             default => [
                 'empresa' => 'Empresa demo',
@@ -266,6 +360,34 @@ class PrintRenderService
             'diagnostico' => 'Diagnostico',
             'materiales' => 'Materiales',
             'garantia' => 'Garantia',
+            'nit' => 'NIT',
+            'cuf' => 'CUF',
+            'leyenda' => 'Leyenda',
+            'documento_original' => 'Documento original',
+            'motivo' => 'Motivo',
+            'paciente' => 'Paciente',
+            'motivo_consulta' => 'Motivo de consulta',
+            'tratamiento' => 'Tratamiento',
+            'proxima_cita' => 'Proxima cita',
+            'tipo_paciente' => 'Tipo de paciente',
+            'piezas' => 'Piezas',
+            'observaciones' => 'Observaciones',
+            'indicaciones' => 'Indicaciones',
+            'profesional' => 'Profesional',
+            'procedimiento' => 'Procedimiento',
+            'riesgos' => 'Riesgos',
+            'monto' => 'Monto',
+            'interes' => 'Interes',
+            'cuotas' => 'Cuotas',
+            'penalidad' => 'Penalidad',
+            'valor_garantia' => 'Valor garantia',
+            'estado' => 'Estado',
+            'proyecto' => 'Proyecto',
+            'mano_obra' => 'Mano de obra',
+            'producto' => 'Producto',
+            'insumos' => 'Insumos',
+            'merma' => 'Merma',
+            'costo' => 'Costo',
             'metodo_pago' => 'Metodo de pago',
             'qr_banco' => 'QR/Banco',
             'firma_cliente' => 'Firma cliente',

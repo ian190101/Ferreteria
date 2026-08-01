@@ -227,3 +227,91 @@ it('carga imagenes y variantes cuando el perfil usa catalogo visual', function (
             ->where('products.0.variants.0.name', 'Talla M')
             ->where('products.0.variants.0.sale_price', 55));
 });
+
+it('bloquea saldo parcial desde POS cuando el perfil exige pago unico', function () {
+    $user = posDynamicUser([
+        'modules' => ['pos' => true, 'sales_notes' => true],
+        'capabilities' => ['uses_pos' => true, 'requires_cash_session' => false],
+        'sales' => ['workflow' => 'pos', 'quotation_mode' => 'disabled', 'customer_mode' => 'optional', 'credit_limit_policy' => 'disabled'],
+        'cash' => ['required_to_sell' => false],
+        'pos' => ['payment_flow' => 'single'],
+        'products' => ['catalog_mode' => 'barcode_retail', 'item_types' => ['physical']],
+    ]);
+    $product = posDynamicProduct($user, ['sale_price' => 20]);
+    $paymentMethod = PaymentMethod::query()->where('code', 'cash')->first();
+    $saleType = SaleType::query()->first();
+    $currency = Currency::query()->where('code', 'BOB')->first();
+
+    $this->actingAs($user)
+        ->post(route('sales.store'), [
+            'from_pos' => true,
+            'document_type' => 'sale_note',
+            'branch_id' => $user->branch_id,
+            'sale_type_id' => $saleType->id,
+            'currency_id' => $currency->id,
+            'customer_name' => 'Cliente POS',
+            'advance_mode' => 'none',
+            'requires_delivery' => false,
+            'pos_payment_method_id' => $paymentMethod->id,
+            'pos_payment_amount' => 10,
+            'pos_context' => ['mode' => 'supermarket', 'channel' => 'counter'],
+            'items' => [[
+                'product_id' => $product->id,
+                'description' => $product->name,
+                'unit_label' => 'u',
+                'display_quantity' => 1,
+                'display_unit_label' => 'u',
+                'calculation_mode' => 'direct',
+                'meters' => 1,
+                'unit_price' => 20,
+                'discount_amount' => 0,
+            ]],
+        ])
+        ->assertSessionHasErrors('pos_payment_amount');
+});
+
+it('bloquea desde POS items que no pertenecen al catalogo permitido por perfil', function () {
+    $user = posDynamicUser([
+        'modules' => ['pos' => true, 'sales_notes' => true],
+        'capabilities' => ['uses_pos' => true, 'requires_cash_session' => false],
+        'sales' => ['workflow' => 'pos', 'quotation_mode' => 'disabled', 'customer_mode' => 'optional'],
+        'cash' => ['required_to_sell' => false],
+        'products' => ['catalog_mode' => 'barcode_retail', 'item_types' => ['physical']],
+    ]);
+    $product = posDynamicProduct($user, [
+        'name' => 'Servicio no permitido',
+        'item_type' => 'service',
+        'is_inventory_item' => false,
+        'sale_price' => 100,
+    ]);
+    $paymentMethod = PaymentMethod::query()->where('code', 'cash')->first();
+    $saleType = SaleType::query()->first();
+    $currency = Currency::query()->where('code', 'BOB')->first();
+
+    $this->actingAs($user)
+        ->post(route('sales.store'), [
+            'from_pos' => true,
+            'document_type' => 'sale_note',
+            'branch_id' => $user->branch_id,
+            'sale_type_id' => $saleType->id,
+            'currency_id' => $currency->id,
+            'customer_name' => 'Cliente POS',
+            'advance_mode' => 'none',
+            'requires_delivery' => false,
+            'pos_payment_method_id' => $paymentMethod->id,
+            'pos_payment_amount' => 100,
+            'pos_context' => ['mode' => 'supermarket', 'channel' => 'counter'],
+            'items' => [[
+                'product_id' => $product->id,
+                'description' => $product->name,
+                'unit_label' => 'u',
+                'display_quantity' => 1,
+                'display_unit_label' => 'u',
+                'calculation_mode' => 'direct',
+                'meters' => 1,
+                'unit_price' => 100,
+                'discount_amount' => 0,
+            ]],
+        ])
+        ->assertSessionHasErrors('items.0.product_id');
+});

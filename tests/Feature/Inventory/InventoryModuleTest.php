@@ -13,6 +13,7 @@ use App\Modules\SystemSuperadmin\Models\BusinessProfile;
 use App\Modules\SystemSuperadmin\Models\ProductImage;
 use App\Modules\SystemSuperadmin\Models\ProductVariant;
 use App\Modules\SystemSuperadmin\Services\BusinessProfileConfiguration;
+use Inertia\Testing\AssertableInertia as Assert;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 
@@ -194,6 +195,135 @@ it('bloquea servicios cuando el perfil no permite items de servicio', function (
         ->assertSessionHasErrors('item_type');
 });
 
+it('crea producto alquilable con reglas flexibles cuando el perfil lo permite', function () {
+    BusinessProfile::query()->create([
+        'name' => 'Perfil alquileres',
+        'business_type' => 'rentals',
+        'status' => 'active',
+        'configuration' => BusinessProfileConfiguration::normalized([
+            'modules' => ['reservations' => true],
+            'capabilities' => [
+                'uses_lots' => true,
+                'uses_rentals' => true,
+                'uses_reservations' => true,
+            ],
+            'rentals' => ['enabled' => true],
+            'products' => [
+                'catalog_mode' => 'rentals',
+                'item_types' => ['rental', 'physical'],
+                'images_enabled' => true,
+                'gallery_enabled' => true,
+            ],
+        ]),
+        'applied_at' => now(),
+    ]);
+
+    $user = inventoryUser(['inventory.products.view', 'inventory.products.manage']);
+    $unit = ProductUnit::query()->firstOrCreate(['symbol' => 'unidad'], ['name' => 'Unidad', 'is_active' => true]);
+    $category = ProductCategory::query()->firstOrCreate(
+        ['name' => 'Alquileres'],
+        ['slug' => 'alquileres', 'default_unit_id' => $unit->id, 'default_tracking_mode' => Product::TRACKING_GLOBAL, 'is_active' => true],
+    );
+
+    $this->actingAs($user)
+        ->post(route('inventory.products.store'), [
+            'product_category_id' => $category->id,
+            'product_unit_id' => $unit->id,
+            'name' => 'Taladro alquilable',
+            'sku' => 'ALQ-TAL-001',
+            'barcode' => '779200000001',
+            'item_type' => 'rental',
+            'inventory_tracking_mode' => Product::TRACKING_GLOBAL,
+            'purchase_price' => 300,
+            'sale_price' => 50,
+            'minimum_stock_meters' => 1,
+            'is_active' => true,
+            'is_sellable' => true,
+            'is_purchasable' => true,
+            'is_inventory_item' => true,
+            'is_consumable' => false,
+            'is_prepared' => false,
+            'is_digital' => false,
+            'requires_lot' => true,
+            'requires_expiration_date' => false,
+            'is_rentable' => true,
+            'catalog_settings' => [
+                'billing_unit' => 'day',
+                'deposit_suggested' => 200,
+                'late_penalty_daily' => 25,
+            ],
+            'branch_scope' => 'specific',
+            'branch_ids' => [$user->branch_id],
+        ])
+        ->assertRedirect(route('inventory.products.index'));
+
+    $product = Product::query()->where('sku', 'ALQ-TAL-001')->firstOrFail();
+
+    expect($product->item_type)->toBe('rental')
+        ->and($product->requires_lot)->toBeTrue()
+        ->and($product->is_rentable)->toBeTrue()
+        ->and($product->catalog_settings['billing_unit'])->toBe('day');
+});
+
+it('bloquea trazabilidad flexible cuando el perfil no activa esas capacidades', function () {
+    BusinessProfile::query()->create([
+        'name' => 'Perfil tienda simple',
+        'business_type' => 'store',
+        'status' => 'active',
+        'configuration' => BusinessProfileConfiguration::normalized([
+            'products' => [
+                'item_types' => ['physical', 'service'],
+                'allow_service_items' => true,
+            ],
+            'capabilities' => [
+                'uses_lots' => false,
+                'uses_expiration_dates' => false,
+                'uses_rentals' => false,
+            ],
+            'inventory' => [
+                'lot_tracking_optional' => false,
+            ],
+        ]),
+        'applied_at' => now(),
+    ]);
+
+    $user = inventoryUser(['inventory.products.view', 'inventory.products.manage']);
+    $unit = ProductUnit::query()->firstOrCreate(['symbol' => 'unidad'], ['name' => 'Unidad', 'is_active' => true]);
+    $category = ProductCategory::query()->firstOrCreate(
+        ['name' => 'Servicios simples'],
+        ['slug' => 'servicios-simples', 'default_unit_id' => $unit->id, 'default_tracking_mode' => Product::TRACKING_GLOBAL, 'is_active' => true],
+    );
+
+    $this->actingAs($user)
+        ->from(route('inventory.products.create'))
+        ->post(route('inventory.products.store'), [
+            'product_category_id' => $category->id,
+            'product_unit_id' => $unit->id,
+            'name' => 'Servicio con stock mal configurado',
+            'sku' => 'SERV-STOCK-001',
+            'barcode' => '779200000002',
+            'item_type' => 'service',
+            'inventory_tracking_mode' => Product::TRACKING_GLOBAL,
+            'purchase_price' => 0,
+            'sale_price' => 100,
+            'minimum_stock_meters' => 0,
+            'is_active' => true,
+            'is_sellable' => true,
+            'is_purchasable' => false,
+            'is_inventory_item' => true,
+            'is_consumable' => false,
+            'is_prepared' => false,
+            'is_digital' => false,
+            'requires_lot' => true,
+            'requires_expiration_date' => true,
+            'is_rentable' => true,
+            'branch_scope' => 'specific',
+            'branch_ids' => [$user->branch_id],
+        ])
+        ->assertRedirect(route('inventory.products.create'))
+        ->assertSessionHasErrors(['requires_lot', 'requires_expiration_date', 'is_rentable', 'is_inventory_item']);
+});
+
 it('registra bobinas solo para productos con rastreo individual', function () {
     $user = inventoryUser(['inventory.coils.manage']);
     $product = Product::query()->create([
@@ -218,4 +348,42 @@ it('registra bobinas solo para productos con rastreo individual', function () {
 
     expect(ProductCoil::query()->where('barcode', 'COIL-001')->exists())->toBeTrue()
         ->and(InventoryMovement::query()->where('type', 'coil_entry')->exists())->toBeTrue();
+});
+
+it('muestra stock agregado desde lotes en inventario central para productos trazables', function () {
+    $user = inventoryUser(['inventory.products.view']);
+    $product = Product::query()->create([
+        'name' => 'Turquesa prueba lote',
+        'sku' => 'TURQ-LOTE',
+        'barcode' => 'PR-TURQ-LOTE',
+        'inventory_tracking_mode' => Product::TRACKING_COIL,
+        'base_unit' => 'm',
+        'minimum_stock_meters' => 0,
+        'is_active' => true,
+    ]);
+    ProductBranchStock::query()->create([
+        'branch_id' => $user->branch_id,
+        'product_id' => $product->id,
+        'available_meters' => 0,
+        'reserved_meters' => 0,
+        'is_enabled' => true,
+    ]);
+    ProductCoil::query()->create([
+        'branch_id' => $user->branch_id,
+        'product_id' => $product->id,
+        'barcode' => 'LOTE-TURQ-001',
+        'lot_number' => 'L-TURQ',
+        'initial_meters' => 1500,
+        'available_meters' => 1500,
+        'status' => 'available',
+    ]);
+
+    $this->actingAs($user)
+        ->get(route('inventory.stock.index'))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('coilStocks.0.product.name', 'Turquesa prueba lote')
+            ->where('coilStocks.0.available_meters', 1500)
+            ->where('coilStocks.0.source', 'coils')
+        );
 });

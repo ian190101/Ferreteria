@@ -30,6 +30,18 @@ class ActiveBusinessProfile
                 'modules' => $configuration['modules'] ?? [],
                 'submodules' => $configuration['submodules'] ?? [],
                 'capabilities' => $configuration['capabilities'] ?? [],
+                'feature_flags' => $configuration['feature_flags'] ?? [],
+                'entities' => $configuration['entities'] ?? [],
+                'fields' => $configuration['fields'] ?? [],
+                'relationships' => $configuration['relationships'] ?? [],
+                'forms' => $configuration['forms'] ?? [],
+                'states' => $configuration['states'] ?? [],
+                'governance' => $configuration['governance'] ?? [],
+                'field_permissions' => $configuration['field_permissions'] ?? [],
+                'attachments' => $configuration['attachments'] ?? [],
+                'automations' => $configuration['automations'] ?? [],
+                'approvals' => $configuration['approvals'] ?? [],
+                'integrations' => $configuration['integrations'] ?? [],
                 'sales' => $configuration['sales'] ?? [],
                 'purchases' => $configuration['purchases'] ?? [],
                 'contacts' => $configuration['contacts'] ?? [],
@@ -47,6 +59,10 @@ class ActiveBusinessProfile
                 'rentals' => $configuration['rentals'] ?? [],
                 'production_flow' => $configuration['production_flow'] ?? [],
                 'documents' => $configuration['documents'] ?? [],
+                'report_templates' => $configuration['report_templates'] ?? [],
+                'traceability' => $configuration['traceability'] ?? [],
+                'migration' => $configuration['migration'] ?? [],
+                'performance' => $configuration['performance'] ?? [],
                 'policies' => $configuration['policies'] ?? [],
                 'human_resources' => $configuration['human_resources'] ?? [],
                 'ux' => $configuration['ux'] ?? [],
@@ -65,6 +81,7 @@ class ActiveBusinessProfile
             'status' => $payload['status'] ?? 'active',
             'modules' => $payload['modules'] ?? [],
             'capabilities' => $payload['capabilities'] ?? [],
+            'featureFlags' => $payload['feature_flags'] ?? [],
         ];
     }
 
@@ -80,6 +97,13 @@ class ActiveBusinessProfile
         $capabilities = self::payload()['capabilities'] ?? [];
 
         return (bool) ($capabilities[$capability] ?? false);
+    }
+
+    public static function featureEnabled(string $flag): bool
+    {
+        $flags = self::payload()['feature_flags'] ?? [];
+
+        return (bool) ($flags[$flag] ?? false);
     }
 
     public static function salesWorkflow(): string

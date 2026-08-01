@@ -2,6 +2,7 @@
 
 namespace App\Modules\Sales\Services;
 
+use App\Modules\Printing\Services\BusinessDocumentPolicy;
 use App\Modules\SystemSuperadmin\Services\ActiveBusinessProfile;
 
 class SalesDocumentPolicy
@@ -58,6 +59,11 @@ class SalesDocumentPolicy
         return filled($value) ? (string) $value : $this->defaultTerms();
     }
 
+    public function isConfiguredDocumentActive(string $documentType): bool
+    {
+        return app(BusinessDocumentPolicy::class)->isActive($documentType);
+    }
+
     public function visibleTemplateColumns(): array
     {
         $columns = ActiveBusinessProfile::payload()['sales']['visible_columns'] ?? [];
@@ -106,6 +112,7 @@ class SalesDocumentPolicy
             'visibleTemplateColumns' => $this->visibleTemplateColumns(),
             'allowedPaymentMethodCodes' => $this->allowedPaymentMethodCodes(),
             'paymentMethodsByFlow' => ActiveBusinessProfile::payload()['sales']['payment_methods_by_flow'] ?? [],
+            'documents' => app(BusinessDocumentPolicy::class)->summary(),
             'itemMerge' => $itemMerge->summary(),
         ];
     }

@@ -8,6 +8,7 @@ export default function Index({
     policy = {},
     reservations,
     statuses = {},
+    confirmationStatuses = {},
     resources = [],
     workers = [],
     customers = [],
@@ -17,6 +18,7 @@ export default function Index({
     const form = useForm({
         branch_id: selectedBranchId ?? branches[0]?.id ?? '',
         type: policy.rentalsEnabled ? 'rental' : 'reservation',
+        appointment_kind: policy.appointmentKinds?.[0] ?? 'cita',
         reservable_resource_id: '',
         customer_id: '',
         worker_id: '',
@@ -26,6 +28,7 @@ export default function Index({
         title: '',
         start_at: '',
         end_at: '',
+        reminder_at: '',
         amount: 0,
         advance_amount: 0,
         deposit_amount: 0,
@@ -54,12 +57,25 @@ export default function Index({
         event.preventDefault();
         form.post(route('reservations.store'), {
             preserveScroll: true,
-            onSuccess: () => form.reset('reservable_resource_id', 'customer_id', 'worker_id', 'customer_name', 'customer_phone', 'title', 'start_at', 'end_at', 'amount', 'advance_amount', 'deposit_amount', 'penalty_amount', 'condition_before', 'condition_after', 'notes', 'items'),
+            onSuccess: () => form.reset('reservable_resource_id', 'customer_id', 'worker_id', 'customer_name', 'customer_phone', 'title', 'start_at', 'end_at', 'reminder_at', 'amount', 'advance_amount', 'deposit_amount', 'penalty_amount', 'condition_before', 'condition_after', 'notes', 'items'),
         });
     };
 
-    const updateStatus = (reservation, status) => {
-        router.patch(route('reservations.status', reservation.id), { status }, { preserveScroll: true });
+    const updateStatus = (reservation, status, confirmationStatus = null) => {
+        router.patch(route('reservations.status', reservation.id), { status, confirmation_status: confirmationStatus }, { preserveScroll: true });
+    };
+
+    const reschedule = (reservation) => {
+        const start = window.prompt('Nuevo inicio (YYYY-MM-DD HH:mm)', toLocalInputValue(reservation.start_at).replace('T', ' '));
+        if (!start) return;
+        const end = window.prompt('Nuevo fin (YYYY-MM-DD HH:mm)', toLocalInputValue(reservation.end_at).replace('T', ' '));
+        if (!end) return;
+        router.patch(route('reservations.schedule', reservation.id), {
+            start_at: start,
+            end_at: end,
+            reservable_resource_id: reservation.reservable_resource_id ?? '',
+            notes: 'Reprogramacion manual desde agenda.',
+        }, { preserveScroll: true });
     };
 
     return (
@@ -101,6 +117,9 @@ export default function Index({
                                 </div>
 
                                 <div className="grid gap-4 md:grid-cols-3">
+                                    <SelectField label="Tipo de cita" value={form.data.appointment_kind} onChange={(value) => form.setData('appointment_kind', value)} error={form.errors.appointment_kind}>
+                                        {(policy.appointmentKinds ?? ['cita']).map((kind) => <option key={kind} value={kind}>{capitalize(kind)}</option>)}
+                                    </SelectField>
                                     <SelectField label="Cliente registrado" value={form.data.customer_id} onChange={(value) => form.setData('customer_id', value)} error={form.errors.customer_id}>
                                         <option value="">Cliente manual o sin cliente</option>
                                         {customers.map((customer) => <option key={customer.id} value={customer.id}>{customer.name} {customer.phone ? `- ${customer.phone}` : ''}</option>)}
@@ -109,15 +128,18 @@ export default function Index({
                                         <option value="">Sin responsable</option>
                                         {workers.map((worker) => <option key={worker.id} value={worker.id}>{worker.name} {worker.position ? `- ${worker.position}` : ''}</option>)}
                                     </SelectField>
-                                    <Field label="Canal" value={form.data.channel} onChange={(value) => form.setData('channel', value)} error={form.errors.channel} placeholder="mostrador, mesa, delivery, telefono" />
                                 </div>
 
-                                <div className="grid gap-4 md:grid-cols-2">
+                                <div className="grid gap-4 md:grid-cols-3">
+                                    <SelectField label="Canal" value={form.data.channel} onChange={(value) => form.setData('channel', value)} error={form.errors.channel}>
+                                        {(policy.allowedChannels ?? ['mostrador']).map((channel) => <option key={channel} value={channel}>{capitalize(channel)}</option>)}
+                                    </SelectField>
                                     <Field label="Cliente manual" value={form.data.customer_name} onChange={(value) => form.setData('customer_name', value)} error={form.errors.customer_name} />
                                     <Field label="Telefono/contacto" value={form.data.customer_phone} onChange={(value) => form.setData('customer_phone', value)} error={form.errors.customer_phone} />
                                     <Field label="Titulo" value={form.data.title} onChange={(value) => form.setData('title', value)} error={form.errors.title} required />
                                     <Field label="Inicio" type="datetime-local" value={form.data.start_at} onChange={(value) => form.setData('start_at', value)} error={form.errors.start_at} required />
                                     <Field label={selectedType === 'rental' ? 'Fin / devolucion prevista' : 'Fin'} type="datetime-local" value={form.data.end_at} onChange={(value) => form.setData('end_at', value)} error={form.errors.end_at} required />
+                                    {policy.remindersEnabled ? <Field label="Recordatorio" type="datetime-local" value={form.data.reminder_at} onChange={(value) => form.setData('reminder_at', value)} error={form.errors.reminder_at} /> : null}
                                     <Field label="Monto base Bs" type="number" step="0.1" value={form.data.amount} onChange={(value) => form.setData('amount', value)} error={form.errors.amount} />
                                     {policy.advanceEnabled ? <Field label="Anticipo Bs" type="number" step="0.1" value={form.data.advance_amount} onChange={(value) => form.setData('advance_amount', value)} error={form.errors.advance_amount} /> : null}
                                     {selectedType === 'rental' ? <Field label={policy.depositRequired ? 'Garantia requerida Bs' : 'Garantia Bs'} type="number" step="0.1" value={form.data.deposit_amount} onChange={(value) => form.setData('deposit_amount', value)} error={form.errors.deposit_amount} /> : null}
@@ -182,6 +204,7 @@ export default function Index({
                                                 <th className="px-4 py-3">Recurso</th>
                                                 <th className="px-4 py-3">Horario</th>
                                                 <th className="px-4 py-3">Estado</th>
+                                                <th className="px-4 py-3">Confirmacion</th>
                                                 <th className="px-4 py-3 text-right">Total</th>
                                                 <th className="px-4 py-3">Acciones</th>
                                             </tr>
@@ -193,14 +216,20 @@ export default function Index({
                                                         {reservation.reservation_number}
                                                         <br />
                                                         <span className="text-xs font-normal text-slate-500">{reservation.type === 'rental' ? 'Alquiler' : 'Reserva'}</span>
+                                                        <br />
+                                                        <span className="text-xs font-normal text-slate-500">{reservation.appointment_kind ?? '-'}</span>
                                                     </td>
                                                     <td className="px-4 py-3">{reservation.customer?.name ?? reservation.customer_name ?? '-'}<br /><span className="text-xs text-slate-500">{reservation.customer?.phone ?? reservation.customer_phone ?? ''}</span></td>
                                                     <td className="px-4 py-3">{reservation.resource?.name ?? '-'}<br /><span className="text-xs text-slate-500">{reservation.title}</span></td>
-                                                    <td className="px-4 py-3">{formatDate(reservation.start_at)}<br /><span className="text-xs text-slate-500">hasta {formatDate(reservation.end_at)}</span></td>
+                                                    <td className="px-4 py-3">{formatDate(reservation.start_at)}<br /><span className="text-xs text-slate-500">hasta {formatDate(reservation.end_at)}</span>{reservation.reminder_at ? <><br /><span className="text-xs text-amber-600">Recordar {formatDate(reservation.reminder_at)}</span></> : null}</td>
                                                     <td className="px-4 py-3"><StatusBadge label={statuses[reservation.status] ?? reservation.status} /></td>
+                                                    <td className="px-4 py-3"><StatusBadge label={confirmationStatuses[reservation.confirmation_status] ?? reservation.confirmation_status} /></td>
                                                     <td className="px-4 py-3 text-right font-bold">Bs {money(reservation.total_amount)}</td>
                                                     <td className="px-4 py-3">
                                                         <div className="flex flex-wrap gap-2">
+                                                            <button type="button" onClick={() => updateStatus(reservation, 'confirmed', 'confirmed')} className="rounded-full border border-emerald-300 px-2.5 py-1 text-xs font-semibold text-emerald-700 hover:bg-emerald-50">Confirmar</button>
+                                                            <button type="button" onClick={() => updateStatus(reservation, 'no_show')} className="rounded-full border border-amber-300 px-2.5 py-1 text-xs font-semibold text-amber-700 hover:bg-amber-50">No asistio</button>
+                                                            <button type="button" onClick={() => reschedule(reservation)} className="rounded-full border border-blue-300 px-2.5 py-1 text-xs font-semibold text-blue-700 hover:bg-blue-50">Reprogramar</button>
                                                             {Object.entries(statuses).map(([code, label]) => (
                                                                 <button key={code} type="button" onClick={() => updateStatus(reservation, code)} className="rounded-full border border-slate-300 px-2.5 py-1 text-xs font-semibold text-slate-700 hover:border-brand-primary hover:text-brand-primary dark:border-slate-700 dark:text-slate-200">{label}</button>
                                                             ))}
@@ -364,4 +393,18 @@ function formatDate(value) {
     }
 
     return new Date(value).toLocaleString('es-BO', { dateStyle: 'short', timeStyle: 'short' });
+}
+
+function toLocalInputValue(value) {
+    if (!value) {
+        return '';
+    }
+
+    const date = new Date(value);
+    const offset = date.getTimezoneOffset();
+    return new Date(date.getTime() - offset * 60000).toISOString().slice(0, 16);
+}
+
+function capitalize(value) {
+    return String(value || '').replace(/_/g, ' ').replace(/^\w/, (letter) => letter.toUpperCase());
 }

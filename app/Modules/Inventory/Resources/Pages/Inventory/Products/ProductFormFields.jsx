@@ -38,6 +38,11 @@ export function buildProductFormData({ product = null, categories = [], units = 
         duration_minutes: product?.duration_minutes ?? '',
         preparation_minutes: product?.preparation_minutes ?? '',
         attributes: product?.attributes ?? {},
+        catalog_settings: product?.catalog_settings ?? {},
+        requires_lot: product?.requires_lot ?? false,
+        requires_expiration_date: product?.requires_expiration_date ?? false,
+        is_rentable: product?.is_rentable ?? false,
+        catalog_settings_text: stringifyJson(product?.catalog_settings ?? {}),
         custom_attributes: normalizeCustomAttributes(product?.custom_attributes ?? []),
         allowed_units: normalizeAllowedUnits(product?.allowed_units, initialUnit),
         unit_conversions: normalizeUnitConversions(product?.unit_conversions ?? product?.unitConversions ?? []),
@@ -179,6 +184,8 @@ export default function ProductFormFields({ data, setData, errors = {}, thicknes
             is_consumable: itemType === 'internal_supply',
             is_prepared: isPrepared,
             is_digital: itemType === 'digital',
+            is_rentable: itemType === 'rental',
+            requires_lot: itemType === 'rental' ? true : data.requires_lot,
         });
     };
     const addImage = () => setData('images', [
@@ -219,6 +226,7 @@ export default function ProductFormFields({ data, setData, errors = {}, thicknes
                 ))}
             </SelectField>
             <CatalogBehavior data={data} setData={setData} errors={errors} productPolicy={productPolicy} selectItemType={selectItemType} />
+            <CatalogTraceability data={data} setData={setData} errors={errors} productPolicy={productPolicy} />
             <GeneratedField label="SKU" name="sku" value={data.sku} onChange={(event) => setData('sku', event.target.value)} error={errors.sku} onGenerate={generateSku} />
             <GeneratedField label={productPolicy.barcodeRequired ? 'Barcode *' : 'Barcode'} name="barcode" value={data.barcode} onChange={(event) => setData('barcode', event.target.value)} error={errors.barcode} onGenerate={generateBarcode} />
             {productPolicy.imagesEnabled ? (
@@ -488,6 +496,50 @@ function InventoryControl({ data, setData, errors }) {
                         Recomendado para productos simples: focos, cascos, guantes, herramientas comunes y articulos sin vencimiento ni rollos.
                     </p>
                 )}
+            </div>
+        </div>
+    );
+}
+
+function CatalogTraceability({ data, setData, errors, productPolicy }) {
+    const updateSettingsText = (value) => {
+        setData({
+            ...data,
+            catalog_settings_text: value,
+            catalog_settings: parseJsonObject(value),
+        });
+    };
+
+    return (
+        <div className="sm:col-span-2">
+            <div className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-950/40">
+                <div className="flex items-center gap-2">
+                    <h3 className="text-sm font-semibold text-slate-950 dark:text-white">Trazabilidad y reglas del item</h3>
+                    <ContextHelp title="Reglas flexibles del catalogo">
+                        Usa estas opciones para productos con lote, vencimiento, alquiler, medicamento, material de obra, servicio con insumos o producto digital. Solo se aplican si el perfil de negocio tiene esas capacidades activas.
+                    </ContextHelp>
+                </div>
+                <div className="mt-4 grid gap-3 md:grid-cols-3">
+                    <ToggleOption label="Requiere lote/unidad" checked={data.requires_lot} onChange={(value) => setData('requires_lot', value)} disabled={!productPolicy.lotsEnabled} />
+                    <ToggleOption label="Requiere vencimiento" checked={data.requires_expiration_date} onChange={(value) => setData('requires_expiration_date', value)} disabled={!productPolicy.expirationDatesEnabled} />
+                    <ToggleOption label="Alquilable" checked={data.is_rentable} onChange={(value) => setData('is_rentable', value)} disabled={!productPolicy.rentalsEnabled} />
+                </div>
+                <div className="mt-4">
+                    <FormField
+                        label="Configuracion flexible JSON"
+                        name="catalog_settings_text"
+                        value={data.catalog_settings_text ?? ''}
+                        onChange={(event) => updateSettingsText(event.target.value)}
+                        error={errors.catalog_settings}
+                        placeholder='{"material_type":"obra","dosage":"1:2:3","warranty_days":30}'
+                    />
+                    <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
+                        Ejemplos: material de obra, dosis, garantia, link digital, sesiones, reglas de alquiler o datos sanitarios. No permite codigo ejecutable; el backend guarda solo datos.
+                    </p>
+                    {errors.requires_lot ? <p className="mt-1 text-sm text-red-600">{errors.requires_lot}</p> : null}
+                    {errors.requires_expiration_date ? <p className="mt-1 text-sm text-red-600">{errors.requires_expiration_date}</p> : null}
+                    {errors.is_rentable ? <p className="mt-1 text-sm text-red-600">{errors.is_rentable}</p> : null}
+                </div>
             </div>
         </div>
     );
@@ -781,11 +833,28 @@ export function normalizeVariants(variants) {
     }));
 }
 
-function ToggleOption({ label, checked, onChange }) {
+function parseJsonObject(value) {
+    if (!value) {
+        return {};
+    }
+
+    try {
+        const parsed = JSON.parse(value);
+        return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+    } catch {
+        return {};
+    }
+}
+
+function stringifyJson(value) {
+    return value && Object.keys(value).length ? JSON.stringify(value) : '';
+}
+
+function ToggleOption({ label, checked, onChange, disabled = false }) {
     return (
-        <label className="flex items-center justify-between gap-3 rounded-md border border-slate-200 bg-white px-3 py-2 dark:border-slate-800 dark:bg-slate-900">
+        <label className={`flex items-center justify-between gap-3 rounded-md border border-slate-200 bg-white px-3 py-2 dark:border-slate-800 dark:bg-slate-900 ${disabled ? 'opacity-60' : ''}`}>
             <span className="text-xs font-medium text-slate-700 dark:text-slate-300">{label}</span>
-            <input type="checkbox" checked={Boolean(checked)} onChange={(event) => onChange(event.target.checked)} className="h-4 w-4 rounded border-slate-300 text-brand-primary focus:ring-brand-primary" />
+            <input type="checkbox" checked={Boolean(checked)} disabled={disabled} onChange={(event) => onChange(event.target.checked)} className="h-4 w-4 rounded border-slate-300 text-brand-primary focus:ring-brand-primary disabled:cursor-not-allowed" />
         </label>
     );
 }

@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Modules\Printing\Models\PrintDocumentTemplate;
 use App\Modules\Printing\Models\PrintJob;
 use App\Modules\Printing\Models\PrintRule;
+use App\Modules\Printing\Services\BusinessDocumentPolicy;
 use App\Modules\Printing\Services\PrintRenderService;
 use App\Modules\SystemSuperadmin\Models\PrinterProfile;
 use App\Support\BranchAccess;
@@ -20,14 +21,17 @@ use Inertia\Response;
 
 class PrintingController extends Controller
 {
-    public function index(Request $request, PrintRenderService $renderer): Response
+    public function index(Request $request, PrintRenderService $renderer, BusinessDocumentPolicy $documentPolicy): Response
     {
         $branches = UiCatalogCache::activeBranchesForUser($request->user(), ['id', 'name']);
         $branchIds = $request->user()->isSuperAdministrator() ? [] : ($request->user()->accessibleBranchIds() ?: [-1]);
+        $documentTypes = $documentPolicy->printableDocumentTypes();
+        $activeDocumentTypeKeys = array_keys($documentTypes);
 
         $templates = PrintDocumentTemplate::query()
             ->with('branch:id,name')
-            ->when($request->filled('document_type'), fn ($query) => $query->where('document_type', $request->string('document_type')->toString()))
+            ->whereIn('document_type', $activeDocumentTypeKeys ?: ['__none__'])
+            ->when($request->filled('document_type') && in_array($request->string('document_type')->toString(), $activeDocumentTypeKeys, true), fn ($query) => $query->where('document_type', $request->string('document_type')->toString()))
             ->where(fn ($query) => $query->whereNull('branch_id')->when($branchIds !== [], fn ($nested) => $nested->orWhereIn('branch_id', $branchIds)))
             ->orderBy('document_type')
             ->orderByDesc('is_default')
@@ -45,6 +49,7 @@ class PrintingController extends Controller
 
         $rules = PrintRule::query()
             ->with(['branch:id,name', 'printerProfile:id,name,area', 'template:id,name,document_type'])
+            ->whereIn('document_type', $activeDocumentTypeKeys ?: ['__none__'])
             ->where(fn ($query) => $query->whereNull('branch_id')->when($branchIds !== [], fn ($nested) => $nested->orWhereIn('branch_id', $branchIds)))
             ->orderBy('document_type')
             ->orderBy('area')
@@ -59,6 +64,7 @@ class PrintingController extends Controller
 
         $previewTemplate = PrintDocumentTemplate::query()
             ->where('is_active', true)
+            ->whereIn('document_type', $activeDocumentTypeKeys ?: ['__none__'])
             ->where(fn ($query) => $query->whereNull('branch_id')->when($branchIds !== [], fn ($nested) => $nested->orWhereIn('branch_id', $branchIds)))
             ->orderByDesc('is_default')
             ->orderByDesc('updated_at')
@@ -66,7 +72,8 @@ class PrintingController extends Controller
 
         return Inertia::render('Printing/Index', [
             'branches' => $branches,
-            'documentTypes' => $renderer->documentTypes(),
+            'documentTypes' => $documentTypes,
+            'documentPolicy' => $documentPolicy->summary(),
             'areas' => $renderer->areas(),
             'paperTypes' => $renderer->paperTypes(),
             'triggers' => $renderer->triggers(),
@@ -141,11 +148,13 @@ class PrintingController extends Controller
     public function storeRule(Request $request): RedirectResponse
     {
         $renderer = app(PrintRenderService::class);
+        $documentPolicy = app(BusinessDocumentPolicy::class);
+        $documentTypes = $documentPolicy->printableDocumentTypes();
         $data = $request->validate([
             'branch_id' => ['nullable', 'integer', 'exists:branches,id'],
             'printer_profile_id' => ['nullable', 'integer', 'exists:printer_profiles,id'],
             'print_document_template_id' => ['nullable', 'integer', 'exists:print_document_templates,id'],
-            'document_type' => ['required', 'string', Rule::in(array_keys($renderer->documentTypes()))],
+            'document_type' => ['required', 'string', Rule::in(array_keys($documentTypes))],
             'area' => ['required', 'string', Rule::in(array_keys($renderer->areas()))],
             'trigger' => ['required', 'string', Rule::in(array_keys($renderer->triggers()))],
             'copies' => ['required', 'integer', 'min:1', 'max:5'],
@@ -159,8 +168,11 @@ class PrintingController extends Controller
         ]);
 
         abort_unless($this->canUseBranch($request, $data['branch_id'] ?? null), 403);
-        $this->assertRelatedBranch($request, PrinterProfile::query()->find($data['printer_profile_id'] ?? 0)?->branch_id);
-        $this->assertRelatedBranch($request, PrintDocumentTemplate::query()->find($data['print_document_template_id'] ?? 0)?->branch_id);
+        $printer = PrinterProfile::query()->find($data['printer_profile_id'] ?? 0);
+        $template = PrintDocumentTemplate::query()->find($data['print_document_template_id'] ?? 0);
+        $this->assertRelatedBranch($request, $printer?->branch_id);
+        $this->assertRelatedBranch($request, $template?->branch_id);
+        $this->assertTemplateMatchesDocument($template, $data['document_type']);
 
         PrintRule::query()->updateOrCreate(
             [
@@ -184,11 +196,13 @@ class PrintingController extends Controller
 
     public function queueJob(Request $request, PrintRenderService $renderer): RedirectResponse
     {
+        $documentPolicy = app(BusinessDocumentPolicy::class);
+        $documentTypes = $documentPolicy->printableDocumentTypes();
         $data = $request->validate([
             'branch_id' => ['nullable', 'integer', 'exists:branches,id'],
             'printer_profile_id' => ['nullable', 'integer', 'exists:printer_profiles,id'],
             'print_document_template_id' => ['nullable', 'integer', 'exists:print_document_templates,id'],
-            'document_type' => ['required', 'string', Rule::in(array_keys($renderer->documentTypes()))],
+            'document_type' => ['required', 'string', Rule::in(array_keys($documentTypes))],
             'area' => ['required', 'string', Rule::in(array_keys($renderer->areas()))],
             'copies' => ['required', 'integer', 'min:1', 'max:5'],
         ]);
@@ -199,6 +213,7 @@ class PrintingController extends Controller
 
         $this->assertRelatedBranch($request, $template?->branch_id);
         $this->assertRelatedBranch($request, $printer?->branch_id);
+        $this->assertTemplateMatchesDocument($template, $data['document_type']);
 
         PrintJob::query()->create([
             'branch_id' => $data['branch_id'] ?? null,
@@ -236,9 +251,11 @@ class PrintingController extends Controller
     private function validateTemplate(Request $request): array
     {
         $renderer = app(PrintRenderService::class);
+        $documentPolicy = app(BusinessDocumentPolicy::class);
+        $documentTypes = $documentPolicy->printableDocumentTypes();
         $data = $request->validate([
             'branch_id' => ['nullable', 'integer', 'exists:branches,id'],
-            'document_type' => ['required', 'string', Rule::in(array_keys($renderer->documentTypes()))],
+            'document_type' => ['required', 'string', Rule::in(array_keys($documentTypes))],
             'name' => ['required', 'string', 'max:160'],
             'paper_type' => ['required', 'string', Rule::in(array_keys($renderer->paperTypes()))],
             'thermal_width_mm' => ['nullable', 'integer', 'min:40', 'max:120'],
@@ -305,5 +322,14 @@ class PrintingController extends Controller
     private function assertRelatedBranch(Request $request, ?int $branchId): void
     {
         abort_unless($this->canUseBranch($request, $branchId), 403);
+    }
+
+    private function assertTemplateMatchesDocument(?PrintDocumentTemplate $template, string $documentType): void
+    {
+        if ($template === null) {
+            return;
+        }
+
+        abort_unless($template->document_type === $documentType, 422, 'La plantilla seleccionada no corresponde al tipo de documento.');
     }
 }

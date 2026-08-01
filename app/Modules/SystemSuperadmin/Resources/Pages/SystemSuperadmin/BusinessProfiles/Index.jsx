@@ -379,6 +379,7 @@ export default function Index({ activeProfile, drafts, versions, presets = [], o
                                     </SelectField>
                                     <Toggle label="Compra rapida con barcode" checked={form.data.configuration.purchases.barcode_entry} onChange={(value) => setConfig('purchases', 'barcode_entry', value)} />
                                     <Toggle label="Crear producto desde compra" checked={form.data.configuration.purchases.allow_create_product} onChange={(value) => setConfig('purchases', 'allow_create_product', value)} />
+                                    <Toggle label="Elegir compra por producto o por lote" checked={form.data.configuration.purchases.purchase_stock_mode_choice ?? true} onChange={(value) => setConfig('purchases', 'purchase_stock_mode_choice', value)} helpTooltip="Muestra en compras una seleccion clara para ingresar stock global del producto o crear un lote/unidad fisica trazable. Si se desactiva, compras usa automaticamente el rastreo configurado en cada producto." />
                                     <Toggle label="Registrar compra pagada como egreso" checked={form.data.configuration.purchases.register_expense_when_paid} onChange={(value) => setConfig('purchases', 'register_expense_when_paid', value)} />
                                     <Toggle label="Cuentas por pagar" checked={form.data.configuration.finance?.uses_accounts_payable ?? true} onChange={(value) => setConfig('finance', 'uses_accounts_payable', value)} helpTooltip="Mantiene saldos pendientes por proveedor cuando una compra no se paga completa." />
                                 </Section> : null}
@@ -1822,6 +1823,7 @@ function buildComparison(current, next, options) {
         ['Inventario', 'Despachos', options.deliveryModes[current.deliveries.mode], options.deliveryModes[next.deliveries.mode]],
         ['Compras', 'Proveedores en compra', options.entityModes[current.purchases.supplier_mode], options.entityModes[next.purchases.supplier_mode]],
         ['Compras', 'Compra rapida', booleanLabels[String(Boolean(current.purchases.barcode_entry))], booleanLabels[String(Boolean(next.purchases.barcode_entry))]],
+        ['Compras', 'Elegir ingreso producto/lote', booleanLabels[String(Boolean(current.purchases.purchase_stock_mode_choice ?? true))], booleanLabels[String(Boolean(next.purchases.purchase_stock_mode_choice ?? true))]],
         ['Documentos', 'Documentos activos', (current.documents?.active ?? []).join(', '), (next.documents?.active ?? []).join(', ')],
         ['Documentos', 'Serie por sucursal', booleanLabels[String(Boolean(current.documents?.numbering?.by_branch))], booleanLabels[String(Boolean(next.documents?.numbering?.by_branch))]],
         ['Documentos', 'Serie por punto POS', booleanLabels[String(Boolean(current.documents?.numbering?.by_pos_point))], booleanLabels[String(Boolean(next.documents?.numbering?.by_pos_point))]],

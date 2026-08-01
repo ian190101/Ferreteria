@@ -13,6 +13,8 @@ class PrintDocumentTemplate extends AuditableModel
 
     public const DOCUMENT_TYPES = [
         'ticket_pos',
+        'siat_invoice',
+        'credit_note',
         'kitchen_order',
         'service_order',
         'advance_receipt',
@@ -21,6 +23,15 @@ class PrintDocumentTemplate extends AuditableModel
         'delivery_receipt',
         'barcode_label',
         'cash_closing',
+        'medical_record',
+        'dental_chart',
+        'medical_prescription',
+        'consent_form',
+        'loan_contract',
+        'rental_contract',
+        'guarantee_receipt',
+        'construction_budget',
+        'production_order',
     ];
 
     protected $fillable = [
@@ -62,12 +73,23 @@ class PrintDocumentTemplate extends AuditableModel
     private static function defaultFields(string $documentType): array
     {
         return match ($documentType) {
+            'siat_invoice' => ['numero', 'cliente', 'nit', 'cuf', 'items', 'total', 'leyenda'],
+            'credit_note' => ['numero', 'cliente', 'documento_original', 'motivo', 'items', 'total'],
             'kitchen_order' => ['numero', 'mesa', 'items', 'notas', 'hora'],
             'service_order' => ['numero', 'cliente', 'tecnico', 'diagnostico', 'materiales', 'garantia'],
             'reservation_receipt' => ['numero', 'cliente', 'recurso', 'inicio', 'fin', 'anticipo', 'garantia'],
             'simple_contract' => ['cliente', 'condiciones', 'firma_cliente', 'firma_empresa'],
             'barcode_label' => ['producto', 'sku', 'precio', 'barcode'],
             'cash_closing' => ['sucursal', 'usuario', 'efectivo', 'qr_banco', 'diferencia'],
+            'medical_record' => ['numero', 'paciente', 'motivo_consulta', 'diagnostico', 'tratamiento', 'proxima_cita'],
+            'dental_chart' => ['numero', 'paciente', 'tipo_paciente', 'piezas', 'tratamientos', 'observaciones'],
+            'medical_prescription' => ['numero', 'paciente', 'diagnostico', 'indicaciones', 'profesional'],
+            'consent_form' => ['paciente', 'procedimiento', 'riesgos', 'condiciones', 'firma_cliente', 'firma_empresa'],
+            'loan_contract' => ['numero', 'cliente', 'monto', 'interes', 'garantia', 'cuotas', 'firma_cliente', 'firma_empresa'],
+            'rental_contract' => ['numero', 'cliente', 'recurso', 'inicio', 'fin', 'garantia', 'penalidad'],
+            'guarantee_receipt' => ['numero', 'cliente', 'garantia', 'valor_garantia', 'estado'],
+            'construction_budget' => ['numero', 'cliente', 'proyecto', 'materiales', 'mano_obra', 'total'],
+            'production_order' => ['numero', 'producto', 'insumos', 'merma', 'mano_obra', 'costo'],
             default => ['empresa', 'numero', 'cliente', 'items', 'total', 'metodo_pago'],
         };
     }

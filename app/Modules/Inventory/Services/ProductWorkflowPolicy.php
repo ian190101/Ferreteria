@@ -41,6 +41,31 @@ class ProductWorkflowPolicy
         return (bool) (ActiveBusinessProfile::payload()['products']['variants_enabled'] ?? false);
     }
 
+    public function lotsEnabled(): bool
+    {
+        $payload = ActiveBusinessProfile::payload();
+
+        return (bool) ($payload['capabilities']['uses_lots'] ?? false)
+            || (bool) ($payload['inventory']['lot_tracking_optional'] ?? false);
+    }
+
+    public function expirationDatesEnabled(): bool
+    {
+        $payload = ActiveBusinessProfile::payload();
+
+        return (bool) ($payload['capabilities']['uses_expiration_dates'] ?? false)
+            || (bool) ($payload['inventory']['expiration_dates'] ?? false);
+    }
+
+    public function rentalsEnabled(): bool
+    {
+        $payload = ActiveBusinessProfile::payload();
+
+        return in_array('rental', $this->allowedItemTypes(), true)
+            || (bool) ($payload['capabilities']['uses_rentals'] ?? false)
+            || (bool) ($payload['rentals']['enabled'] ?? false);
+    }
+
     public function allowedItemTypes(): array
     {
         $types = ActiveBusinessProfile::payload()['products']['item_types'] ?? ['physical'];
@@ -73,6 +98,9 @@ class ProductWorkflowPolicy
             'imagesEnabled' => $this->imagesEnabled(),
             'galleryEnabled' => $this->galleryEnabled(),
             'variantsEnabled' => $this->variantsEnabled(),
+            'lotsEnabled' => $this->lotsEnabled(),
+            'expirationDatesEnabled' => $this->expirationDatesEnabled(),
+            'rentalsEnabled' => $this->rentalsEnabled(),
             'allowedItemTypes' => $this->allowedItemTypes(),
             'creationContext' => $this->creationContext(),
             'canCreateFromPurchase' => $this->canCreateFromPurchase(),

@@ -11,6 +11,7 @@ use App\Modules\Inventory\Models\Product;
 use App\Modules\Inventory\Models\ProductBranchStock;
 use App\Modules\Inventory\Models\ProductCoil;
 use App\Modules\Inventory\Services\ProductWorkflowPolicy;
+use App\Modules\Pos\Services\PosWorkflowPolicy;
 use App\Modules\Sales\Events\SaleNoteIssued;
 use App\Modules\Sales\Http\Requests\ConvertQuotationRequest;
 use App\Modules\Sales\Http\Requests\StoreSaleDocumentRequest;
@@ -166,6 +167,15 @@ class SaleController extends Controller
             $subtotal = round($items->sum(fn ($item) => (float) $item['meters'] * (float) $item['unit_price']), 2);
             $discountTotal = round($items->sum(fn ($item) => (float) $item['discount_amount']), 2);
             $total = round($items->sum('total'), 2);
+            if ($request->boolean('from_pos') && $request->filled('pos_payment_amount') && ! app(PosWorkflowPolicy::class)->allowsPartialBalance()) {
+                $posPayment = (float) $request->input('pos_payment_amount');
+
+                if (abs($posPayment - $total) > 0.01) {
+                    throw ValidationException::withMessages([
+                        'pos_payment_amount' => 'Este perfil POS exige cobrar el total completo en un solo cierre.',
+                    ]);
+                }
+            }
             [$advancePercentage, $advanceAmount] = $this->advanceValues($advanceOption, $total, (float) $request->input('advance_amount_input', 0), $advanceMode);
             $commercialPolicy->assertCreditAllowed($customer, $total);
 
@@ -178,7 +188,7 @@ class SaleController extends Controller
                 : null;
 
             $sale = Sale::query()->create([
-                ...$request->safe()->except(['items', 'source_quotation_id', 'advance_mode', 'advance_amount_input', 'pos_payment_method_id', 'pos_payment_amount', 'pos_payment_reference']),
+                ...$request->safe()->except(['items', 'source_quotation_id', 'advance_mode', 'advance_amount_input', 'from_pos', 'pos_context', 'pos_payment_method_id', 'pos_payment_amount', 'pos_payment_reference']),
                 'terms' => filled($request->validated('terms')) ? $request->validated('terms') : app(SalesDocumentPolicy::class)->defaultTermsFor($request->string('document_type')->toString()),
                 'receipt_number' => $request->filled('receipt_number')
                     ? $request->validated('receipt_number')

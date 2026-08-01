@@ -7,8 +7,11 @@ import SelectField from '../../../../../Shared/Resources/Components/SelectField'
 import ContextHelp from '../../../../../Shared/Resources/Components/ContextHelp';
 
 const sectionOrder = [
+    ['entities', 'entities', 'Entidades'],
     ['customFields', 'custom-fields', 'Campos personalizados'],
+    ['workflows', 'workflows', 'Flujos'],
     ['states', 'states', 'Estados'],
+    ['workflowTransitions', 'workflow-transitions', 'Transiciones'],
     ['resources', 'resources', 'Recursos'],
     ['priceLists', 'price-lists', 'Precios'],
     ['commissions', 'commissions', 'Comisiones'],
@@ -20,9 +23,12 @@ const sectionOrder = [
 ];
 
 const emptyForms = {
-    customFields: { entity_type: 'product', code: '', label: '', type: 'text', options_csv: '', validation_rules_text: '', is_required: false, visible_in_forms: true, visible_in_documents: false, visible_in_reports: false, sort_order: 0, is_active: true },
-    states: { entity_type: 'service_order', code: '', label: '', color: '#2563eb', is_initial: false, is_final: false, allowed_transitions_csv: '', required_permission: '', actions_text: '', sort_order: 0, is_active: true },
-    resources: { branch_id: '', type: 'table', code: '', name: '', capacity: '', availability_rules_text: '', metadata_text: '', is_active: true },
+    entities: { code: '', label: '', plural_label: '', base_entity: '', module: '', icon: '', mode: 'optional', is_visible: true, is_editable: true, is_required: false, is_exportable: false, is_reportable: false, is_auditable: true, is_sensitive: false, retention_policy: 'standard', permissions_text: '', settings_text: '', sort_order: 0, is_active: true },
+    customFields: { entity_type: 'product', code: '', label: '', help_text: '', placeholder: '', type: 'text', group: '', options_csv: '', validation_rules_text: '', default_value_text: '', format: '', min_value: '', max_value: '', relation_entity_type: '', metadata_text: '', is_required: false, visible_in_forms: true, visible_in_table: false, visible_in_documents: false, visible_in_reports: false, is_exportable: false, is_auditable: true, is_sensitive: false, is_encrypted: false, is_read_only: false, sort_order: 0, is_active: true },
+    workflows: { entity_type: 'service_order', code: '', name: '', description: '', initial_state_code: '', final_state_codes_csv: '', settings_text: '', is_default: false, is_active: true },
+    states: { entity_type: 'service_order', workflow_code: '', code: '', label: '', color: '#2563eb', state_type: 'intermediate', is_initial: false, is_final: false, allowed_transitions_csv: '', required_permission: '', entry_validations_text: '', actions_text: '', exit_actions_text: '', sort_order: 0, is_active: true },
+    workflowTransitions: { workflow_definition_id: '', from_state_code: '', to_state_code: '', label: '', required_permission: '', conditions_text: '', validations_text: '', actions_text: '', requires_reason: false, is_reversible: false, sort_order: 0, is_active: true },
+    resources: { branch_id: '', assigned_worker_id: '', type: 'table', code: '', name: '', capacity: '', status: 'available', location: '', maintenance_starts_at: '', maintenance_ends_at: '', availability_rules_text: '', metadata_text: '', is_active: true },
     priceLists: { branch_id: '', code: '', name: '', channel: 'counter', currency_code: 'BOB', starts_at: '', ends_at: '', rules_text: '', is_active: true },
     commissions: { branch_id: '', role_name: '', responsible_type: 'seller', product_id: '', calculation_base: 'subtotal', type: 'percentage', value: 0, conditions_text: '', is_active: true },
     notifications: { code: '', name: '', trigger: 'stock_low', channels_csv: 'system', recipients_text: '', conditions_text: '', is_active: true },
@@ -34,8 +40,11 @@ const emptyForms = {
 
 export default function Index({
     summary = {},
+    entities = [],
     customFields = [],
+    workflows = [],
     states = [],
+    workflowTransitions = [],
     resources = [],
     priceLists = [],
     commissions = [],
@@ -45,13 +54,14 @@ export default function Index({
     licenses = [],
     imports = [],
     branches = [],
+    workers = [],
     products = [],
     options = {},
 }) {
     const [activeSection, setActiveSection] = useState('customFields');
     const [editing, setEditing] = useState(null);
     const currentRouteSection = sectionOrder.find(([key]) => key === activeSection)?.[1] ?? 'custom-fields';
-    const rows = { customFields, states, resources, priceLists, commissions, notifications, currencies, printers, licenses, imports }[activeSection] ?? [];
+    const rows = { entities, customFields, workflows, states, workflowTransitions, resources, priceLists, commissions, notifications, currencies, printers, licenses, imports }[activeSection] ?? [];
     const form = useForm(emptyForms[activeSection]);
 
     const sectionLabel = sectionOrder.find(([key]) => key === activeSection)?.[2] ?? 'Configuracion';
@@ -146,7 +156,7 @@ export default function Index({
                         </div>
 
                         <div className="grid gap-4 md:grid-cols-2">
-                            <DynamicFormFields section={activeSection} form={form} options={options} branches={branches} products={products} />
+                            <DynamicFormFields section={activeSection} form={form} options={options} branches={branches} workers={workers} products={products} />
                         </div>
 
                         <button type="submit" disabled={form.processing} className="mt-5 w-full rounded-2xl bg-brand-primary px-4 py-3 text-sm font-bold text-white shadow-sm shadow-brand-primary/20 disabled:opacity-60">
@@ -206,7 +216,7 @@ export default function Index({
     );
 }
 
-function DynamicFormFields({ section, form, options, branches, products }) {
+function DynamicFormFields({ section, form, options, branches, workers, products }) {
     const set = (key, value) => form.setData(key, value);
     const bool = (key, label, helpTooltip = null) => (
         <label className="flex min-h-[3.25rem] items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700 dark:border-slate-800 dark:bg-white/5 dark:text-slate-200">
@@ -221,13 +231,54 @@ function DynamicFormFields({ section, form, options, branches, products }) {
                 <OptionSelect label="Entidad" value={form.data.entity_type} onChange={(value) => set('entity_type', value)} options={options.entities} />
                 <FormField label="Codigo interno" value={form.data.code} onChange={(event) => set('code', event.target.value)} error={form.errors.code} helpTooltip="Usa minusculas, numeros y guion bajo. Ejemplo: placa_vehiculo." />
                 <FormField label="Nombre visible" value={form.data.label} onChange={(event) => set('label', event.target.value)} error={form.errors.label} />
+                <FormField label="Ayuda para el usuario" value={form.data.help_text} onChange={(event) => set('help_text', event.target.value)} />
+                <FormField label="Placeholder" value={form.data.placeholder} onChange={(event) => set('placeholder', event.target.value)} />
                 <OptionSelect label="Tipo" value={form.data.type} onChange={(value) => set('type', value)} options={options.fieldTypes} />
+                <FormField label="Grupo o seccion" value={form.data.group} onChange={(event) => set('group', event.target.value)} helpText="Ejemplo: Datos clinicos, Vehiculo, Garantia." />
                 <FormField label="Opciones separadas por coma" value={form.data.options_csv} onChange={(event) => set('options_csv', event.target.value)} helpText="Solo aplica para seleccion unica o multiple." />
                 <FormField label="Validacion JSON opcional" value={form.data.validation_rules_text} onChange={(event) => set('validation_rules_text', event.target.value)} />
+                <FormField label="Valor por defecto JSON/texto" value={form.data.default_value_text} onChange={(event) => set('default_value_text', event.target.value)} />
+                <FormField label="Formato" value={form.data.format} onChange={(event) => set('format', event.target.value)} helpText="Ejemplo: placa, celular, ci, moneda." />
+                <FormField label="Valor minimo" type="number" step="0.000001" value={form.data.min_value} onChange={(event) => set('min_value', event.target.value)} />
+                <FormField label="Valor maximo" type="number" step="0.000001" value={form.data.max_value} onChange={(event) => set('max_value', event.target.value)} />
+                <OptionSelect label="Entidad relacionada" value={form.data.relation_entity_type} onChange={(value) => set('relation_entity_type', value)} options={{ '': 'Sin relacion', ...(options.entities ?? {}) }} />
+                <FormField label="Metadatos JSON" value={form.data.metadata_text} onChange={(event) => set('metadata_text', event.target.value)} />
                 {bool('is_required', 'Obligatorio')}
                 {bool('visible_in_forms', 'Visible en formularios')}
+                {bool('visible_in_table', 'Visible en tabla')}
                 {bool('visible_in_documents', 'Visible en documentos')}
                 {bool('visible_in_reports', 'Visible en reportes')}
+                {bool('is_exportable', 'Exportable')}
+                {bool('is_auditable', 'Auditable')}
+                {bool('is_sensitive', 'Dato sensible')}
+                {bool('is_encrypted', 'Cifrar valor')}
+                {bool('is_read_only', 'Solo lectura')}
+                <FormField label="Orden" type="number" value={form.data.sort_order} onChange={(event) => set('sort_order', event.target.value)} />
+                {bool('is_active', 'Activo')}
+            </>
+        );
+    }
+
+    if (section === 'entities') {
+        return (
+            <>
+                <FormField label="Codigo interno" value={form.data.code} onChange={(event) => set('code', event.target.value)} error={form.errors.code} helpTooltip="Usa minusculas, numeros y guion bajo. No puede repetir una entidad base como product o customer." />
+                <FormField label="Nombre visible" value={form.data.label} onChange={(event) => set('label', event.target.value)} error={form.errors.label} />
+                <FormField label="Nombre plural" value={form.data.plural_label} onChange={(event) => set('plural_label', event.target.value)} />
+                <OptionSelect label="Entidad base opcional" value={form.data.base_entity} onChange={(value) => set('base_entity', value)} options={{ '': 'Sin entidad base', ...(options.baseEntities ?? options.entities ?? {}) }} />
+                <OptionSelect label="Modulo relacionado" value={form.data.module} onChange={(value) => set('module', value)} options={{ '': 'Sin modulo directo', ...(options.modules ?? {}) }} />
+                <FormField label="Icono lucide opcional" value={form.data.icon} onChange={(event) => set('icon', event.target.value)} helpText="Ejemplo: Stethoscope, Car, PawPrint." />
+                <OptionSelect label="Modo" value={form.data.mode} onChange={(value) => set('mode', value)} options={options.entityModes} />
+                <OptionSelect label="Retencion" value={form.data.retention_policy} onChange={(value) => set('retention_policy', value)} options={options.retentionPolicies} />
+                {bool('is_visible', 'Visible')}
+                {bool('is_editable', 'Editable')}
+                {bool('is_required', 'Obligatoria')}
+                {bool('is_exportable', 'Exportable')}
+                {bool('is_reportable', 'Reportable')}
+                {bool('is_auditable', 'Auditable')}
+                {bool('is_sensitive', 'Dato sensible')}
+                <FormField label="Permisos JSON" value={form.data.permissions_text} onChange={(event) => set('permissions_text', event.target.value)} helpText='Ejemplo: {"view":["admin"],"edit":["gerente"]}' />
+                <FormField label="Configuracion JSON" value={form.data.settings_text} onChange={(event) => set('settings_text', event.target.value)} />
                 <FormField label="Orden" type="number" value={form.data.sort_order} onChange={(event) => set('sort_order', event.target.value)} />
                 {bool('is_active', 'Activo')}
             </>
@@ -238,14 +289,53 @@ function DynamicFormFields({ section, form, options, branches, products }) {
         return (
             <>
                 <OptionSelect label="Entidad" value={form.data.entity_type} onChange={(value) => set('entity_type', value)} options={options.entities} />
+                <FormField label="Codigo de flujo opcional" value={form.data.workflow_code} onChange={(event) => set('workflow_code', event.target.value)} helpText="Debe coincidir con el codigo del flujo si este estado pertenece a uno." />
                 <FormField label="Codigo interno" value={form.data.code} onChange={(event) => set('code', event.target.value)} />
                 <FormField label="Nombre visible" value={form.data.label} onChange={(event) => set('label', event.target.value)} />
                 <FormField label="Color" type="color" value={form.data.color} onChange={(event) => set('color', event.target.value)} />
+                <OptionSelect label="Tipo de estado" value={form.data.state_type} onChange={(value) => set('state_type', value)} options={options.stateTypes} />
                 {bool('is_initial', 'Estado inicial')}
                 {bool('is_final', 'Estado final')}
                 <FormField label="Transiciones permitidas" value={form.data.allowed_transitions_csv} onChange={(event) => set('allowed_transitions_csv', event.target.value)} helpText="Codigos separados por coma. Ejemplo: en_proceso,listo." />
                 <FormField label="Permiso requerido" value={form.data.required_permission} onChange={(event) => set('required_permission', event.target.value)} />
+                <FormField label="Validaciones de entrada JSON" value={form.data.entry_validations_text} onChange={(event) => set('entry_validations_text', event.target.value)} />
                 <FormField label="Acciones JSON" value={form.data.actions_text} onChange={(event) => set('actions_text', event.target.value)} />
+                <FormField label="Acciones de salida JSON" value={form.data.exit_actions_text} onChange={(event) => set('exit_actions_text', event.target.value)} />
+                <FormField label="Orden" type="number" value={form.data.sort_order} onChange={(event) => set('sort_order', event.target.value)} />
+                {bool('is_active', 'Activo')}
+            </>
+        );
+    }
+
+    if (section === 'workflows') {
+        return (
+            <>
+                <OptionSelect label="Entidad" value={form.data.entity_type} onChange={(value) => set('entity_type', value)} options={options.entities} />
+                <FormField label="Codigo interno" value={form.data.code} onChange={(event) => set('code', event.target.value)} error={form.errors.code} />
+                <FormField label="Nombre del flujo" value={form.data.name} onChange={(event) => set('name', event.target.value)} error={form.errors.name} />
+                <FormField label="Descripcion" value={form.data.description} onChange={(event) => set('description', event.target.value)} />
+                <FormField label="Estado inicial" value={form.data.initial_state_code} onChange={(event) => set('initial_state_code', event.target.value)} />
+                <FormField label="Estados finales" value={form.data.final_state_codes_csv} onChange={(event) => set('final_state_codes_csv', event.target.value)} helpText="Codigos separados por coma. Ejemplo: entregado,cancelado." />
+                <FormField label="Configuracion JSON" value={form.data.settings_text} onChange={(event) => set('settings_text', event.target.value)} />
+                {bool('is_default', 'Flujo por defecto')}
+                {bool('is_active', 'Activo')}
+            </>
+        );
+    }
+
+    if (section === 'workflowTransitions') {
+        return (
+            <>
+                <WorkflowSelect value={form.data.workflow_definition_id} onChange={(value) => set('workflow_definition_id', value)} workflows={options.workflows ?? []} />
+                <FormField label="Desde estado" value={form.data.from_state_code} onChange={(event) => set('from_state_code', event.target.value)} />
+                <FormField label="Hacia estado" value={form.data.to_state_code} onChange={(event) => set('to_state_code', event.target.value)} />
+                <FormField label="Etiqueta" value={form.data.label} onChange={(event) => set('label', event.target.value)} />
+                <FormField label="Permiso requerido" value={form.data.required_permission} onChange={(event) => set('required_permission', event.target.value)} />
+                <FormField label="Condiciones JSON" value={form.data.conditions_text} onChange={(event) => set('conditions_text', event.target.value)} />
+                <FormField label="Validaciones JSON" value={form.data.validations_text} onChange={(event) => set('validations_text', event.target.value)} />
+                <FormField label="Acciones JSON" value={form.data.actions_text} onChange={(event) => set('actions_text', event.target.value)} />
+                {bool('requires_reason', 'Requiere motivo')}
+                {bool('is_reversible', 'Reversible')}
                 <FormField label="Orden" type="number" value={form.data.sort_order} onChange={(event) => set('sort_order', event.target.value)} />
                 {bool('is_active', 'Activo')}
             </>
@@ -256,11 +346,21 @@ function DynamicFormFields({ section, form, options, branches, products }) {
         return (
             <>
                 <BranchSelect value={form.data.branch_id} onChange={(value) => set('branch_id', value)} branches={branches} />
+                <WorkerSelect value={form.data.assigned_worker_id} onChange={(value) => set('assigned_worker_id', value)} workers={workers} />
                 <OptionSelect label="Tipo de recurso" value={form.data.type} onChange={(value) => set('type', value)} options={options.resourceTypes} />
+                <OptionSelect label="Estado operativo" value={form.data.status} onChange={(value) => set('status', value)} options={options.resourceStatuses} />
                 <FormField label="Codigo" value={form.data.code} onChange={(event) => set('code', event.target.value)} />
                 <FormField label="Nombre" value={form.data.name} onChange={(event) => set('name', event.target.value)} />
                 <FormField label="Capacidad" type="number" value={form.data.capacity} onChange={(event) => set('capacity', event.target.value)} />
-                <FormField label="Disponibilidad JSON" value={form.data.availability_rules_text} onChange={(event) => set('availability_rules_text', event.target.value)} />
+                <FormField label="Ubicacion" value={form.data.location} onChange={(event) => set('location', event.target.value)} />
+                <FormField label="Mantenimiento desde" type="datetime-local" value={form.data.maintenance_starts_at} onChange={(event) => set('maintenance_starts_at', event.target.value)} />
+                <FormField label="Mantenimiento hasta" type="datetime-local" value={form.data.maintenance_ends_at} onChange={(event) => set('maintenance_ends_at', event.target.value)} />
+                <div className="md:col-span-2">
+                    <FormField label="Reglas de disponibilidad JSON" value={form.data.availability_rules_text} onChange={(event) => set('availability_rules_text', event.target.value)} />
+                    <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
+                        Ejemplo: {"{\"days\":[1,2,3,4,5],\"time_ranges\":[{\"start\":\"08:00\",\"end\":\"18:00\"}],\"blocked_dates\":[\"2026-08-06\"],\"buffer_minutes\":15}"}
+                    </p>
+                </div>
                 <FormField label="Metadatos JSON" value={form.data.metadata_text} onChange={(event) => set('metadata_text', event.target.value)} />
                 {bool('is_active', 'Activo')}
             </>
@@ -391,6 +491,19 @@ function BranchSelect({ value, onChange, branches }) {
     );
 }
 
+function WorkerSelect({ value, onChange, workers }) {
+    return (
+        <SelectField label="Responsable asignado" value={value ?? ''} onChange={(event) => onChange(event.target.value)}>
+            <option value="">Sin responsable fijo</option>
+            {workers.map((worker) => (
+                <option key={worker.id} value={worker.id}>
+                    {worker.name}{worker.position ? ` - ${worker.position}` : ''}
+                </option>
+            ))}
+        </SelectField>
+    );
+}
+
 function ProductSelect({ value, onChange, products }) {
     return (
         <SelectField label="Producto" value={value ?? ''} onChange={(event) => onChange(event.target.value)}>
@@ -400,10 +513,22 @@ function ProductSelect({ value, onChange, products }) {
     );
 }
 
+function WorkflowSelect({ value, onChange, workflows }) {
+    return (
+        <SelectField label="Flujo" value={value ?? ''} onChange={(event) => onChange(event.target.value)}>
+            <option value="">Seleccionar flujo</option>
+            {workflows.map((workflow) => <option key={workflow.id} value={workflow.id}>{workflow.name}</option>)}
+        </SelectField>
+    );
+}
+
 function sectionHelp(section) {
     return {
+        entities: 'Define entidades propias del negocio como paciente, vehiculo, mascota, prestamo, proyecto, garantia o equipo. Crear una entidad aqui no cambia ferreteria hasta que se active el motor correspondiente en el perfil.',
         customFields: 'Permite agregar datos propios por entidad, por ejemplo placa en taller, historia clinica en servicios o talla en tienda.',
+        workflows: 'Define flujos por entidad, como reparacion, prestamo, comanda, tratamiento o alquiler. Un flujo controla estados y transiciones.',
         states: 'Define estados y transiciones para reservas, comandas, servicios o produccion sin escribir codigo nuevo.',
+        workflowTransitions: 'Define pasos permitidos entre estados, permisos, validaciones, motivo obligatorio y acciones automaticas.',
         resources: 'Registra mesas, tecnicos, habitaciones, equipos, vehiculos o cualquier recurso que pueda reservarse.',
         priceLists: 'Configura precios por canal, sucursal, cliente u horario. Las reglas se aplicaran cuando el perfil active precios avanzados.',
         commissions: 'Define comisiones por vendedor, mesero, tecnico, producto, margen o cobro.',
@@ -417,9 +542,12 @@ function sectionHelp(section) {
 
 function columnsFor(section) {
     return {
+        entities: [{ key: 'label', label: 'Entidad' }, { key: 'code', label: 'Codigo' }, { key: 'mode', label: 'Modo' }, { key: 'is_active', label: 'Estado' }],
         customFields: [{ key: 'label', label: 'Nombre' }, { key: 'entity_type', label: 'Entidad' }, { key: 'type', label: 'Tipo' }, { key: 'is_active', label: 'Estado' }],
+        workflows: [{ key: 'name', label: 'Flujo' }, { key: 'entity_type', label: 'Entidad' }, { key: 'initial_state_code', label: 'Inicial' }, { key: 'is_default', label: 'Default' }],
         states: [{ key: 'label', label: 'Estado' }, { key: 'entity_type', label: 'Entidad' }, { key: 'is_initial', label: 'Inicial' }, { key: 'is_final', label: 'Final' }],
-        resources: [{ key: 'name', label: 'Recurso' }, { key: 'type', label: 'Tipo' }, { key: 'branch.name', label: 'Sucursal' }, { key: 'is_active', label: 'Estado' }],
+        workflowTransitions: [{ key: 'workflow.name', label: 'Flujo' }, { key: 'from_state_code', label: 'Desde' }, { key: 'to_state_code', label: 'Hacia' }, { key: 'requires_reason', label: 'Motivo' }],
+        resources: [{ key: 'name', label: 'Recurso' }, { key: 'type', label: 'Tipo' }, { key: 'branch.name', label: 'Sucursal' }, { key: 'status', label: 'Estado operativo' }, { key: 'assigned_worker.name', label: 'Responsable' }],
         priceLists: [{ key: 'name', label: 'Lista' }, { key: 'channel', label: 'Canal' }, { key: 'currency_code', label: 'Moneda' }, { key: 'is_active', label: 'Estado' }],
         commissions: [{ key: 'responsible_type', label: 'Responsable' }, { key: 'calculation_base', label: 'Base' }, { key: 'type', label: 'Tipo' }, { key: 'value', label: 'Valor' }],
         notifications: [{ key: 'name', label: 'Alerta' }, { key: 'trigger', label: 'Disparador' }, { key: 'channels', label: 'Canales' }, { key: 'is_active', label: 'Estado' }],
@@ -452,15 +580,27 @@ function formFromRow(section, row) {
     const base = { ...emptyForms[section] };
 
     if (section === 'customFields') {
-        return { ...base, ...pick(row, ['entity_type', 'code', 'label', 'type', 'is_required', 'visible_in_forms', 'visible_in_documents', 'visible_in_reports', 'sort_order', 'is_active']), options_csv: (row.options ?? []).join(', '), validation_rules_text: stringify(row.validation_rules) };
+        return { ...base, ...pick(row, ['entity_type', 'code', 'label', 'help_text', 'placeholder', 'type', 'group', 'format', 'min_value', 'max_value', 'relation_entity_type', 'is_required', 'visible_in_forms', 'visible_in_table', 'visible_in_documents', 'visible_in_reports', 'is_exportable', 'is_auditable', 'is_sensitive', 'is_encrypted', 'is_read_only', 'sort_order', 'is_active']), options_csv: (row.options ?? []).join(', '), validation_rules_text: stringify(row.validation_rules), default_value_text: stringify(row.default_value), metadata_text: stringify(row.metadata) };
+    }
+
+    if (section === 'entities') {
+        return { ...base, ...pick(row, ['code', 'label', 'plural_label', 'base_entity', 'module', 'icon', 'mode', 'is_visible', 'is_editable', 'is_required', 'is_exportable', 'is_reportable', 'is_auditable', 'is_sensitive', 'retention_policy', 'sort_order', 'is_active']), permissions_text: stringify(row.permissions), settings_text: stringify(row.settings) };
     }
 
     if (section === 'states') {
-        return { ...base, ...pick(row, ['entity_type', 'code', 'label', 'color', 'is_initial', 'is_final', 'required_permission', 'sort_order', 'is_active']), allowed_transitions_csv: (row.allowed_transitions ?? []).join(', '), actions_text: stringify(row.actions) };
+        return { ...base, ...pick(row, ['entity_type', 'workflow_code', 'code', 'label', 'color', 'state_type', 'is_initial', 'is_final', 'required_permission', 'sort_order', 'is_active']), allowed_transitions_csv: (row.allowed_transitions ?? []).join(', '), entry_validations_text: stringify(row.entry_validations), actions_text: stringify(row.actions), exit_actions_text: stringify(row.exit_actions) };
+    }
+
+    if (section === 'workflows') {
+        return { ...base, ...pick(row, ['entity_type', 'code', 'name', 'description', 'initial_state_code', 'is_default', 'is_active']), final_state_codes_csv: (row.final_state_codes ?? []).join(', '), settings_text: stringify(row.settings) };
+    }
+
+    if (section === 'workflowTransitions') {
+        return { ...base, ...pick(row, ['workflow_definition_id', 'from_state_code', 'to_state_code', 'label', 'required_permission', 'requires_reason', 'is_reversible', 'sort_order', 'is_active']), conditions_text: stringify(row.conditions), validations_text: stringify(row.validations), actions_text: stringify(row.actions) };
     }
 
     if (section === 'resources') {
-        return { ...base, ...pick(row, ['branch_id', 'type', 'code', 'name', 'capacity', 'is_active']), availability_rules_text: stringify(row.availability_rules), metadata_text: stringify(row.metadata) };
+        return { ...base, ...pick(row, ['branch_id', 'assigned_worker_id', 'type', 'code', 'name', 'capacity', 'status', 'location', 'is_active']), maintenance_starts_at: toInputDateTime(row.maintenance_starts_at), maintenance_ends_at: toInputDateTime(row.maintenance_ends_at), availability_rules_text: stringify(row.availability_rules), metadata_text: stringify(row.metadata) };
     }
 
     if (section === 'priceLists') {

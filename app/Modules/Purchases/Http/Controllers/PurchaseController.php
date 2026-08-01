@@ -78,6 +78,16 @@ class PurchaseController extends Controller
             'categories' => UiCatalogCache::productCategories(),
             'thicknesses' => UiCatalogCache::activeThicknesses(),
             'attributeDefinitions' => UiCatalogCache::productAttributeDefinitions(),
+            'lotOptions' => ProductCoil::query()
+                ->when(true, fn ($query) => BranchAccess::apply($query, $request->user(), 'product_coils.branch_id'))
+                ->whereNotNull('lot_number')
+                ->where('lot_number', '<>', '')
+                ->select('lot_number')
+                ->distinct()
+                ->orderBy('lot_number')
+                ->limit(250)
+                ->pluck('lot_number')
+                ->values(),
             'suppliers' => Inertia::defer(fn () => $workflow->supplierHidden() ? [] : UiCatalogCache::activeSuppliers(), 'purchase-form-catalogs'),
             'products' => Inertia::defer(fn () => UiCatalogCache::activeProductsWithThicknessForUser($request->user()), 'purchase-form-catalogs'),
         ]);
@@ -151,8 +161,8 @@ class PurchaseController extends Controller
                         $coil = ProductCoil::query()->create([
                             'branch_id' => $purchase->branch_id,
                             'product_id' => $product->id,
-                            'barcode' => $item['coil_barcode'],
-                            'lot_number' => $item['lot_number'],
+                            'barcode' => filled($item['coil_barcode'] ?? null) ? $item['coil_barcode'] : null,
+                            'lot_number' => filled($item['lot_number'] ?? null) ? $item['lot_number'] : null,
                             'initial_meters' => $item['meters'],
                             'available_meters' => $item['meters'],
                             'initial_kg' => $item['kilograms'],
@@ -281,7 +291,10 @@ class PurchaseController extends Controller
             ->findOrFail($payload['product_category_id']);
         $unit = ProductUnit::query()->find($payload['product_unit_id'] ?? $category->default_unit_id);
         $baseUnit = $unit?->symbol ?? $category->defaultUnit?->symbol ?? 'unidad';
-        $tracking = $payload['inventory_tracking_mode'] ?? $category->default_tracking_mode ?? Product::TRACKING_GLOBAL;
+        $purchaseWorkflow = app(PurchaseWorkflowPolicy::class);
+        $tracking = $purchaseWorkflow->purchaseStockModeChoiceEnabled()
+            ? ($item['purchase_stock_mode'] ?? $payload['inventory_tracking_mode'] ?? $category->default_tracking_mode ?? Product::TRACKING_GLOBAL)
+            : ($payload['inventory_tracking_mode'] ?? $category->default_tracking_mode ?? Product::TRACKING_GLOBAL);
         $productPolicy = app(ProductWorkflowPolicy::class);
         $allowedUnits = $productPolicy->unitEquivalencesEnabled()
             ? collect($payload['allowed_units'] ?? [])

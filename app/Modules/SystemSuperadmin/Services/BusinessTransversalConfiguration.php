@@ -5,14 +5,39 @@ namespace App\Modules\SystemSuperadmin\Services;
 class BusinessTransversalConfiguration
 {
     /**
+     * @return array<string, string>
+     */
+    public static function baseEntities(): array
+    {
+        return [
+            'product' => 'Producto',
+            'customer' => 'Cliente',
+            'supplier' => 'Proveedor',
+            'sale' => 'Venta',
+            'quote' => 'Cotizacion',
+            'purchase' => 'Compra',
+            'reservation' => 'Reserva',
+            'service_order' => 'Orden de servicio',
+            'restaurant_table' => 'Mesa',
+            'kitchen_order' => 'Comanda/cocina',
+            'worker' => 'Trabajador',
+            'rental' => 'Alquiler',
+            'production_order' => 'Orden de produccion',
+        ];
+    }
+
+    /**
      * @return array<string, array<string, string>>
      */
     public static function options(): array
     {
         return [
             'sections' => [
+                'entities' => 'Entidades configurables',
                 'custom_fields' => 'Campos personalizados',
+                'workflows' => 'Flujos de estado',
                 'states' => 'Estados personalizados',
+                'workflow_transitions' => 'Transiciones de flujo',
                 'resources' => 'Recursos reservables',
                 'price_lists' => 'Listas de precios',
                 'commissions' => 'Comisiones',
@@ -22,31 +47,51 @@ class BusinessTransversalConfiguration
                 'licenses' => 'Licencias por modulo',
                 'imports' => 'Importaciones por perfil',
             ],
-            'entities' => [
-                'product' => 'Producto',
-                'customer' => 'Cliente',
-                'supplier' => 'Proveedor',
-                'sale' => 'Venta',
-                'quote' => 'Cotizacion',
-                'reservation' => 'Reserva',
-                'service_order' => 'Orden de servicio',
-                'restaurant_table' => 'Mesa',
-                'kitchen_order' => 'Comanda/cocina',
-                'worker' => 'Trabajador',
-                'rental' => 'Alquiler',
-                'production_order' => 'Orden de produccion',
+            'entities' => self::baseEntities(),
+            'entityModes' => [
+                'hidden' => 'Oculta',
+                'optional' => 'Opcional',
+                'required' => 'Obligatoria',
+                'read_only' => 'Solo lectura historica',
+            ],
+            'retentionPolicies' => [
+                'standard' => 'Retencion estandar',
+                'sensitive' => 'Dato sensible con acceso restringido',
+                'health_record' => 'Historia clinica',
+                'financial' => 'Financiero/prestamos',
+                'legal_document' => 'Documento legal',
+                'permanent_audit' => 'Auditoria permanente',
+            ],
+            'stateTypes' => [
+                'initial' => 'Inicial',
+                'intermediate' => 'Intermedio',
+                'final' => 'Final',
+                'cancelled' => 'Cancelado',
+                'on_hold' => 'En espera',
             ],
             'fieldTypes' => [
                 'text' => 'Texto',
                 'number' => 'Numero',
                 'decimal' => 'Decimal',
+                'currency' => 'Moneda',
+                'percentage' => 'Porcentaje',
                 'date' => 'Fecha',
+                'time' => 'Hora',
                 'datetime' => 'Fecha y hora',
                 'boolean' => 'Si/No',
                 'select' => 'Seleccion unica',
                 'multi_select' => 'Seleccion multiple',
                 'file' => 'Archivo',
                 'image' => 'Imagen',
+                'signature' => 'Firma',
+                'location' => 'Ubicacion',
+                'phone' => 'Telefono',
+                'email' => 'Email',
+                'identity_document' => 'Documento de identidad',
+                'nit' => 'NIT',
+                'barcode' => 'Codigo de barras',
+                'formula' => 'Formula calculada',
+                'entity_relation' => 'Relacion con entidad',
             ],
             'resourceTypes' => [
                 'table' => 'Mesa',
@@ -57,6 +102,12 @@ class BusinessTransversalConfiguration
                 'hall' => 'Salon',
                 'field' => 'Cancha',
                 'rental_product' => 'Producto alquilable',
+            ],
+            'resourceStatuses' => [
+                'available' => 'Disponible',
+                'maintenance' => 'En mantenimiento',
+                'blocked' => 'Bloqueado',
+                'inactive' => 'Inactivo operativo',
             ],
             'channels' => [
                 'counter' => 'Mostrador',
