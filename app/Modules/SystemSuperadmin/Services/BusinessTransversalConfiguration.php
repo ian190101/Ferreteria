@@ -40,6 +40,7 @@ class BusinessTransversalConfiguration
                 'form_fields' => 'Reglas de campos por formulario',
                 'document_templates' => 'Plantillas documentales 2.0',
                 'report_templates' => 'Plantillas de reportes',
+                'calculation_formulas' => 'Formulas de calculo',
                 'custom_fields' => 'Campos personalizados',
                 'workflows' => 'Flujos de estado',
                 'states' => 'Estados personalizados',
@@ -130,6 +131,13 @@ class BusinessTransversalConfiguration
                 'report' => 'Reporte',
             ],
             'documentTypes' => BusinessProfileConfiguration::options()['documentTypes'],
+            'formulaOperators' => BusinessProfileConfiguration::options()['formulaOperators'],
+            'formulaResultTypes' => [
+                'decimal' => 'Decimal',
+                'integer' => 'Entero',
+                'currency' => 'Moneda',
+                'percentage' => 'Porcentaje',
+            ],
             'reportModules' => [
                 'sales' => 'Ventas',
                 'inventory' => 'Inventario',

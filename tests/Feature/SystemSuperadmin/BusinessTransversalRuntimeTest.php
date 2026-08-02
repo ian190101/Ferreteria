@@ -8,6 +8,7 @@ use App\Modules\SystemSuperadmin\Models\BusinessCurrency;
 use App\Modules\SystemSuperadmin\Models\BusinessModuleLicense;
 use App\Modules\SystemSuperadmin\Models\BusinessProfile;
 use App\Modules\SystemSuperadmin\Models\BusinessStateDefinition;
+use App\Modules\SystemSuperadmin\Models\CalculationFormula;
 use App\Modules\SystemSuperadmin\Models\CustomFieldDefinition;
 use App\Modules\SystemSuperadmin\Models\DynamicEntity;
 use App\Modules\SystemSuperadmin\Models\DynamicDocumentTemplate;
@@ -28,6 +29,7 @@ use App\Modules\SystemSuperadmin\Services\BusinessPriceListService;
 use App\Modules\SystemSuperadmin\Services\BusinessProfileConfiguration;
 use App\Modules\SystemSuperadmin\Services\BusinessPrinterProfileService;
 use App\Modules\SystemSuperadmin\Services\BusinessStateTransitionService;
+use App\Modules\SystemSuperadmin\Services\CalculationFormulaService;
 use App\Modules\SystemSuperadmin\Services\CustomFieldRuntimeService;
 use App\Modules\SystemSuperadmin\Services\DynamicRelationshipService;
 use App\Modules\SystemSuperadmin\Services\DynamicFormService;
@@ -580,6 +582,78 @@ it('resuelve plantillas documentales y reportes solo con motores activos', funct
         ->and($service->resolveReport('prestamos_mora')?->columns)->toBe(['cliente', 'monto', 'dias_mora'])
         ->and(collect($service->reportTemplatesFor('finance', 'customer'))->pluck('code')->all())->toBe(['prestamos_mora']);
 });
+
+it('evalua formulas controladas solo cuando el motor esta activo', function () {
+    CalculationFormula::query()->create([
+        'entity_type' => 'production_order',
+        'code' => 'obra_material_base',
+        'name' => 'Material base por m2',
+        'result_type' => 'decimal',
+        'expression' => [
+            'op' => 'multiply',
+            'args' => [
+                ['var' => 'm2'],
+                ['var' => 'factor'],
+            ],
+        ],
+        'variables' => [
+            ['code' => 'm2', 'label' => 'Metros cuadrados'],
+            ['code' => 'factor', 'label' => 'Factor'],
+        ],
+        'precision' => 3,
+        'is_active' => true,
+    ]);
+
+    $service = app(CalculationFormulaService::class);
+
+    expect($service->formulasFor('production_order'))->toBe([]);
+
+    BusinessProfile::query()->create([
+        'name' => 'Perfil formulas controladas',
+        'business_type' => 'construction',
+        'status' => 'active',
+        'configuration' => BusinessProfileConfiguration::normalized([
+            'capabilities' => [
+                'uses_formula_calculations' => true,
+            ],
+            'feature_flags' => [
+                'formula_engine' => true,
+            ],
+        ]),
+        'applied_at' => now(),
+    ]);
+    Cache::flush();
+
+    expect(collect($service->formulasFor('production_order'))->pluck('code')->all())->toBe(['obra_material_base'])
+        ->and($service->evaluate('obra_material_base', ['m2' => 12.5, 'factor' => 1.2], 'production_order'))->toBe(15.0);
+});
+
+it('bloquea formulas controladas si falta una variable requerida', function () {
+    BusinessProfile::query()->create([
+        'name' => 'Perfil formulas activas',
+        'business_type' => 'construction',
+        'status' => 'active',
+        'configuration' => BusinessProfileConfiguration::normalized([
+            'capabilities' => ['uses_formula_calculations' => true],
+            'feature_flags' => ['formula_engine' => true],
+        ]),
+        'applied_at' => now(),
+    ]);
+    Cache::flush();
+
+    CalculationFormula::query()->create([
+        'entity_type' => 'production_order',
+        'code' => 'division_segura',
+        'name' => 'Division segura',
+        'result_type' => 'decimal',
+        'expression' => ['op' => 'divide', 'args' => [['var' => 'monto'], ['var' => 'dias']]],
+        'variables' => [['code' => 'monto'], ['code' => 'dias']],
+        'precision' => 2,
+        'is_active' => true,
+    ]);
+
+    app(CalculationFormulaService::class)->evaluate('division_segura', ['monto' => 100], 'production_order');
+})->throws(ValidationException::class);
 
 it('resuelve workflows formales con permisos, validaciones y acciones', function () {
     $workflow = WorkflowDefinition::query()->create([

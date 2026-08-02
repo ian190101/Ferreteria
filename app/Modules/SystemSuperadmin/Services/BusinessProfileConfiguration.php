@@ -117,6 +117,7 @@ class BusinessProfileConfiguration
                 'uses_guarantees' => false,
                 'uses_projects' => false,
                 'uses_construction_calculations' => false,
+                'uses_formula_calculations' => false,
                 'uses_vehicles' => false,
                 'uses_equipment_repairs' => false,
                 'uses_pet_records' => false,

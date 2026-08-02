@@ -9,6 +9,7 @@ use App\Modules\SystemSuperadmin\Models\AttachmentDefinition;
 use App\Modules\SystemSuperadmin\Models\BusinessCurrency;
 use App\Modules\SystemSuperadmin\Models\BusinessModuleLicense;
 use App\Modules\SystemSuperadmin\Models\BusinessStateDefinition;
+use App\Modules\SystemSuperadmin\Models\CalculationFormula;
 use App\Modules\SystemSuperadmin\Models\CommissionRule;
 use App\Modules\SystemSuperadmin\Models\CustomFieldDefinition;
 use App\Modules\SystemSuperadmin\Models\DynamicEntity;
@@ -41,6 +42,7 @@ class BusinessTransversalDataService
                 'form_fields' => DynamicFormFieldRule::query()->count(),
                 'document_templates' => DynamicDocumentTemplate::query()->count(),
                 'report_templates' => DynamicReportTemplate::query()->count(),
+                'calculation_formulas' => CalculationFormula::query()->count(),
                 'custom_fields' => CustomFieldDefinition::query()->count(),
                 'workflows' => WorkflowDefinition::query()->count(),
                 'states' => BusinessStateDefinition::query()->count(),
@@ -61,6 +63,7 @@ class BusinessTransversalDataService
             'formFields' => DynamicFormFieldRule::query()->with('form:id,entity_type,code,name')->orderBy('dynamic_form_definition_id')->orderBy('sort_order')->limit(80)->get(),
             'documentTemplates' => DynamicDocumentTemplate::query()->with('branch:id,name')->orderBy('document_type')->orderByDesc('is_default')->orderBy('name')->limit(80)->get(),
             'reportTemplates' => DynamicReportTemplate::query()->orderBy('module')->orderBy('name')->limit(80)->get(),
+            'calculationFormulas' => CalculationFormula::query()->orderBy('entity_type')->orderBy('name')->limit(80)->get(),
             'customFields' => CustomFieldDefinition::query()->orderBy('entity_type')->orderBy('sort_order')->orderBy('label')->limit(80)->get(),
             'workflows' => WorkflowDefinition::query()->orderBy('entity_type')->orderByDesc('is_default')->orderBy('name')->limit(80)->get(),
             'states' => BusinessStateDefinition::query()->orderBy('entity_type')->orderBy('sort_order')->orderBy('label')->limit(80)->get(),

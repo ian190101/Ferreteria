@@ -8,6 +8,7 @@ use App\Modules\SystemSuperadmin\Models\AttachmentDefinition;
 use App\Modules\SystemSuperadmin\Models\BusinessCurrency;
 use App\Modules\SystemSuperadmin\Models\BusinessModuleLicense;
 use App\Modules\SystemSuperadmin\Models\BusinessStateDefinition;
+use App\Modules\SystemSuperadmin\Models\CalculationFormula;
 use App\Modules\SystemSuperadmin\Models\CommissionRule;
 use App\Modules\SystemSuperadmin\Models\CustomFieldDefinition;
 use App\Modules\SystemSuperadmin\Models\DynamicEntity;
@@ -25,6 +26,7 @@ use App\Modules\SystemSuperadmin\Models\WorkflowDefinition;
 use App\Modules\SystemSuperadmin\Models\WorkflowTransition;
 use App\Modules\SystemSuperadmin\Services\BusinessTransversalConfiguration;
 use App\Modules\SystemSuperadmin\Services\BusinessTransversalDataService;
+use App\Modules\SystemSuperadmin\Services\CalculationFormulaService;
 use App\Modules\SystemSuperadmin\Services\DynamicEntityRegistry;
 use App\Support\SystemCacheInvalidator;
 use Illuminate\Database\Eloquent\Model;
@@ -108,6 +110,7 @@ class BusinessTransversalController extends Controller
             'form-fields' => $this->validateDynamicFormFieldRule($request, $current),
             'document-templates' => $this->validateDocumentTemplate($request, $options, $current),
             'report-templates' => $this->validateReportTemplate($request, $options, $current),
+            'calculation-formulas' => $this->validateCalculationFormula($request, $options, $current),
             'custom-fields' => $this->validateCustomField($request, $options, $current),
             'workflows' => $this->validateWorkflow($request, $options, $current),
             'states' => $this->validateState($request, $options),
@@ -349,6 +352,75 @@ class BusinessTransversalController extends Controller
             'cache_ttl_minutes' => (int) $data['cache_ttl_minutes'],
             'is_exportable' => (bool) ($data['is_exportable'] ?? false),
             'is_default' => (bool) ($data['is_default'] ?? false),
+            'is_active' => (bool) ($data['is_active'] ?? true),
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $options
+     * @return array<string, mixed>
+     */
+    private function validateCalculationFormula(Request $request, array $options, ?Model $current = null): array
+    {
+        $entityOptions = array_keys(app(DynamicEntityRegistry::class)->options());
+        $entityTypeForUnique = $request->input('entity_type');
+        $uniqueCode = Rule::unique('calculation_formulas', 'code')
+            ->where(fn ($query) => filled($entityTypeForUnique)
+                ? $query->where('entity_type', (string) $entityTypeForUnique)
+                : $query->whereNull('entity_type'));
+
+        if ($current instanceof CalculationFormula) {
+            $uniqueCode->ignore($current->id);
+        }
+
+        $data = $request->validate([
+            'entity_type' => ['nullable', 'string', Rule::in($entityOptions)],
+            'code' => ['required', 'string', 'max:120', 'regex:/^[a-z0-9_]+$/', $uniqueCode],
+            'name' => ['required', 'string', 'max:180'],
+            'description' => ['nullable', 'string', 'max:1000'],
+            'result_type' => ['required', 'string', Rule::in(array_keys($options['formulaResultTypes']))],
+            'expression_text' => ['required', 'string', 'max:5000'],
+            'variables_text' => ['nullable', 'string', 'max:3000'],
+            'precision' => ['required', 'integer', 'min:0', 'max:8'],
+            'permissions_text' => ['nullable', 'string', 'max:3000'],
+            'metadata_text' => ['nullable', 'string', 'max:3000'],
+            'is_active' => ['boolean'],
+        ], [], [
+            'entity_type' => 'entidad',
+            'code' => 'codigo interno',
+            'name' => 'nombre',
+            'result_type' => 'tipo de resultado',
+            'expression_text' => 'formula JSON',
+            'variables_text' => 'variables',
+        ]);
+
+        $expression = BusinessTransversalConfiguration::jsonFromText($data['expression_text']);
+        if (! is_array($expression) || array_is_list($expression)) {
+            throw ValidationException::withMessages([
+                'expression_text' => 'La formula debe ser un objeto JSON. Ejemplo: {"op":"multiply","args":[{"var":"m2"},{"var":"precio"}]}',
+            ]);
+        }
+
+        app(CalculationFormulaService::class)->validateExpression($expression);
+
+        $variables = BusinessTransversalConfiguration::jsonFromText($data['variables_text'] ?? null);
+        if ($variables !== null && ! array_is_list($variables)) {
+            throw ValidationException::withMessages([
+                'variables_text' => 'Las variables deben ser una lista JSON. Ejemplo: [{"code":"m2","label":"Metros cuadrados"}]',
+            ]);
+        }
+
+        return [
+            'entity_type' => $data['entity_type'] ?? null,
+            'code' => $data['code'],
+            'name' => $data['name'],
+            'description' => $data['description'] ?? null,
+            'result_type' => $data['result_type'],
+            'expression' => $expression,
+            'variables' => $variables,
+            'precision' => (int) $data['precision'],
+            'permissions' => BusinessTransversalConfiguration::jsonFromText($data['permissions_text'] ?? null),
+            'metadata' => BusinessTransversalConfiguration::jsonFromText($data['metadata_text'] ?? null),
             'is_active' => (bool) ($data['is_active'] ?? true),
         ];
     }
@@ -1043,6 +1115,7 @@ class BusinessTransversalController extends Controller
             'form-fields' => DynamicFormFieldRule::class,
             'document-templates' => DynamicDocumentTemplate::class,
             'report-templates' => DynamicReportTemplate::class,
+            'calculation-formulas' => CalculationFormula::class,
             'custom-fields' => CustomFieldDefinition::class,
             'workflows' => WorkflowDefinition::class,
             'states' => BusinessStateDefinition::class,
@@ -1079,6 +1152,7 @@ class BusinessTransversalController extends Controller
             'form-fields' => 'Regla de campo de formulario',
             'document-templates' => 'Plantilla documental 2.0',
             'report-templates' => 'Plantilla de reporte',
+            'calculation-formulas' => 'Formula de calculo',
             'custom-fields' => 'Campo personalizado',
             'workflows' => 'Flujo de estado',
             'states' => 'Estado personalizado',

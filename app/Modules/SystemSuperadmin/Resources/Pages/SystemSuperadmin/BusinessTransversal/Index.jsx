@@ -14,6 +14,7 @@ const sectionOrder = [
     ['formFields', 'form-fields', 'Campos por formulario'],
     ['documentTemplates', 'document-templates', 'Documentos 2.0'],
     ['reportTemplates', 'report-templates', 'Reportes 2.0'],
+    ['calculationFormulas', 'calculation-formulas', 'Formulas'],
     ['customFields', 'custom-fields', 'Campos personalizados'],
     ['workflows', 'workflows', 'Flujos'],
     ['states', 'states', 'Estados'],
@@ -36,6 +37,7 @@ const emptyForms = {
     formFields: { dynamic_form_definition_id: '', field_code: '', label_override: '', help_text: '', placeholder: '', is_required: false, is_visible: true, is_read_only: false, default_value_text: '', validation_rules_text: '', visibility_conditions_text: '', required_conditions_text: '', options_override_csv: '', sort_order: 0, is_active: true },
     documentTemplates: { branch_id: '', document_type: 'sale_note', entity_type: '', code: '', name: '', paper_type: 'letter', thermal_width_mm: '', printer_area: 'cashier', copies: 1, layout_text: '', fields_csv: 'empresa,numero,cliente,items,total', columns_csv: 'descripcion,cantidad,precio,subtotal', legal_text: '', terms_text: '', permissions_text: '', metadata_text: '', is_default: false, is_active: true },
     reportTemplates: { code: '', name: '', module: 'sales', entity_type: '', description: '', columns_csv: 'fecha,documento,cliente,total', filters_text: '', groupings_csv: '', metrics_text: '', permissions_text: '', metadata_text: '', cache_ttl_minutes: 10, is_exportable: false, is_default: false, is_active: true },
+    calculationFormulas: { entity_type: '', code: '', name: '', description: '', result_type: 'decimal', expression_text: '{"op":"multiply","args":[{"var":"cantidad"},{"var":"precio"}]}', variables_text: '[{"code":"cantidad","label":"Cantidad"},{"code":"precio","label":"Precio"}]', precision: 2, permissions_text: '', metadata_text: '', is_active: true },
     customFields: { entity_type: 'product', code: '', label: '', help_text: '', placeholder: '', type: 'text', group: '', options_csv: '', validation_rules_text: '', default_value_text: '', format: '', min_value: '', max_value: '', relation_entity_type: '', metadata_text: '', is_required: false, visible_in_forms: true, visible_in_table: false, visible_in_documents: false, visible_in_reports: false, is_exportable: false, is_auditable: true, is_sensitive: false, is_encrypted: false, is_read_only: false, sort_order: 0, is_active: true },
     workflows: { entity_type: 'service_order', code: '', name: '', description: '', initial_state_code: '', final_state_codes_csv: '', settings_text: '', is_default: false, is_active: true },
     states: { entity_type: 'service_order', workflow_code: '', code: '', label: '', color: '#2563eb', state_type: 'intermediate', is_initial: false, is_final: false, allowed_transitions_csv: '', required_permission: '', entry_validations_text: '', actions_text: '', exit_actions_text: '', sort_order: 0, is_active: true },
@@ -59,6 +61,7 @@ export default function Index({
     formFields = [],
     documentTemplates = [],
     reportTemplates = [],
+    calculationFormulas = [],
     customFields = [],
     workflows = [],
     states = [],
@@ -79,7 +82,7 @@ export default function Index({
     const [activeSection, setActiveSection] = useState('customFields');
     const [editing, setEditing] = useState(null);
     const currentRouteSection = sectionOrder.find(([key]) => key === activeSection)?.[1] ?? 'custom-fields';
-    const rows = { entities, relationships, attachments, forms, formFields, documentTemplates, reportTemplates, customFields, workflows, states, workflowTransitions, resources, priceLists, commissions, notifications, currencies, printers, licenses, imports }[activeSection] ?? [];
+    const rows = { entities, relationships, attachments, forms, formFields, documentTemplates, reportTemplates, calculationFormulas, customFields, workflows, states, workflowTransitions, resources, priceLists, commissions, notifications, currencies, printers, licenses, imports }[activeSection] ?? [];
     const form = useForm(emptyForms[activeSection]);
 
     const sectionLabel = sectionOrder.find(([key]) => key === activeSection)?.[2] ?? 'Configuracion';
@@ -443,6 +446,30 @@ function DynamicFormFields({ section, form, options, branches, workers, products
         );
     }
 
+    if (section === 'calculationFormulas') {
+        return (
+            <>
+                <OptionSelect label="Entidad relacionada" value={form.data.entity_type} onChange={(value) => set('entity_type', value)} options={{ '': 'Formula global', ...(options.entities ?? {}) }} />
+                <FormField label="Codigo interno" value={form.data.code} onChange={(event) => set('code', event.target.value)} error={form.errors.code} />
+                <FormField label="Nombre" value={form.data.name} onChange={(event) => set('name', event.target.value)} error={form.errors.name} />
+                <OptionSelect label="Tipo de resultado" value={form.data.result_type} onChange={(value) => set('result_type', value)} options={options.formulaResultTypes} />
+                <FormField label="Precision decimal" type="number" value={form.data.precision} onChange={(event) => set('precision', event.target.value)} error={form.errors.precision} />
+                <div className="md:col-span-2">
+                    <FormField label="Descripcion" value={form.data.description} onChange={(event) => set('description', event.target.value)} />
+                </div>
+                <div className="md:col-span-2">
+                    <FormField label="Formula JSON segura" value={form.data.expression_text} onChange={(event) => set('expression_text', event.target.value)} error={form.errors.expression_text} helpText='No acepta codigo libre. Ejemplo: {"op":"multiply","args":[{"var":"m2"},{"var":"precio"}]}' />
+                </div>
+                <div className="md:col-span-2">
+                    <FormField label="Variables JSON" value={form.data.variables_text} onChange={(event) => set('variables_text', event.target.value)} error={form.errors.variables_text} helpText='Lista permitida. Ejemplo: [{"code":"m2","label":"Metros cuadrados"},{"code":"precio","label":"Precio"}]' />
+                </div>
+                <FormField label="Permisos JSON" value={form.data.permissions_text} onChange={(event) => set('permissions_text', event.target.value)} />
+                <FormField label="Metadatos JSON" value={form.data.metadata_text} onChange={(event) => set('metadata_text', event.target.value)} />
+                {bool('is_active', 'Activo')}
+            </>
+        );
+    }
+
     if (section === 'states') {
         return (
             <>
@@ -698,6 +725,7 @@ function sectionHelp(section) {
         formFields: 'Define que campos aparecen, son obligatorios o quedan solo lectura dentro de cada formulario por flujo.',
         documentTemplates: 'Define plantillas documentales 2.0 por documento, entidad, sucursal, campos, columnas, textos legales e impresora destino. No reemplaza plantillas actuales hasta activar el motor documental.',
         reportTemplates: 'Define columnas, filtros, agrupaciones y metricas por negocio. No cambia reportes actuales hasta activar plantillas de reportes.',
+        calculationFormulas: 'Define formulas JSON controladas para calculos de obra, prestamos, alquileres, servicios o produccion. No acepta codigo libre y no opera hasta activar formula_engine.',
         customFields: 'Permite agregar datos propios por entidad, por ejemplo placa en taller, historia clinica en servicios o talla en tienda.',
         workflows: 'Define flujos por entidad, como reparacion, prestamo, comanda, tratamiento o alquiler. Un flujo controla estados y transiciones.',
         states: 'Define estados y transiciones para reservas, comandas, servicios o produccion sin escribir codigo nuevo.',
@@ -722,6 +750,7 @@ function columnsFor(section) {
         formFields: [{ key: 'form.name', label: 'Formulario' }, { key: 'field_code', label: 'Campo' }, { key: 'is_required', label: 'Obligatorio' }, { key: 'is_read_only', label: 'Solo lectura' }, { key: 'is_active', label: 'Estado' }],
         documentTemplates: [{ key: 'name', label: 'Plantilla' }, { key: 'document_type', label: 'Documento' }, { key: 'branch.name', label: 'Sucursal' }, { key: 'paper_type', label: 'Papel' }, { key: 'is_default', label: 'Default' }],
         reportTemplates: [{ key: 'name', label: 'Reporte' }, { key: 'module', label: 'Modulo' }, { key: 'entity_type', label: 'Entidad' }, { key: 'columns', label: 'Columnas' }, { key: 'is_active', label: 'Estado' }],
+        calculationFormulas: [{ key: 'name', label: 'Formula' }, { key: 'code', label: 'Codigo' }, { key: 'entity_type', label: 'Entidad' }, { key: 'result_type', label: 'Resultado' }, { key: 'is_active', label: 'Estado' }],
         customFields: [{ key: 'label', label: 'Nombre' }, { key: 'entity_type', label: 'Entidad' }, { key: 'type', label: 'Tipo' }, { key: 'is_active', label: 'Estado' }],
         workflows: [{ key: 'name', label: 'Flujo' }, { key: 'entity_type', label: 'Entidad' }, { key: 'initial_state_code', label: 'Inicial' }, { key: 'is_default', label: 'Default' }],
         states: [{ key: 'label', label: 'Estado' }, { key: 'entity_type', label: 'Entidad' }, { key: 'is_initial', label: 'Inicial' }, { key: 'is_final', label: 'Final' }],
@@ -788,6 +817,10 @@ function formFromRow(section, row) {
 
     if (section === 'reportTemplates') {
         return { ...base, ...pick(row, ['code', 'name', 'module', 'entity_type', 'description', 'cache_ttl_minutes', 'is_exportable', 'is_default', 'is_active']), columns_csv: (row.columns ?? []).join(', '), filters_text: stringify(row.filters), groupings_csv: (row.groupings ?? []).join(', '), metrics_text: stringify(row.metrics), permissions_text: stringify(row.permissions), metadata_text: stringify(row.metadata) };
+    }
+
+    if (section === 'calculationFormulas') {
+        return { ...base, ...pick(row, ['entity_type', 'code', 'name', 'description', 'result_type', 'precision', 'is_active']), expression_text: stringify(row.expression), variables_text: stringify(row.variables), permissions_text: stringify(row.permissions), metadata_text: stringify(row.metadata) };
     }
 
     if (section === 'states') {

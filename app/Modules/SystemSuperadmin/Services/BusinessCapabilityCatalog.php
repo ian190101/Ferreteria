@@ -58,6 +58,7 @@ class BusinessCapabilityCatalog
             self::capability('uses_guarantees', 'Prestamos', 'Garantias', 'Controla garantias con valor minimo, documentos, fotos y devolucion.', ['loans', 'rentals'], ['uses_dynamic_entities']),
             self::capability('uses_projects', 'Proyectos', 'Proyectos', 'Permite obras, etapas, centros de costo y avance por cliente.', ['construction', 'factory'], ['uses_dynamic_entities']),
             self::capability('uses_construction_calculations', 'Calculos', 'Calculos de obra', 'Calcula materiales por m2, m3, espesor, dosificacion, merma y mano de obra.', ['construction'], ['uses_projects']),
+            self::capability('uses_formula_calculations', 'Calculos', 'Motor de formulas controladas', 'Permite formulas JSON seguras para prestamos, obra, servicios, comisiones, alquileres o produccion sin ejecutar codigo libre.', ['mixed', 'construction', 'loans', 'services']),
             self::capability('uses_vehicles', 'Servicios', 'Vehiculos', 'Relaciona clientes con autos, motos, camiones u otros vehiculos.', ['auto_mechanic', 'car_wash', 'moving_service'], ['uses_dynamic_entities']),
             self::capability('uses_equipment_repairs', 'Servicios', 'Equipos en reparacion', 'Controla celulares, laptops u otros equipos con diagnostico, evidencias y entrega.', ['electronics_repair', 'technical_service'], ['uses_service_orders']),
             self::capability('uses_pet_records', 'Servicios', 'Mascotas', 'Relaciona clientes con mascotas, vacunas, consultas y servicios.', ['veterinary'], ['uses_dynamic_entities']),

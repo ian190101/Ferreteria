@@ -7,6 +7,7 @@ use App\Modules\SystemSuperadmin\Models\AttachmentDefinition;
 use App\Modules\SystemSuperadmin\Models\BusinessCurrency;
 use App\Modules\SystemSuperadmin\Models\BusinessProfileSandboxSession;
 use App\Modules\SystemSuperadmin\Models\BusinessStateDefinition;
+use App\Modules\SystemSuperadmin\Models\CalculationFormula;
 use App\Modules\SystemSuperadmin\Models\CustomFieldDefinition;
 use App\Modules\SystemSuperadmin\Models\DynamicEntity;
 use App\Modules\SystemSuperadmin\Models\DynamicDocumentTemplate;
@@ -606,6 +607,53 @@ it('bloquea plantillas documentales con tipos de documento invalidos', function 
         ->assertSessionHasErrors('document_type');
 
     expect(DynamicDocumentTemplate::query()->count())->toBe(0);
+});
+
+it('crea formulas de calculo sin activar el perfil actual de ferreteria', function () {
+    $user = transversalUser();
+
+    $this->actingAs($user)
+        ->post(route('system-superadmin.transversal-config.store', 'calculation-formulas'), [
+            'entity_type' => 'production_order',
+            'code' => 'obra_material_base',
+            'name' => 'Material base por m2',
+            'description' => 'Calcula material por superficie y factor.',
+            'result_type' => 'decimal',
+            'expression_text' => '{"op":"multiply","args":[{"var":"m2"},{"var":"factor"}]}',
+            'variables_text' => '[{"code":"m2","label":"Metros cuadrados"},{"code":"factor","label":"Factor"}]',
+            'precision' => 3,
+            'is_active' => true,
+        ])
+        ->assertRedirect();
+
+    $formula = CalculationFormula::query()->where('code', 'obra_material_base')->first();
+    $configuration = BusinessProfileConfiguration::normalized([]);
+
+    expect($formula)->not->toBeNull()
+        ->and($formula->expression['op'])->toBe('multiply')
+        ->and($formula->variables[0]['code'])->toBe('m2')
+        ->and($configuration['feature_flags']['formula_engine'])->toBeFalse()
+        ->and($configuration['capabilities']['uses_formula_calculations'])->toBeFalse()
+        ->and($configuration['capabilities']['uses_construction_calculations'])->toBeFalse();
+});
+
+it('bloquea formulas de calculo con operadores no permitidos', function () {
+    $user = transversalUser();
+
+    $this->actingAs($user)
+        ->post(route('system-superadmin.transversal-config.store', 'calculation-formulas'), [
+            'entity_type' => 'production_order',
+            'code' => 'formula_insegura',
+            'name' => 'Formula insegura',
+            'result_type' => 'decimal',
+            'expression_text' => '{"op":"eval","args":[{"var":"monto"}]}',
+            'variables_text' => '[{"code":"monto","label":"Monto"}]',
+            'precision' => 2,
+            'is_active' => true,
+        ])
+        ->assertSessionHasErrors('expression_text');
+
+    expect(CalculationFormula::query()->where('code', 'formula_insegura')->exists())->toBeFalse();
 });
 
 it('bloquea definiciones de adjuntos con extensiones o mime fuera de politica', function () {

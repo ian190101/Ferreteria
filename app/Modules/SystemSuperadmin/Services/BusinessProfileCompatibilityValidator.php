@@ -90,6 +90,8 @@ class BusinessProfileCompatibilityValidator
             'uses_approval_flows' => 'approval_engine',
             'uses_automation_rules' => 'automation_engine',
             'uses_attachments' => 'attachments_engine',
+            'uses_formula_calculations' => 'formula_engine',
+            'uses_construction_calculations' => 'formula_engine',
             'uses_field_level_permissions' => 'field_permissions_engine',
             'uses_integrations' => 'integrations_engine',
         ];
