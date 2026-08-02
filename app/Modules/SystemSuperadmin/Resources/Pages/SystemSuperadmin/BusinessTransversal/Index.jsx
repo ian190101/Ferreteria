@@ -15,6 +15,7 @@ const sectionOrder = [
     ['documentTemplates', 'document-templates', 'Documentos 2.0'],
     ['reportTemplates', 'report-templates', 'Reportes 2.0'],
     ['calculationFormulas', 'calculation-formulas', 'Formulas'],
+    ['commercialFlows', 'commercial-flows', 'Flujos comerciales'],
     ['customFields', 'custom-fields', 'Campos personalizados'],
     ['workflows', 'workflows', 'Flujos'],
     ['states', 'states', 'Estados'],
@@ -38,6 +39,7 @@ const emptyForms = {
     documentTemplates: { branch_id: '', document_type: 'sale_note', entity_type: '', code: '', name: '', paper_type: 'letter', thermal_width_mm: '', printer_area: 'cashier', copies: 1, layout_text: '', fields_csv: 'empresa,numero,cliente,items,total', columns_csv: 'descripcion,cantidad,precio,subtotal', legal_text: '', terms_text: '', permissions_text: '', metadata_text: '', is_default: false, is_active: true },
     reportTemplates: { code: '', name: '', module: 'sales', entity_type: '', description: '', columns_csv: 'fecha,documento,cliente,total', filters_text: '', groupings_csv: '', metrics_text: '', permissions_text: '', metadata_text: '', cache_ttl_minutes: 10, is_exportable: false, is_default: false, is_active: true },
     calculationFormulas: { entity_type: '', code: '', name: '', description: '', result_type: 'decimal', expression_text: '{"op":"multiply","args":[{"var":"cantidad"},{"var":"precio"}]}', variables_text: '[{"code":"cantidad","label":"Cantidad"},{"code":"precio","label":"Precio"}]', precision: 2, permissions_text: '', metadata_text: '', is_active: true },
+    commercialFlows: { code: '', name: '', business_type: '', sales_workflow: 'direct_sale', pos_mode: 'retail', channel: 'counter', document_type: 'sale_note', customer_mode: 'optional', cash_policy: 'optional', inventory_timing: 'sale_note', payment_policy: 'single_or_mixed', requires_resource: false, requires_responsible: false, requires_reservation: false, requires_service_order: false, requires_guarantee: false, allows_discount: false, allows_price_override: false, allows_credit: false, allows_advance: false, allows_split_payment: false, allows_mixed_payment: true, validations_text: '', permissions_text: '', settings_text: '', is_default: false, is_active: true },
     customFields: { entity_type: 'product', code: '', label: '', help_text: '', placeholder: '', type: 'text', group: '', options_csv: '', validation_rules_text: '', default_value_text: '', format: '', min_value: '', max_value: '', relation_entity_type: '', metadata_text: '', is_required: false, visible_in_forms: true, visible_in_table: false, visible_in_documents: false, visible_in_reports: false, is_exportable: false, is_auditable: true, is_sensitive: false, is_encrypted: false, is_read_only: false, sort_order: 0, is_active: true },
     workflows: { entity_type: 'service_order', code: '', name: '', description: '', initial_state_code: '', final_state_codes_csv: '', settings_text: '', is_default: false, is_active: true },
     states: { entity_type: 'service_order', workflow_code: '', code: '', label: '', color: '#2563eb', state_type: 'intermediate', is_initial: false, is_final: false, allowed_transitions_csv: '', required_permission: '', entry_validations_text: '', actions_text: '', exit_actions_text: '', sort_order: 0, is_active: true },
@@ -62,6 +64,7 @@ export default function Index({
     documentTemplates = [],
     reportTemplates = [],
     calculationFormulas = [],
+    commercialFlows = [],
     customFields = [],
     workflows = [],
     states = [],
@@ -82,7 +85,7 @@ export default function Index({
     const [activeSection, setActiveSection] = useState('customFields');
     const [editing, setEditing] = useState(null);
     const currentRouteSection = sectionOrder.find(([key]) => key === activeSection)?.[1] ?? 'custom-fields';
-    const rows = { entities, relationships, attachments, forms, formFields, documentTemplates, reportTemplates, calculationFormulas, customFields, workflows, states, workflowTransitions, resources, priceLists, commissions, notifications, currencies, printers, licenses, imports }[activeSection] ?? [];
+    const rows = { entities, relationships, attachments, forms, formFields, documentTemplates, reportTemplates, calculationFormulas, commercialFlows, customFields, workflows, states, workflowTransitions, resources, priceLists, commissions, notifications, currencies, printers, licenses, imports }[activeSection] ?? [];
     const form = useForm(emptyForms[activeSection]);
 
     const sectionLabel = sectionOrder.find(([key]) => key === activeSection)?.[2] ?? 'Configuracion';
@@ -470,6 +473,52 @@ function DynamicFormFields({ section, form, options, branches, workers, products
         );
     }
 
+    if (section === 'commercialFlows') {
+        return (
+            <>
+                <FormField label="Codigo interno" value={form.data.code} onChange={(event) => set('code', event.target.value)} error={form.errors.code} helpTooltip="Usa minusculas, numeros y guion bajo. Ejemplo: pos_restaurante_mesa." />
+                <FormField label="Nombre" value={form.data.name} onChange={(event) => set('name', event.target.value)} error={form.errors.name} />
+                <OptionSelect label="Tipo de negocio" value={form.data.business_type} onChange={(value) => set('business_type', value)} options={{ '': 'General', ...(options.businessTypes ?? {}) }} />
+                <OptionSelect label="Flujo comercial" value={form.data.sales_workflow} onChange={(value) => set('sales_workflow', value)} options={options.salesWorkflows} />
+                <OptionSelect label="Modo POS" value={form.data.pos_mode} onChange={(value) => set('pos_mode', value)} options={{ '': 'Sin POS directo', ...(options.posModes ?? {}) }} />
+                <OptionSelect label="Canal" value={form.data.channel} onChange={(value) => set('channel', value)} options={{ '': 'Todos los canales', ...(options.channels ?? {}) }} />
+                <OptionSelect label="Documento principal" value={form.data.document_type} onChange={(value) => set('document_type', value)} options={options.commercialDocuments} />
+                <OptionSelect label="Cliente" value={form.data.customer_mode} onChange={(value) => set('customer_mode', value)} options={options.customerModes} />
+                <OptionSelect label="Caja" value={form.data.cash_policy} onChange={(value) => set('cash_policy', value)} options={options.cashPolicies} />
+                <OptionSelect label="Descuento de inventario" value={form.data.inventory_timing} onChange={(value) => set('inventory_timing', value)} options={options.inventoryTimings} />
+                <OptionSelect label="Politica de pago" value={form.data.payment_policy} onChange={(value) => set('payment_policy', value)} options={options.paymentPolicies} />
+                <div className="md:col-span-2 rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-white/5">
+                    <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">Requisitos del flujo</p>
+                    <div className="mt-3 grid gap-3 md:grid-cols-2">
+                        {bool('requires_resource', 'Requiere recurso', 'Ejemplo: mesa, tecnico, cancha, camion, equipo o producto alquilable.')}
+                        {bool('requires_responsible', 'Requiere responsable', 'Ejemplo: vendedor, mesero, tecnico, doctor o chofer.')}
+                        {bool('requires_reservation', 'Requiere reserva')}
+                        {bool('requires_service_order', 'Requiere orden de servicio')}
+                        {bool('requires_guarantee', 'Requiere garantia')}
+                    </div>
+                </div>
+                <div className="md:col-span-2 rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-white/5">
+                    <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">Permisos operativos del flujo</p>
+                    <div className="mt-3 grid gap-3 md:grid-cols-2">
+                        {bool('allows_discount', 'Permite descuento')}
+                        {bool('allows_price_override', 'Permite cambiar precio')}
+                        {bool('allows_credit', 'Permite credito')}
+                        {bool('allows_advance', 'Permite anticipo')}
+                        {bool('allows_split_payment', 'Permite pago dividido')}
+                        {bool('allows_mixed_payment', 'Permite pago mixto')}
+                    </div>
+                </div>
+                <FormField label="Validaciones JSON" value={form.data.validations_text} onChange={(event) => set('validations_text', event.target.value)} helpText='Ejemplo: {"max_discount_percent":10,"require_reason_on_void":true}' />
+                <FormField label="Permisos JSON" value={form.data.permissions_text} onChange={(event) => set('permissions_text', event.target.value)} helpText='Ejemplo: {"discount":"sales.discounts.override","price":"sales.prices.override"}' />
+                <div className="md:col-span-2">
+                    <FormField label="Configuracion JSON" value={form.data.settings_text} onChange={(event) => set('settings_text', event.target.value)} helpText='Ejemplo: {"show_images":true,"quick_buttons":true,"temporary_receipt":false}' />
+                </div>
+                {bool('is_default', 'Regla default')}
+                {bool('is_active', 'Activo')}
+            </>
+        );
+    }
+
     if (section === 'states') {
         return (
             <>
@@ -726,6 +775,7 @@ function sectionHelp(section) {
         documentTemplates: 'Define plantillas documentales 2.0 por documento, entidad, sucursal, campos, columnas, textos legales e impresora destino. No reemplaza plantillas actuales hasta activar el motor documental.',
         reportTemplates: 'Define columnas, filtros, agrupaciones y metricas por negocio. No cambia reportes actuales hasta activar plantillas de reportes.',
         calculationFormulas: 'Define formulas JSON controladas para calculos de obra, prestamos, alquileres, servicios o produccion. No acepta codigo libre y no opera hasta activar formula_engine.',
+        commercialFlows: 'Define reglas comerciales y POS por canal: cliente, caja, documento, pagos, descuentos, credito, recursos, reservas u ordenes. No cambia ventas actuales hasta activar commercial_flow_engine.',
         customFields: 'Permite agregar datos propios por entidad, por ejemplo placa en taller, historia clinica en servicios o talla en tienda.',
         workflows: 'Define flujos por entidad, como reparacion, prestamo, comanda, tratamiento o alquiler. Un flujo controla estados y transiciones.',
         states: 'Define estados y transiciones para reservas, comandas, servicios o produccion sin escribir codigo nuevo.',
@@ -751,6 +801,7 @@ function columnsFor(section) {
         documentTemplates: [{ key: 'name', label: 'Plantilla' }, { key: 'document_type', label: 'Documento' }, { key: 'branch.name', label: 'Sucursal' }, { key: 'paper_type', label: 'Papel' }, { key: 'is_default', label: 'Default' }],
         reportTemplates: [{ key: 'name', label: 'Reporte' }, { key: 'module', label: 'Modulo' }, { key: 'entity_type', label: 'Entidad' }, { key: 'columns', label: 'Columnas' }, { key: 'is_active', label: 'Estado' }],
         calculationFormulas: [{ key: 'name', label: 'Formula' }, { key: 'code', label: 'Codigo' }, { key: 'entity_type', label: 'Entidad' }, { key: 'result_type', label: 'Resultado' }, { key: 'is_active', label: 'Estado' }],
+        commercialFlows: [{ key: 'name', label: 'Regla' }, { key: 'sales_workflow', label: 'Flujo' }, { key: 'pos_mode', label: 'POS' }, { key: 'channel', label: 'Canal' }, { key: 'is_active', label: 'Estado' }],
         customFields: [{ key: 'label', label: 'Nombre' }, { key: 'entity_type', label: 'Entidad' }, { key: 'type', label: 'Tipo' }, { key: 'is_active', label: 'Estado' }],
         workflows: [{ key: 'name', label: 'Flujo' }, { key: 'entity_type', label: 'Entidad' }, { key: 'initial_state_code', label: 'Inicial' }, { key: 'is_default', label: 'Default' }],
         states: [{ key: 'label', label: 'Estado' }, { key: 'entity_type', label: 'Entidad' }, { key: 'is_initial', label: 'Inicial' }, { key: 'is_final', label: 'Final' }],
@@ -821,6 +872,10 @@ function formFromRow(section, row) {
 
     if (section === 'calculationFormulas') {
         return { ...base, ...pick(row, ['entity_type', 'code', 'name', 'description', 'result_type', 'precision', 'is_active']), expression_text: stringify(row.expression), variables_text: stringify(row.variables), permissions_text: stringify(row.permissions), metadata_text: stringify(row.metadata) };
+    }
+
+    if (section === 'commercialFlows') {
+        return { ...base, ...pick(row, ['code', 'name', 'business_type', 'sales_workflow', 'pos_mode', 'channel', 'document_type', 'customer_mode', 'cash_policy', 'inventory_timing', 'payment_policy', 'requires_resource', 'requires_responsible', 'requires_reservation', 'requires_service_order', 'requires_guarantee', 'allows_discount', 'allows_price_override', 'allows_credit', 'allows_advance', 'allows_split_payment', 'allows_mixed_payment', 'is_default', 'is_active']), validations_text: stringify(row.validations), permissions_text: stringify(row.permissions), settings_text: stringify(row.settings) };
     }
 
     if (section === 'states') {

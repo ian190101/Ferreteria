@@ -28,6 +28,8 @@ class BusinessCapabilityCatalog
             self::capability('allows_quote_to_sale', 'Ventas', 'Cotizacion a nota', 'Permite convertir cotizaciones en notas de venta.', ['hardware_store', 'factory']),
             self::capability('uses_pos', 'POS', 'POS dinamico', 'Activa la interfaz POS configurada por tipo de negocio.', ['restaurant', 'supermarket', 'store']),
             self::capability('uses_barcode_scanner', 'POS', 'Lector de barras', 'Optimiza busqueda rapida por codigo de barras.', ['supermarket', 'store', 'hardware_store'], ['uses_pos']),
+            self::capability('uses_dynamic_pos', 'POS', 'Motor POS configurable', 'Permite resolver modo POS, canal, documento, cliente, caja, pagos y requisitos por regla comercial.', ['restaurant', 'supermarket', 'store', 'services', 'rentals'], ['uses_pos']),
+            self::capability('uses_commercial_flow_rules', 'Ventas', 'Reglas comerciales/POS', 'Define flujos de venta por canal, documento, caja, cliente, descuentos, credito, anticipos, recursos y responsables.', ['mixed', 'restaurant', 'supermarket', 'services', 'rentals']),
             self::capability('requires_cash_session', 'Caja', 'Caja obligatoria', 'Exige caja abierta antes de vender o cobrar.', ['hardware_store', 'supermarket', 'restaurant'], ['uses_cash']),
             self::capability('uses_cash', 'Caja', 'Caja', 'Gestiona apertura, cierre y cuadre de efectivo por alcance.', ['hardware_store', 'supermarket', 'restaurant', 'store']),
             self::capability('uses_cash_flow', 'Finanzas', 'Flujo de efectivo', 'Consolida ingresos, egresos, resultado neto y detalles por sucursal, fecha, origen y metodo.', ['hardware_store', 'supermarket', 'restaurant', 'store']),

@@ -4,6 +4,7 @@ use App\Models\User;
 use App\Modules\Branches\Models\Branch;
 use App\Modules\SystemSuperadmin\Models\AttachmentDefinition;
 use App\Modules\SystemSuperadmin\Models\BusinessAttachment;
+use App\Modules\SystemSuperadmin\Models\BusinessCommercialFlowRule;
 use App\Modules\SystemSuperadmin\Models\BusinessCurrency;
 use App\Modules\SystemSuperadmin\Models\BusinessModuleLicense;
 use App\Modules\SystemSuperadmin\Models\BusinessProfile;
@@ -22,6 +23,7 @@ use App\Modules\SystemSuperadmin\Models\PrinterProfile;
 use App\Modules\SystemSuperadmin\Models\WorkflowDefinition;
 use App\Modules\SystemSuperadmin\Models\WorkflowTransition;
 use App\Modules\SystemSuperadmin\Services\BusinessCurrencyService;
+use App\Modules\SystemSuperadmin\Services\BusinessCommercialFlowRuleService;
 use App\Modules\SystemSuperadmin\Services\BusinessAttachmentService;
 use App\Modules\SystemSuperadmin\Services\BusinessLicensePolicyService;
 use App\Modules\SystemSuperadmin\Services\BusinessNotificationRuleService;
@@ -654,6 +656,127 @@ it('bloquea formulas controladas si falta una variable requerida', function () {
 
     app(CalculationFormulaService::class)->evaluate('division_segura', ['monto' => 100], 'production_order');
 })->throws(ValidationException::class);
+
+it('resuelve reglas comerciales POS solo cuando el motor esta activo', function () {
+    BusinessCommercialFlowRule::query()->create([
+        'code' => 'pos_servicio_base',
+        'name' => 'POS servicio base',
+        'business_type' => 'services',
+        'sales_workflow' => 'service_sale',
+        'pos_mode' => 'services',
+        'channel' => 'counter',
+        'document_type' => 'sale_note',
+        'customer_mode' => 'required',
+        'cash_policy' => 'required',
+        'inventory_timing' => 'manual',
+        'payment_policy' => 'single_or_mixed',
+        'requires_responsible' => true,
+        'requires_service_order' => true,
+        'allows_discount' => true,
+        'allows_mixed_payment' => true,
+        'is_active' => true,
+    ]);
+
+    $service = app(BusinessCommercialFlowRuleService::class);
+
+    expect($service->rulesFor('service_sale'))->toHaveCount(0)
+        ->and($service->resolve('pos_servicio_base'))->toBeNull();
+
+    BusinessProfile::query()->create([
+        'name' => 'Perfil comercial activo',
+        'business_type' => 'services',
+        'status' => 'active',
+        'configuration' => BusinessProfileConfiguration::normalized([
+            'modules' => ['pos' => true, 'services' => true, 'service_orders' => true],
+            'capabilities' => [
+                'uses_pos' => true,
+                'uses_services' => true,
+                'uses_service_orders' => true,
+                'uses_dynamic_pos' => true,
+                'uses_commercial_flow_rules' => true,
+            ],
+            'feature_flags' => ['commercial_flow_engine' => true],
+        ]),
+        'applied_at' => now(),
+    ]);
+    Cache::flush();
+
+    $rule = $service->resolve('pos_servicio_base');
+
+    expect($rule)->not->toBeNull()
+        ->and(collect($service->rulesFor('service_sale', 'counter'))->pluck('code')->all())->toBe(['pos_servicio_base']);
+});
+
+it('valida contexto operativo de reglas comerciales POS', function () {
+    BusinessProfile::query()->create([
+        'name' => 'Perfil comercial activo',
+        'business_type' => 'services',
+        'status' => 'active',
+        'configuration' => BusinessProfileConfiguration::normalized([
+            'modules' => ['pos' => true, 'services' => true, 'service_orders' => true],
+            'capabilities' => [
+                'uses_pos' => true,
+                'uses_services' => true,
+                'uses_service_orders' => true,
+                'uses_dynamic_pos' => true,
+                'uses_commercial_flow_rules' => true,
+            ],
+            'feature_flags' => ['commercial_flow_engine' => true],
+        ]),
+        'applied_at' => now(),
+    ]);
+    Cache::flush();
+
+    $rule = BusinessCommercialFlowRule::query()->create([
+        'code' => 'servicio_restricto',
+        'name' => 'Servicio restringido',
+        'sales_workflow' => 'service_sale',
+        'pos_mode' => 'services',
+        'channel' => 'counter',
+        'document_type' => 'sale_note',
+        'customer_mode' => 'required',
+        'cash_policy' => 'required',
+        'inventory_timing' => 'manual',
+        'payment_policy' => 'single',
+        'requires_responsible' => true,
+        'requires_service_order' => true,
+        'allows_discount' => false,
+        'allows_price_override' => false,
+        'allows_credit' => false,
+        'allows_advance' => false,
+        'allows_split_payment' => false,
+        'allows_mixed_payment' => false,
+        'is_active' => true,
+    ]);
+
+    $service = app(BusinessCommercialFlowRuleService::class);
+    $errors = $service->validateContext($rule, [
+        'cash_session_open' => false,
+        'discount_amount' => 5,
+        'payments' => [
+            ['method' => 'cash', 'amount' => 10],
+            ['method' => 'qr', 'amount' => 5],
+        ],
+    ]);
+    $ok = $service->validateContext($rule, [
+        'customer_id' => 1,
+        'cash_session_open' => true,
+        'responsible_id' => 2,
+        'service_order_id' => 3,
+        'payments' => [
+            ['method' => 'cash', 'amount' => 15],
+        ],
+    ]);
+
+    expect($errors)->toContain('Este flujo requiere cliente antes de continuar.')
+        ->and($errors)->toContain('Este flujo requiere caja abierta.')
+        ->and($errors)->toContain('Este flujo requiere responsable, tecnico, mesero o vendedor asignado.')
+        ->and($errors)->toContain('Este flujo requiere orden de servicio vinculada.')
+        ->and($errors)->toContain('Este flujo no permite descuentos.')
+        ->and($errors)->toContain('Este flujo no permite pago dividido.')
+        ->and($errors)->toContain('Este flujo no permite pago mixto.')
+        ->and($ok)->toBe([]);
+});
 
 it('resuelve workflows formales con permisos, validaciones y acciones', function () {
     $workflow = WorkflowDefinition::query()->create([

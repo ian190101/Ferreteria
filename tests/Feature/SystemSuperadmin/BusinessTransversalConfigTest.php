@@ -4,6 +4,7 @@ use App\Models\User;
 use App\Modules\Branches\Models\Branch;
 use App\Modules\HumanResources\Models\Worker;
 use App\Modules\SystemSuperadmin\Models\AttachmentDefinition;
+use App\Modules\SystemSuperadmin\Models\BusinessCommercialFlowRule;
 use App\Modules\SystemSuperadmin\Models\BusinessCurrency;
 use App\Modules\SystemSuperadmin\Models\BusinessProfileSandboxSession;
 use App\Modules\SystemSuperadmin\Models\BusinessStateDefinition;
@@ -654,6 +655,71 @@ it('bloquea formulas de calculo con operadores no permitidos', function () {
         ->assertSessionHasErrors('expression_text');
 
     expect(CalculationFormula::query()->where('code', 'formula_insegura')->exists())->toBeFalse();
+});
+
+it('crea reglas comerciales POS sin activar el perfil actual de ferreteria', function () {
+    $user = transversalUser();
+
+    $this->actingAs($user)
+        ->post(route('system-superadmin.transversal-config.store', 'commercial-flows'), [
+            'code' => 'pos_retail_base',
+            'name' => 'POS retail base',
+            'business_type' => 'supermarket',
+            'sales_workflow' => 'pos',
+            'pos_mode' => 'barcode',
+            'channel' => 'pos',
+            'document_type' => 'ticket',
+            'customer_mode' => 'optional',
+            'cash_policy' => 'required',
+            'inventory_timing' => 'payment',
+            'payment_policy' => 'single_or_mixed',
+            'allows_discount' => true,
+            'allows_price_override' => false,
+            'allows_credit' => false,
+            'allows_advance' => false,
+            'allows_split_payment' => false,
+            'allows_mixed_payment' => true,
+            'settings_text' => '{"quick_buttons":true,"show_images":false}',
+            'is_active' => true,
+        ])
+        ->assertRedirect();
+
+    $rule = BusinessCommercialFlowRule::query()->where('code', 'pos_retail_base')->first();
+    $configuration = BusinessProfileConfiguration::normalized([]);
+
+    expect($rule)->not->toBeNull()
+        ->and($rule->sales_workflow)->toBe('pos')
+        ->and($rule->cash_policy)->toBe('required')
+        ->and($rule->settings['quick_buttons'])->toBeTrue()
+        ->and($configuration['feature_flags']['commercial_flow_engine'])->toBeFalse()
+        ->and($configuration['capabilities']['uses_dynamic_pos'])->toBeFalse()
+        ->and($configuration['capabilities']['uses_commercial_flow_rules'])->toBeFalse()
+        ->and($configuration['sales']['workflow'])->toBe('quotation_to_sale_note');
+});
+
+it('bloquea reglas comerciales de restaurante sin modo POS compatible', function () {
+    $user = transversalUser();
+
+    $this->actingAs($user)
+        ->post(route('system-superadmin.transversal-config.store', 'commercial-flows'), [
+            'code' => 'mesa_mal_configurada',
+            'name' => 'Mesa mal configurada',
+            'business_type' => 'restaurant',
+            'sales_workflow' => 'restaurant_table',
+            'pos_mode' => 'retail',
+            'channel' => 'table',
+            'document_type' => 'ticket',
+            'customer_mode' => 'optional',
+            'cash_policy' => 'required',
+            'inventory_timing' => 'payment',
+            'payment_policy' => 'single_or_mixed',
+            'requires_resource' => true,
+            'allows_mixed_payment' => true,
+            'is_active' => true,
+        ])
+        ->assertSessionHasErrors('pos_mode');
+
+    expect(BusinessCommercialFlowRule::query()->where('code', 'mesa_mal_configurada')->exists())->toBeFalse();
 });
 
 it('bloquea definiciones de adjuntos con extensiones o mime fuera de politica', function () {

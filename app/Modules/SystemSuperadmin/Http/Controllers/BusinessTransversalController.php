@@ -5,6 +5,7 @@ namespace App\Modules\SystemSuperadmin\Http\Controllers;
 use App\Http\Controllers\Controller;
 use App\Modules\HumanResources\Models\Worker;
 use App\Modules\SystemSuperadmin\Models\AttachmentDefinition;
+use App\Modules\SystemSuperadmin\Models\BusinessCommercialFlowRule;
 use App\Modules\SystemSuperadmin\Models\BusinessCurrency;
 use App\Modules\SystemSuperadmin\Models\BusinessModuleLicense;
 use App\Modules\SystemSuperadmin\Models\BusinessStateDefinition;
@@ -111,6 +112,7 @@ class BusinessTransversalController extends Controller
             'document-templates' => $this->validateDocumentTemplate($request, $options, $current),
             'report-templates' => $this->validateReportTemplate($request, $options, $current),
             'calculation-formulas' => $this->validateCalculationFormula($request, $options, $current),
+            'commercial-flows' => $this->validateCommercialFlow($request, $options, $current),
             'custom-fields' => $this->validateCustomField($request, $options, $current),
             'workflows' => $this->validateWorkflow($request, $options, $current),
             'states' => $this->validateState($request, $options),
@@ -421,6 +423,145 @@ class BusinessTransversalController extends Controller
             'precision' => (int) $data['precision'],
             'permissions' => BusinessTransversalConfiguration::jsonFromText($data['permissions_text'] ?? null),
             'metadata' => BusinessTransversalConfiguration::jsonFromText($data['metadata_text'] ?? null),
+            'is_active' => (bool) ($data['is_active'] ?? true),
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $options
+     * @return array<string, mixed>
+     */
+    private function validateCommercialFlow(Request $request, array $options, ?Model $current = null): array
+    {
+        $uniqueCode = Rule::unique('business_commercial_flow_rules', 'code');
+
+        if ($current instanceof BusinessCommercialFlowRule) {
+            $uniqueCode->ignore($current->id);
+        }
+
+        $data = $request->validate([
+            'code' => ['required', 'string', 'max:120', 'regex:/^[a-z0-9_]+$/', $uniqueCode],
+            'name' => ['required', 'string', 'max:180'],
+            'business_type' => ['nullable', 'string', Rule::in(array_keys($options['businessTypes'] ?? []))],
+            'sales_workflow' => ['required', 'string', Rule::in(array_keys($options['salesWorkflows']))],
+            'pos_mode' => ['nullable', 'string', Rule::in(array_keys($options['posModes']))],
+            'channel' => ['nullable', 'string', Rule::in(array_keys($options['channels']))],
+            'document_type' => ['required', 'string', Rule::in(array_keys($options['commercialDocuments']))],
+            'customer_mode' => ['required', 'string', Rule::in(array_keys($options['customerModes']))],
+            'cash_policy' => ['required', 'string', Rule::in(array_keys($options['cashPolicies']))],
+            'inventory_timing' => ['required', 'string', Rule::in(array_keys($options['inventoryTimings']))],
+            'payment_policy' => ['required', 'string', Rule::in(array_keys($options['paymentPolicies']))],
+            'requires_resource' => ['boolean'],
+            'requires_responsible' => ['boolean'],
+            'requires_reservation' => ['boolean'],
+            'requires_service_order' => ['boolean'],
+            'requires_guarantee' => ['boolean'],
+            'allows_discount' => ['boolean'],
+            'allows_price_override' => ['boolean'],
+            'allows_credit' => ['boolean'],
+            'allows_advance' => ['boolean'],
+            'allows_split_payment' => ['boolean'],
+            'allows_mixed_payment' => ['boolean'],
+            'validations_text' => ['nullable', 'string', 'max:5000'],
+            'permissions_text' => ['nullable', 'string', 'max:3000'],
+            'settings_text' => ['nullable', 'string', 'max:5000'],
+            'is_default' => ['boolean'],
+            'is_active' => ['boolean'],
+        ], [], [
+            'code' => 'codigo interno',
+            'name' => 'nombre',
+            'sales_workflow' => 'flujo comercial',
+            'pos_mode' => 'modo POS',
+            'document_type' => 'documento',
+            'cash_policy' => 'politica de caja',
+            'payment_policy' => 'politica de pago',
+        ]);
+
+        $flow = $data['sales_workflow'];
+        $posMode = $data['pos_mode'] ?? null;
+        $requiresResource = (bool) ($data['requires_resource'] ?? false);
+        $requiresReservation = (bool) ($data['requires_reservation'] ?? false);
+        $requiresServiceOrder = (bool) ($data['requires_service_order'] ?? false);
+        $requiresGuarantee = (bool) ($data['requires_guarantee'] ?? false);
+        $allowsCredit = (bool) ($data['allows_credit'] ?? false);
+        $allowsSplitPayment = (bool) ($data['allows_split_payment'] ?? false);
+        $allowsMixedPayment = (bool) ($data['allows_mixed_payment'] ?? false);
+
+        if (str_starts_with($flow, 'restaurant_') && ! in_array($posMode, ['restaurant_table', 'restaurant_counter'], true)) {
+            throw ValidationException::withMessages([
+                'pos_mode' => 'Los flujos de restaurante requieren modo POS de restaurante con mesa o sin mesa.',
+            ]);
+        }
+
+        if ($flow === 'restaurant_table' && ! $requiresResource) {
+            throw ValidationException::withMessages([
+                'requires_resource' => 'El flujo por mesa debe exigir un recurso para evitar cuentas sin mesa.',
+            ]);
+        }
+
+        if ($flow === 'reservation_to_sale' && ! $requiresReservation) {
+            throw ValidationException::withMessages([
+                'requires_reservation' => 'El flujo desde reserva debe exigir reserva vinculada.',
+            ]);
+        }
+
+        if ($flow === 'service_sale' && ! $requiresServiceOrder) {
+            throw ValidationException::withMessages([
+                'requires_service_order' => 'El flujo de servicios debe exigir orden de servicio para mantener trazabilidad.',
+            ]);
+        }
+
+        if (in_array($flow, ['rental_flow'], true) && ! $requiresGuarantee) {
+            throw ValidationException::withMessages([
+                'requires_guarantee' => 'El flujo de alquiler debe exigir garantia para aplicar entrega/devolucion.',
+            ]);
+        }
+
+        if (($data['payment_policy'] ?? 'single_or_mixed') === 'credit_allowed' && ! $allowsCredit) {
+            throw ValidationException::withMessages([
+                'allows_credit' => 'La politica de credito permitido requiere activar credito en la regla.',
+            ]);
+        }
+
+        if (($data['payment_policy'] ?? 'single_or_mixed') === 'split' && ! $allowsSplitPayment) {
+            throw ValidationException::withMessages([
+                'allows_split_payment' => 'La politica de pago dividido requiere activar pago dividido.',
+            ]);
+        }
+
+        if (($data['payment_policy'] ?? 'single_or_mixed') === 'single_or_mixed' && ! $allowsMixedPayment) {
+            throw ValidationException::withMessages([
+                'allows_mixed_payment' => 'La politica de pago mixto requiere activar pago mixto.',
+            ]);
+        }
+
+        return [
+            'code' => $data['code'],
+            'name' => $data['name'],
+            'business_type' => $data['business_type'] ?? null,
+            'sales_workflow' => $flow,
+            'pos_mode' => $posMode,
+            'channel' => $data['channel'] ?? null,
+            'document_type' => $data['document_type'],
+            'customer_mode' => $data['customer_mode'],
+            'cash_policy' => $data['cash_policy'],
+            'inventory_timing' => $data['inventory_timing'],
+            'payment_policy' => $data['payment_policy'],
+            'requires_resource' => $requiresResource,
+            'requires_responsible' => (bool) ($data['requires_responsible'] ?? false),
+            'requires_reservation' => $requiresReservation,
+            'requires_service_order' => $requiresServiceOrder,
+            'requires_guarantee' => $requiresGuarantee,
+            'allows_discount' => (bool) ($data['allows_discount'] ?? false),
+            'allows_price_override' => (bool) ($data['allows_price_override'] ?? false),
+            'allows_credit' => $allowsCredit,
+            'allows_advance' => (bool) ($data['allows_advance'] ?? false),
+            'allows_split_payment' => $allowsSplitPayment,
+            'allows_mixed_payment' => $allowsMixedPayment,
+            'validations' => BusinessTransversalConfiguration::jsonFromText($data['validations_text'] ?? null),
+            'permissions' => BusinessTransversalConfiguration::jsonFromText($data['permissions_text'] ?? null),
+            'settings' => BusinessTransversalConfiguration::jsonFromText($data['settings_text'] ?? null),
+            'is_default' => (bool) ($data['is_default'] ?? false),
             'is_active' => (bool) ($data['is_active'] ?? true),
         ];
     }
@@ -1116,6 +1257,7 @@ class BusinessTransversalController extends Controller
             'document-templates' => DynamicDocumentTemplate::class,
             'report-templates' => DynamicReportTemplate::class,
             'calculation-formulas' => CalculationFormula::class,
+            'commercial-flows' => BusinessCommercialFlowRule::class,
             'custom-fields' => CustomFieldDefinition::class,
             'workflows' => WorkflowDefinition::class,
             'states' => BusinessStateDefinition::class,
@@ -1153,6 +1295,7 @@ class BusinessTransversalController extends Controller
             'document-templates' => 'Plantilla documental 2.0',
             'report-templates' => 'Plantilla de reporte',
             'calculation-formulas' => 'Formula de calculo',
+            'commercial-flows' => 'Regla comercial/POS',
             'custom-fields' => 'Campo personalizado',
             'workflows' => 'Flujo de estado',
             'states' => 'Estado personalizado',

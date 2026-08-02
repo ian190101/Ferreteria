@@ -41,6 +41,7 @@ class BusinessTransversalConfiguration
                 'document_templates' => 'Plantillas documentales 2.0',
                 'report_templates' => 'Plantillas de reportes',
                 'calculation_formulas' => 'Formulas de calculo',
+                'commercial_flows' => 'Reglas comerciales/POS',
                 'custom_fields' => 'Campos personalizados',
                 'workflows' => 'Flujos de estado',
                 'states' => 'Estados personalizados',
@@ -55,6 +56,7 @@ class BusinessTransversalConfiguration
                 'imports' => 'Importaciones por perfil',
             ],
             'entities' => self::baseEntities(),
+            'businessTypes' => BusinessProfileConfiguration::options()['businessTypes'],
             'entityModes' => [
                 'hidden' => 'Oculta',
                 'optional' => 'Opcional',
@@ -137,6 +139,17 @@ class BusinessTransversalConfiguration
                 'integer' => 'Entero',
                 'currency' => 'Moneda',
                 'percentage' => 'Porcentaje',
+            ],
+            'salesWorkflows' => BusinessProfileConfiguration::options()['salesWorkflows'],
+            'posModes' => BusinessProfileConfiguration::options()['posModes'],
+            'cashPolicies' => BusinessProfileConfiguration::options()['cashPolicies'],
+            'paymentPolicies' => BusinessProfileConfiguration::options()['paymentPolicies'],
+            'inventoryTimings' => BusinessProfileConfiguration::options()['inventoryTimings'],
+            'commercialDocuments' => BusinessProfileConfiguration::options()['documents'],
+            'customerModes' => [
+                'hidden' => 'Cliente oculto',
+                'optional' => 'Cliente opcional',
+                'required' => 'Cliente obligatorio',
             ],
             'reportModules' => [
                 'sales' => 'Ventas',
