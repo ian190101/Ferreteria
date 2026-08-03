@@ -128,7 +128,7 @@ class SaleController extends Controller
             $products = Product::query()
                 ->with(['unit:id,symbol', 'productCategory:id,name'])
                 ->whereIn('id', $validatedItems->pluck('product_id')->unique()->values())
-                ->get(['id', 'product_category_id', 'product_unit_id', 'name', 'sale_price', 'allowed_units', 'attributes', 'custom_attributes', 'inventory_tracking_mode'])
+                ->get(['id', 'product_category_id', 'product_unit_id', 'name', 'sale_price', 'allowed_units', 'attributes', 'custom_attributes', 'inventory_tracking_mode', 'item_type', 'is_inventory_item', 'service_type_id'])
                 ->keyBy('id');
 
             $items = $validatedItems->map(function (array $item) use ($commercialPolicy, $canOverridePrices, $products, $request, $customer) {
@@ -210,7 +210,7 @@ class SaleController extends Controller
             ]);
 
             $sale->items()->createMany($items->all());
-            $sale->load('items.product:id,inventory_tracking_mode');
+            $sale->load('items.product:id,inventory_tracking_mode,item_type,is_inventory_item');
 
             if ($sale->document_type === 'sale_note') {
                 event(new SaleNoteIssued(
@@ -246,7 +246,7 @@ class SaleController extends Controller
             'saleType:id,name',
             'currency:id,name,code,symbol,exchange_rate_to_bob',
             'advanceOption:id,name,type,percentage,amount',
-            'items.product:id,name,sku,inventory_tracking_mode,base_unit,product_unit_id',
+            'items.product:id,name,sku,inventory_tracking_mode,item_type,is_inventory_item,service_type_id,base_unit,product_unit_id',
             'items.product.unit:id,name,symbol',
             'items.coil:id,barcode,lot_number,available_meters,status',
             'items.deliveryItems:id,sale_item_id,meters,display_quantity,display_unit_label',
@@ -272,7 +272,7 @@ class SaleController extends Controller
 
         $newSale = DB::transaction(function () use ($request, $sale) {
             $quotation = Sale::query()
-                ->with(['items.product:id,inventory_tracking_mode'])
+                ->with(['items.product:id,inventory_tracking_mode,item_type,is_inventory_item'])
                 ->lockForUpdate()
                 ->findOrFail($sale->id);
 
@@ -285,7 +285,7 @@ class SaleController extends Controller
             $autoSelectedCoils = [];
             $usedMetersByCoil = [];
             $coilProductIds = $quotation->items
-                ->filter(fn (SaleItem $item) => $item->product->inventory_tracking_mode === Product::TRACKING_COIL && ! $item->product_coil_id)
+                ->filter(fn (SaleItem $item) => $item->product->is_inventory_item && $item->product->inventory_tracking_mode === Product::TRACKING_COIL && ! $item->product_coil_id)
                 ->pluck('product_id')
                 ->unique()
                 ->values()
@@ -294,6 +294,10 @@ class SaleController extends Controller
             $reservedByCoil = $this->reservedMetersByCoil($coilsByProduct->flatten(1)->pluck('id')->values()->all());
 
             foreach ($quotation->items as $index => $item) {
+                if (! $item->product->is_inventory_item) {
+                    continue;
+                }
+
                 if ($item->product->inventory_tracking_mode !== Product::TRACKING_COIL) {
                     continue;
                 }
@@ -358,7 +362,7 @@ class SaleController extends Controller
                 'discount_amount' => $item->discount_amount,
                 'total' => $item->total,
             ])->all());
-            $newSale->load('items.product:id,inventory_tracking_mode');
+            $newSale->load('items.product:id,inventory_tracking_mode,item_type,is_inventory_item');
 
             event(new SaleNoteIssued(
                 saleId: (int) $newSale->id,
@@ -404,7 +408,7 @@ class SaleController extends Controller
             $sale = Sale::query()
                 ->with([
                     'items.deliveryItems:id,sale_item_id',
-                    'items.product:id,inventory_tracking_mode',
+                    'items.product:id,inventory_tracking_mode,item_type,is_inventory_item',
                 ])
                 ->lockForUpdate()
                 ->findOrFail($sale->id);
@@ -677,7 +681,7 @@ class SaleController extends Controller
                 'currency:id,name,code,symbol,exchange_rate_to_bob',
                 'saleType:id,name',
                 'advanceOption:id,name,type,percentage,amount',
-                'items.product:id,name,sku,inventory_tracking_mode,product_category_id',
+                'items.product:id,name,sku,inventory_tracking_mode,item_type,is_inventory_item,product_category_id',
             ])
             ->when(true, fn ($query) => BranchAccess::apply($query, $request->user()))
             ->where('document_type', 'quotation')
@@ -901,7 +905,7 @@ class SaleController extends Controller
             ->filter(function ($item) use ($products) {
                 $product = $products->get((int) $item['product_id']);
 
-                return $product?->inventory_tracking_mode !== Product::TRACKING_COIL;
+                return $product?->is_inventory_item && $product->inventory_tracking_mode !== Product::TRACKING_COIL;
             })
             ->groupBy('product_id')
             ->map(fn ($group) => round((float) $group->sum('meters'), 3));

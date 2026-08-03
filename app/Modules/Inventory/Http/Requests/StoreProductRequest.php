@@ -33,6 +33,7 @@ class StoreProductRequest extends FormRequest
             'inventory_tracking_mode' => ['required', Rule::in([Product::TRACKING_GLOBAL, Product::TRACKING_COIL])],
             'base_unit' => ['required', 'string', 'max:24'],
             'item_type' => ['required', 'string', Rule::in(app(ProductWorkflowPolicy::class)->allowedItemTypes())],
+            'service_type_id' => ['nullable', 'integer', 'exists:service_types,id'],
             'is_sellable' => ['required', 'boolean'],
             'is_purchasable' => ['required', 'boolean'],
             'is_inventory_item' => ['required', 'boolean'],
@@ -107,6 +108,7 @@ class StoreProductRequest extends FormRequest
             'base_unit' => $unit?->symbol ?? ($this->filled('base_unit') ? $this->input('base_unit') : 'unidad'),
             'product_unit_id' => $unit?->id ?? $this->input('product_unit_id'),
             'item_type' => $this->normalizedItemType(),
+            'service_type_id' => $this->normalizedItemType() === 'service' ? $this->input('service_type_id') : null,
             'is_sellable' => $this->boolean('is_sellable', true),
             'is_purchasable' => $this->boolean('is_purchasable', true),
             'is_inventory_item' => $this->boolean('is_inventory_item', $this->normalizedItemType() !== 'service' && $this->normalizedItemType() !== 'digital'),
@@ -303,6 +305,10 @@ class StoreProductRequest extends FormRequest
 
         if ($this->input('item_type') === 'service' && ! $policy->allowServiceItems()) {
             $validator->errors()->add('item_type', 'Este perfil no permite crear servicios dentro del catalogo de productos.');
+        }
+
+        if ($this->input('item_type') !== 'service' && filled($this->input('service_type_id'))) {
+            $validator->errors()->add('service_type_id', 'El tipo de servicio solo aplica a items configurados como servicio.');
         }
 
         if ($this->input('item_type') === 'rental' && ! $policy->rentalsEnabled()) {

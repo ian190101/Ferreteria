@@ -21,11 +21,16 @@ class Branch extends AuditableModel
         'secondary_phone',
         'point_of_sale_name',
         'address',
+        'latitude',
+        'longitude',
+        'maps_reference',
         'is_active',
     ];
 
     protected $casts = [
         'is_active' => 'boolean',
+        'latitude' => 'decimal:7',
+        'longitude' => 'decimal:7',
     ];
 
     public function setting(): HasOne

@@ -29,6 +29,17 @@ class DeliveryNote extends AuditableModel
         'recipient_phone',
         'driver_name',
         'vehicle_plate',
+        'origin_address',
+        'origin_latitude',
+        'origin_longitude',
+        'destination_address',
+        'destination_latitude',
+        'destination_longitude',
+        'route_distance_meters',
+        'route_duration_seconds',
+        'route_provider',
+        'route_cache_key',
+        'route_geometry',
         'status',
         'notes',
     ];
@@ -38,6 +49,13 @@ class DeliveryNote extends AuditableModel
         'total_meters' => 'decimal:3',
         'manual_driver' => 'boolean',
         'manual_truck' => 'boolean',
+        'origin_latitude' => 'decimal:7',
+        'origin_longitude' => 'decimal:7',
+        'destination_latitude' => 'decimal:7',
+        'destination_longitude' => 'decimal:7',
+        'route_distance_meters' => 'integer',
+        'route_duration_seconds' => 'integer',
+        'route_geometry' => 'array',
     ];
 
     public function sale(): BelongsTo

@@ -9,6 +9,7 @@ use App\Modules\Inventory\Models\ProductCategory;
 use App\Modules\Inventory\Models\ProductCoil;
 use App\Modules\Inventory\Models\ProductUnit;
 use App\Modules\Inventory\Models\Thickness;
+use App\Modules\ServiceOrders\Models\ServiceType;
 use App\Modules\SystemSuperadmin\Models\BusinessProfile;
 use App\Modules\SystemSuperadmin\Models\ProductImage;
 use App\Modules\SystemSuperadmin\Models\ProductVariant;
@@ -193,6 +194,49 @@ it('bloquea servicios cuando el perfil no permite items de servicio', function (
         ])
         ->assertRedirect(route('inventory.products.create'))
         ->assertSessionHasErrors('item_type');
+});
+
+it('crea servicios vendibles en ferreteria cuando el perfil los activa', function () {
+    $user = inventoryUser(['inventory.products.view', 'inventory.products.manage']);
+    $unit = ProductUnit::query()->firstOrCreate(['symbol' => 'serv'], ['name' => 'Servicio', 'is_active' => true]);
+    $category = ProductCategory::query()->firstOrCreate(
+        ['name' => 'Servicios ferreteria'],
+        ['slug' => 'servicios-ferreteria', 'default_unit_id' => $unit->id, 'default_tracking_mode' => Product::TRACKING_GLOBAL, 'is_active' => true],
+    );
+    $serviceType = ServiceType::query()->where('code', 'general_service')->firstOrFail();
+
+    $this->actingAs($user)
+        ->post(route('inventory.products.store'), [
+            'product_category_id' => $category->id,
+            'product_unit_id' => $unit->id,
+            'service_type_id' => $serviceType->id,
+            'name' => 'Instalacion de cubierta',
+            'sku' => 'SERV-CUB-001',
+            'barcode' => null,
+            'item_type' => 'service',
+            'inventory_tracking_mode' => Product::TRACKING_GLOBAL,
+            'purchase_price' => 0,
+            'sale_price' => 250,
+            'minimum_stock_meters' => 0,
+            'is_active' => true,
+            'is_sellable' => true,
+            'is_purchasable' => false,
+            'is_inventory_item' => false,
+            'is_consumable' => false,
+            'is_prepared' => false,
+            'is_digital' => false,
+            'branch_scope' => 'specific',
+            'branch_ids' => [$user->branch_id],
+        ])
+        ->assertRedirect(route('inventory.products.index'))
+        ->assertSessionHasNoErrors();
+
+    $product = Product::query()->where('sku', 'SERV-CUB-001')->firstOrFail();
+
+    expect($product->item_type)->toBe('service')
+        ->and($product->service_type_id)->toBe($serviceType->id)
+        ->and($product->is_inventory_item)->toBeFalse()
+        ->and(ProductBranchStock::query()->where('product_id', $product->id)->exists())->toBeTrue();
 });
 
 it('crea producto alquilable con reglas flexibles cuando el perfil lo permite', function () {

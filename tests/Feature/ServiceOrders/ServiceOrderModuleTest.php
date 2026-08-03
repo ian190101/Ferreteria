@@ -9,6 +9,7 @@ use App\Modules\Inventory\Models\Product;
 use App\Modules\Inventory\Models\ProductBranchStock;
 use App\Modules\Inventory\Models\ProductUnit;
 use App\Modules\ServiceOrders\Models\ServiceOrder;
+use App\Modules\ServiceOrders\Models\ServiceType;
 use App\Modules\SystemSuperadmin\Models\BusinessProfile;
 use App\Modules\SystemSuperadmin\Models\BusinessStateDefinition;
 use App\Modules\SystemSuperadmin\Services\BusinessProfileConfiguration;
@@ -143,6 +144,65 @@ it('bloquea ordenes de servicio cuando el perfil desactiva el modulo', function 
     $this->actingAs($user)
         ->get(route('service-orders.index'))
         ->assertNotFound();
+});
+
+it('gestiona tipos de servicio y protege transporte delivery del borrado', function () {
+    $user = serviceOrderUser(serviceOrderConfiguration([
+        'modules' => ['services' => true, 'service_orders' => false],
+        'capabilities' => ['uses_services' => true, 'uses_service_orders' => false],
+    ]));
+
+    $delivery = ServiceType::query()->where('code', ServiceType::DELIVERY_CODE)->firstOrFail();
+
+    $this->actingAs($user)
+        ->get(route('service-orders.types.index'))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('ServiceOrders/Types/Index', false)
+            ->where('deliveryCode', ServiceType::DELIVERY_CODE)
+            ->where('types.data.0.code', 'general_service'));
+
+    $this->actingAs($user)
+        ->post(route('service-orders.types.store'), [
+            'name' => 'Instalacion especializada',
+            'code' => 'instalacion_especializada',
+            'billing_unit' => 'service',
+            'requires_materials' => true,
+            'requires_responsible' => false,
+            'requires_schedule' => false,
+            'is_delivery' => false,
+            'is_active' => true,
+            'sort_order' => 30,
+        ])
+        ->assertRedirect()
+        ->assertSessionHasNoErrors();
+
+    expect(ServiceType::query()->where('code', 'instalacion_especializada')->exists())->toBeTrue();
+
+    $this->actingAs($user)
+        ->put(route('service-orders.types.update', $delivery), [
+            'name' => 'Transporte/Delivery',
+            'code' => ServiceType::DELIVERY_CODE,
+            'billing_unit' => 'route',
+            'requires_materials' => false,
+            'requires_responsible' => true,
+            'requires_schedule' => false,
+            'is_delivery' => true,
+            'is_active' => false,
+            'sort_order' => 20,
+        ])
+        ->assertRedirect()
+        ->assertSessionHasNoErrors();
+
+    expect($delivery->fresh()->is_active)->toBeFalse();
+
+    $this->actingAs($user)
+        ->from(route('service-orders.types.index'))
+        ->delete(route('service-orders.types.destroy', $delivery))
+        ->assertRedirect(route('service-orders.types.index'))
+        ->assertSessionHasErrors('service_type');
+
+    expect(ServiceType::query()->where('code', ServiceType::DELIVERY_CODE)->exists())->toBeTrue();
 });
 
 it('exige tecnico cuando el perfil lo requiere', function () {

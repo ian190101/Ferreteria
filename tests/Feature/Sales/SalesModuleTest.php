@@ -13,6 +13,7 @@ use App\Modules\Sales\Models\Currency;
 use App\Modules\Sales\Models\DocumentSequence;
 use App\Modules\Sales\Models\Sale;
 use App\Modules\Sales\Models\SaleType;
+use App\Modules\ServiceOrders\Models\ServiceType;
 use App\Modules\SystemSuperadmin\Models\BusinessProfile;
 use App\Modules\SystemSuperadmin\Services\BusinessProfileConfiguration;
 use App\Support\SystemCacheInvalidator;
@@ -42,6 +43,12 @@ function salesUser(array $permissions): User
                 'max_discount_percent' => 100,
             ],
             'cash' => ['required_to_sell' => false],
+            'products' => [
+                'item_types' => ['physical', 'service'],
+                'allow_service_items' => true,
+            ],
+            'modules' => ['services' => true],
+            'capabilities' => ['uses_services' => true],
         ]),
         'applied_at' => now(),
     ]);
@@ -144,6 +151,66 @@ it('genera nota de venta con moneda, anticipo y saldo calculados', function () {
         ->and((float) $sale->exchange_rate_to_bob)->toBe(10.0)
         ->and((float) ProductBranchStock::query()->where('product_id', $product->id)->value('available_meters'))->toBe(90.0)
         ->and(InventoryMovement::query()->where('type', 'sale_stock_out')->where('product_id', $product->id)->exists())->toBeTrue();
+});
+
+it('vende servicios sin descontar inventario directo', function () {
+    $user = salesUser(['sales.view', 'sales.manage']);
+    $saleType = SaleType::query()->create(['name' => 'Servicios', 'is_active' => true]);
+    $currency = Currency::query()->create([
+        'name' => 'Bolivianos',
+        'code' => 'BOB',
+        'symbol' => 'Bs',
+        'exchange_rate_to_bob' => 1,
+        'is_base' => true,
+        'is_active' => true,
+    ]);
+    $serviceType = ServiceType::query()->where('code', 'general_service')->firstOrFail();
+    $service = Product::query()->create([
+        'name' => 'Instalacion de cubierta',
+        'sku' => 'SERV-VENTA-001',
+        'barcode' => 'SERV-VENTA-001',
+        'item_type' => 'service',
+        'service_type_id' => $serviceType->id,
+        'inventory_tracking_mode' => Product::TRACKING_GLOBAL,
+        'base_unit' => 'serv',
+        'minimum_stock_meters' => 0,
+        'purchase_price' => 0,
+        'sale_price' => 250,
+        'is_active' => true,
+        'is_sellable' => true,
+        'is_purchasable' => false,
+        'is_inventory_item' => false,
+    ]);
+    salesStock($user->branch_id, $service, 0);
+
+    $this->actingAs($user)
+        ->post(route('sales.store'), [
+            'document_type' => 'sale_note',
+            'branch_id' => $user->branch_id,
+            'sale_type_id' => $saleType->id,
+            'currency_id' => $currency->id,
+            'advance_option_id' => null,
+            'receipt_number' => 'SERV-001',
+            'customer_name' => 'Cliente servicio',
+            'sold_at' => now()->format('Y-m-d H:i:s'),
+            'items' => [[
+                'product_id' => $service->id,
+                'product_coil_id' => null,
+                'description' => 'Instalacion de cubierta',
+                'unit_label' => 'serv',
+                'meters' => 1,
+                'unit_price' => 250,
+                'discount_amount' => 0,
+            ]],
+        ])
+        ->assertRedirect()
+        ->assertSessionHasNoErrors();
+
+    $sale = Sale::query()->where('receipt_number', 'SERV-001')->firstOrFail();
+
+    expect((float) $sale->total)->toBe(250.0)
+        ->and(InventoryMovement::query()->where('product_id', $service->id)->exists())->toBeFalse()
+        ->and((float) ProductBranchStock::query()->where('product_id', $service->id)->value('available_meters'))->toBe(0.0);
 });
 
 it('bloquea nota de venta con stock global insuficiente', function () {

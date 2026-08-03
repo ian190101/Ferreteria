@@ -9,6 +9,7 @@ use App\Modules\Inventory\Http\Requests\UpdateProductRequest;
 use App\Modules\Inventory\Models\Product;
 use App\Modules\Inventory\Models\ProductBranchStock;
 use App\Modules\Inventory\Services\ProductWorkflowPolicy;
+use App\Modules\ServiceOrders\Models\ServiceType;
 use App\Support\UiCatalogCache;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -39,6 +40,7 @@ class ProductController extends Controller
                 'inventory_tracking_mode',
                 'base_unit',
                 'item_type',
+                'service_type_id',
                 'is_sellable',
                 'is_purchasable',
                 'is_inventory_item',
@@ -47,7 +49,7 @@ class ProductController extends Controller
                 'is_active',
                 'created_at',
             ])
-            ->with(['thickness:id,name', 'productCategory:id,name', 'unit:id,name,symbol', 'primaryImage:id,product_id,url,path,alt_text'])
+            ->with(['thickness:id,name', 'productCategory:id,name', 'unit:id,name,symbol', 'serviceType:id,name,code,is_delivery', 'primaryImage:id,product_id,url,path,alt_text'])
             ->withCount(['activeVariants'])
             ->whereHas('branchStocks', function ($query) use ($allowedBranchIds, $filterBranchId) {
                 $query->where('is_enabled', true)
@@ -91,6 +93,7 @@ class ProductController extends Controller
             'units' => $this->activeUnits(),
             'branches' => $this->activeBranches(request()),
             'attributeDefinitions' => UiCatalogCache::productAttributeDefinitions(),
+            'serviceTypes' => $this->activeServiceTypes(),
             'productPolicy' => $policy->summary(),
         ]);
     }
@@ -119,12 +122,13 @@ class ProductController extends Controller
         $policy = app(ProductWorkflowPolicy::class);
 
         return Inertia::render('Inventory/Products/Form', [
-            'product' => $product->load(['thickness', 'productCategory', 'unit', 'unitConversions.unit:id,name,symbol,kind', 'branchStocks:id,product_id,branch_id,is_enabled', 'images', 'activeVariants']),
+            'product' => $product->load(['thickness', 'productCategory', 'unit', 'serviceType:id,name,code,is_delivery', 'unitConversions.unit:id,name,symbol,kind', 'branchStocks:id,product_id,branch_id,is_enabled', 'images', 'activeVariants']),
             'thicknesses' => $this->activeThicknesses(),
             'categories' => $this->activeCategories(),
             'units' => $this->activeUnits(),
             'branches' => $this->activeBranches(request()),
             'attributeDefinitions' => UiCatalogCache::productAttributeDefinitions(),
+            'serviceTypes' => $this->activeServiceTypes(),
             'productPolicy' => $policy->summary(),
         ]);
     }
@@ -177,6 +181,15 @@ class ProductController extends Controller
     private function activeBranches(Request $request)
     {
         return UiCatalogCache::activeBranchesForUser($request->user(), ['id', 'name']);
+    }
+
+    private function activeServiceTypes()
+    {
+        return ServiceType::query()
+            ->where('is_active', true)
+            ->orderBy('sort_order')
+            ->orderBy('name')
+            ->get(['id', 'code', 'name', 'description', 'billing_unit', 'requires_materials', 'requires_responsible', 'requires_schedule', 'is_delivery', 'is_system']);
     }
 
     private function syncProductBranches(Product $product, Request $request, array $validated): void

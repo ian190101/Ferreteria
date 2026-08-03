@@ -31,6 +31,7 @@ class PosController extends Controller
         $products = Product::query()
             ->with(array_filter([
                 'unit:id,name,symbol,kind',
+                'serviceType:id,name,code,is_delivery',
                 'branchStocks' => fn ($query) => $query
                     ->where('branch_id', $branchId),
                 $posPolicy->usesImages() ? 'primaryImage:id,product_id,url,path,alt_text' : null,
@@ -55,6 +56,7 @@ class PosController extends Controller
                 'sale_price',
                 'inventory_tracking_mode',
                 'item_type',
+                'service_type_id',
                 'is_inventory_item',
                 'duration_minutes',
                 'preparation_minutes',
@@ -72,6 +74,12 @@ class PosController extends Controller
                     'stock' => (float) ($product->branchStocks->first()?->available_meters ?? 0),
                     'tracking' => $product->inventory_tracking_mode,
                     'item_type' => $product->item_type ?: 'physical',
+                    'service_type' => $product->serviceType ? [
+                        'id' => $product->serviceType->id,
+                        'name' => $product->serviceType->name,
+                        'code' => $product->serviceType->code,
+                        'is_delivery' => (bool) $product->serviceType->is_delivery,
+                    ] : null,
                     'is_inventory_item' => (bool) $product->is_inventory_item,
                     'duration_minutes' => $product->duration_minutes,
                     'preparation_minutes' => $product->preparation_minutes,

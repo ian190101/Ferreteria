@@ -7,6 +7,7 @@ use App\Modules\Customers\Models\Customer;
 use App\Modules\HumanResources\Models\Worker;
 use App\Modules\Inventory\Models\Product;
 use App\Modules\ServiceOrders\Models\ServiceOrder;
+use App\Modules\ServiceOrders\Models\ServiceType;
 use App\Modules\ServiceOrders\Services\ServiceOrderInventoryService;
 use App\Modules\ServiceOrders\Services\ServiceOrderWorkflowPolicy;
 use App\Modules\SystemSuperadmin\Models\BusinessStateDefinition;
@@ -42,7 +43,7 @@ class ServiceOrderController extends Controller
         }
 
         $orders = ServiceOrder::query()
-            ->with(['branch:id,name', 'customer:id,name,phone', 'worker:id,name,position', 'items.product:id,name,sku,base_unit'])
+            ->with(['branch:id,name', 'customer:id,name,phone', 'worker:id,name,position', 'serviceTypeCatalog:id,name,code,is_delivery', 'items.product:id,name,sku,base_unit'])
             ->where('branch_id', $branchId)
             ->when($request->filled('status'), fn ($query) => $query->where('status', $request->string('status')->toString()))
             ->when($request->filled('search'), function ($query) use ($request) {
@@ -63,6 +64,7 @@ class ServiceOrderController extends Controller
             'policy' => $policy->summary(),
             'orders' => $orders,
             'statuses' => $this->stateOptions(),
+            'serviceTypes' => $this->activeServiceTypes(),
             'workers' => Worker::query()
                 ->where('is_active', true)
                 ->where('branch_id', $branchId)
@@ -92,6 +94,9 @@ class ServiceOrderController extends Controller
         $this->validateWorker($data);
 
         DB::transaction(function () use ($data, $request, $inventory) {
+            $selectedType = ! empty($data['service_type_id'])
+                ? ServiceType::query()->find((int) $data['service_type_id'])
+                : null;
             $materialsAmount = collect($data['items'] ?? [])
                 ->sum(fn ($item) => round((float) $item['quantity'] * (float) ($item['unit_price'] ?? 0), 4));
             $laborAmount = (float) ($data['labor_amount'] ?? 0);
@@ -102,6 +107,7 @@ class ServiceOrderController extends Controller
                 'user_id' => $request->user()->id,
                 'order_number' => $this->nextOrderNumber(),
                 'status' => ServiceOrder::STATUS_PENDING,
+                'service_type' => $selectedType?->name ?? ($data['service_type'] ?? null),
                 'materials_amount' => $materialsAmount,
                 'labor_amount' => $laborAmount,
                 'advance_amount' => $advanceAmount,
@@ -172,6 +178,7 @@ class ServiceOrderController extends Controller
             'customer_name' => ['nullable', 'string', 'max:160'],
             'customer_phone' => ['nullable', 'string', 'max:80'],
             'title' => ['required', 'string', 'max:180'],
+            'service_type_id' => ['nullable', 'integer', 'exists:service_types,id'],
             'service_type' => ['nullable', 'string', 'max:80'],
             'scheduled_at' => ['nullable', 'date'],
             'labor_amount' => ['nullable', 'numeric', 'min:0', 'max:999999999'],
@@ -203,6 +210,30 @@ class ServiceOrderController extends Controller
             if ($policy->customerRequired() && ! $request->filled('customer_id') && ! $request->filled('customer_name')) {
                 $validator->errors()->add('customer_id', 'Este perfil exige seleccionar un cliente o registrar un cliente manual.');
             }
+
+            if ($request->filled('service_type_id')) {
+                $type = ServiceType::query()->find($request->integer('service_type_id'));
+
+                if (! $type || ! $type->is_active) {
+                    $validator->errors()->add('service_type_id', 'El tipo de servicio seleccionado no esta activo.');
+                }
+            }
+
+            $productIds = collect($request->input('items', []))->pluck('product_id')->filter()->unique()->values();
+            if ($productIds->isNotEmpty()) {
+                $invalidMaterials = Product::query()
+                    ->whereIn('id', $productIds)
+                    ->where(function ($query) {
+                        $query->where('is_inventory_item', false)
+                            ->orWhere('is_active', false);
+                    })
+                    ->pluck('name')
+                    ->all();
+
+                if ($invalidMaterials !== []) {
+                    $validator->errors()->add('items', 'Los materiales usados deben ser productos activos que manejen inventario: '.implode(', ', $invalidMaterials).'.');
+                }
+            }
         });
 
         return $validator->validate();
@@ -232,6 +263,15 @@ class ServiceOrderController extends Controller
             ->all();
 
         return $custom ?: self::FALLBACK_STATUSES;
+    }
+
+    private function activeServiceTypes()
+    {
+        return ServiceType::query()
+            ->where('is_active', true)
+            ->orderBy('sort_order')
+            ->orderBy('name')
+            ->get(['id', 'name', 'code', 'billing_unit', 'requires_materials', 'requires_responsible', 'requires_schedule', 'is_delivery']);
     }
 
     private function usesCustomStates(): bool

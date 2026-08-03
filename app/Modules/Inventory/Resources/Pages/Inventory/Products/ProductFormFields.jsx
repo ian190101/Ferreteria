@@ -29,6 +29,7 @@ export function buildProductFormData({ product = null, categories = [], units = 
         inventory_tracking_mode: product?.inventory_tracking_mode ?? initialCategory?.default_tracking_mode ?? 'global',
         base_unit: product?.base_unit ?? initialUnit?.symbol ?? 'unidad',
         item_type: product?.item_type ?? 'physical',
+        service_type_id: product?.service_type_id ?? product?.serviceType?.id ?? '',
         is_sellable: product?.is_sellable ?? true,
         is_purchasable: product?.is_purchasable ?? true,
         is_inventory_item: product?.is_inventory_item ?? true,
@@ -57,7 +58,7 @@ export function buildProductFormData({ product = null, categories = [], units = 
     };
 }
 
-export default function ProductFormFields({ data, setData, errors = {}, thicknesses = [], categories = [], units = [], branches = [], attributeDefinitions = [], decimalFormat, compact = false, productPolicy = {} }) {
+export default function ProductFormFields({ data, setData, errors = {}, thicknesses = [], categories = [], units = [], branches = [], attributeDefinitions = [], serviceTypes = [], decimalFormat, compact = false, productPolicy = {} }) {
     const selectedCategory = categories.find((category) => Number(category.id) === Number(data.product_category_id));
     const selectedUnit = units.find((unit) => Number(unit.id) === Number(data.product_unit_id));
     const profit = Math.max(Number(data.sale_price || 0) - Number(data.purchase_price || 0), 0);
@@ -180,6 +181,7 @@ export default function ProductFormFields({ data, setData, errors = {}, thicknes
         setData({
             ...data,
             item_type: itemType,
+            service_type_id: itemType === 'service' ? data.service_type_id : '',
             is_inventory_item: !isService,
             is_consumable: itemType === 'internal_supply',
             is_prepared: isPrepared,
@@ -225,7 +227,7 @@ export default function ProductFormFields({ data, setData, errors = {}, thicknes
                     </option>
                 ))}
             </SelectField>
-            <CatalogBehavior data={data} setData={setData} errors={errors} productPolicy={productPolicy} selectItemType={selectItemType} />
+            <CatalogBehavior data={data} setData={setData} errors={errors} productPolicy={productPolicy} serviceTypes={serviceTypes} selectItemType={selectItemType} />
             <CatalogTraceability data={data} setData={setData} errors={errors} productPolicy={productPolicy} />
             <GeneratedField label="SKU" name="sku" value={data.sku} onChange={(event) => setData('sku', event.target.value)} error={errors.sku} onGenerate={generateSku} />
             <GeneratedField label={productPolicy.barcodeRequired ? 'Barcode *' : 'Barcode'} name="barcode" value={data.barcode} onChange={(event) => setData('barcode', event.target.value)} error={errors.barcode} onGenerate={generateBarcode} />
@@ -298,7 +300,7 @@ export default function ProductFormFields({ data, setData, errors = {}, thicknes
     );
 }
 
-function CatalogBehavior({ data, setData, errors, productPolicy, selectItemType }) {
+function CatalogBehavior({ data, setData, errors, productPolicy, serviceTypes = [], selectItemType }) {
     const itemTypes = productPolicy.allowedItemTypes ?? ['physical'];
 
     return (
@@ -314,12 +316,27 @@ function CatalogBehavior({ data, setData, errors, productPolicy, selectItemType 
                     <SelectField label="Tipo de item" name="item_type" value={data.item_type ?? 'physical'} onChange={(event) => selectItemType(event.target.value)} error={errors.item_type}>
                         {itemTypes.map((type) => <option key={type} value={type}>{itemTypeLabel(type)}</option>)}
                     </SelectField>
+                    {data.item_type === 'service' ? (
+                        <SelectField label="Tipo de servicio" name="service_type_id" value={data.service_type_id ?? ''} onChange={(event) => setData('service_type_id', event.target.value)} error={errors.service_type_id} helpTitle="Tipo de servicio" helpTooltip="Clasifica este servicio para ventas, ordenes, reportes y reglas futuras. Transporte/Delivery es protegido y se puede ocultar o activar desde sistemasuperadmin.">
+                            <option value="">Servicio general sin clasificar</option>
+                            {serviceTypes.map((type) => (
+                                <option key={type.id} value={type.id}>
+                                    {type.name}{type.is_delivery ? ' (delivery)' : ''}
+                                </option>
+                            ))}
+                        </SelectField>
+                    ) : null}
                     <div className="grid grid-cols-2 gap-2 text-sm">
                         <ToggleOption label="Vendible" checked={data.is_sellable} onChange={(value) => setData('is_sellable', value)} />
                         <ToggleOption label="Comprable" checked={data.is_purchasable} onChange={(value) => setData('is_purchasable', value)} />
                         <ToggleOption label="Maneja stock" checked={data.is_inventory_item} onChange={(value) => setData('is_inventory_item', value)} />
                         <ToggleOption label="Insumo interno" checked={data.is_consumable} onChange={(value) => setData('is_consumable', value)} />
                     </div>
+                    {data.item_type === 'service' ? (
+                        <div className="rounded-md border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-100 md:col-span-2">
+                            Un servicio se vende en cotizaciones, notas de venta o POS sin descontar stock propio. Si el servicio usa materiales, esos materiales deben registrarse como productos/insumos separados.
+                        </div>
+                    ) : null}
                     {['service', 'digital', 'rental'].includes(data.item_type) ? (
                         <FormField label="Duracion estimada en minutos" name="duration_minutes" type="number" min="0" value={data.duration_minutes ?? ''} onChange={(event) => setData('duration_minutes', event.target.value)} error={errors.duration_minutes} />
                     ) : null}

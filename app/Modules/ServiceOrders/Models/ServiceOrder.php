@@ -31,6 +31,7 @@ class ServiceOrder extends AuditableModel
         'customer_phone',
         'title',
         'service_type',
+        'service_type_id',
         'status',
         'scheduled_at',
         'started_at',
@@ -74,6 +75,11 @@ class ServiceOrder extends AuditableModel
     public function worker(): BelongsTo
     {
         return $this->belongsTo(Worker::class);
+    }
+
+    public function serviceTypeCatalog(): BelongsTo
+    {
+        return $this->belongsTo(ServiceType::class, 'service_type_id');
     }
 
     public function user(): BelongsTo

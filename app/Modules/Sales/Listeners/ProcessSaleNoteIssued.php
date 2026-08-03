@@ -20,7 +20,7 @@ class ProcessSaleNoteIssued
     public function handle(SaleNoteIssued $event): void
     {
         $sale = Sale::query()
-            ->with('items.product:id,inventory_tracking_mode')
+            ->with('items.product:id,inventory_tracking_mode,item_type,is_inventory_item')
             ->lockForUpdate()
             ->findOrFail($event->saleId);
 

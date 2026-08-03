@@ -14,6 +14,7 @@ class DeliveryTruck extends AuditableModel
     protected $fillable = [
         'branch_id',
         'plate',
+        'vehicle_type',
         'description',
         'brand',
         'model',

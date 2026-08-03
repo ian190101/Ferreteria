@@ -42,4 +42,14 @@ return [
         'production_qr_base' => env('SIAT_PRODUCTION_QR_BASE', 'https://siat.impuestos.gob.bo/consulta/QR'),
     ],
 
+    'openstreetmap' => [
+        'tiles_url' => env('OSM_TILES_URL', 'https://tile.openstreetmap.org/{z}/{x}/{y}.png'),
+        'nominatim_url' => env('OSM_NOMINATIM_URL', 'https://nominatim.openstreetmap.org'),
+        'osrm_url' => env('OSM_OSRM_URL', 'https://router.project-osrm.org'),
+        'user_agent' => env('OSM_USER_AGENT', env('APP_NAME', 'ERP POS').'/1.0 (contacto: soporte local)'),
+        'countrycodes' => env('OSM_NOMINATIM_COUNTRYCODES', 'bo'),
+        'route_cache_days' => (int) env('OSM_ROUTE_CACHE_DAYS', 30),
+        'geocode_cache_days' => (int) env('OSM_GEOCODE_CACHE_DAYS', 7),
+    ],
+
 ];

@@ -27,6 +27,10 @@ class SaleInventoryService
     public function decrementForSale(Sale $sale, int $userId): void
     {
         foreach ($sale->items as $item) {
+            if (! $this->tracksInventory($item->product)) {
+                continue;
+            }
+
             if ($this->alreadyMoved(SaleItem::class, (int) $item->id, 'sale_stock_out')) {
                 continue;
             }
@@ -50,8 +54,12 @@ class SaleInventoryService
         $deliveryItem->loadMissing([
             'deliveryNote:id,branch_id,delivery_number,delivered_at',
             'saleItem:id,sale_id,product_id,product_coil_id,meters',
-            'product:id,inventory_tracking_mode',
+            'product:id,inventory_tracking_mode,item_type,is_inventory_item',
         ]);
+
+        if (! $this->tracksInventory($deliveryItem->product)) {
+            return;
+        }
 
         $sale = new Sale([
             'branch_id' => $deliveryItem->deliveryNote->branch_id,
@@ -324,5 +332,10 @@ class SaleInventoryService
         $item->loadMissing('product.productCategory:id,name');
 
         return app(CommercialPolicy::class)->canSellNegativeStock($user, $item->product?->productCategory?->name);
+    }
+
+    private function tracksInventory(?Product $product): bool
+    {
+        return (bool) ($product?->is_inventory_item ?? true);
     }
 }

@@ -3,6 +3,7 @@
 namespace App\Modules\Sales\Http\Controllers;
 
 use App\Http\Controllers\Controller;
+use App\Modules\Branches\Models\Branch;
 use App\Modules\Sales\Http\Requests\StoreDeliveryNoteRequest;
 use App\Modules\Sales\Models\DeliveryDriver;
 use App\Modules\Sales\Models\DeliveryNote;
@@ -13,8 +14,10 @@ use App\Modules\Sales\Models\SaleItem;
 use App\Modules\Sales\Models\SaleReturnItem;
 use App\Modules\Sales\Services\SaleInventoryService;
 use App\Modules\Sales\Services\SalesWorkflowPolicy;
+use App\Modules\Sales\Services\TransportRouteService;
 use App\Support\BranchAccess;
 use App\Support\UiCatalogCache;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -30,10 +33,10 @@ class DeliveryNoteController extends Controller
         $deliveries = DeliveryNote::query()
             ->with([
                 'sale:id,receipt_number,customer_name,status,total',
-                'branch:id,name',
+                'branch:id,name,address,latitude,longitude',
                 'user:id,name',
                 'driver:id,name,phone,license_number',
-                'truck:id,plate,description',
+                'truck:id,plate,vehicle_type,description',
                 'items.product:id,name,sku',
                 'items.coil:id,barcode,lot_number',
             ])
@@ -70,7 +73,7 @@ class DeliveryNoteController extends Controller
 
         return Inertia::render('Sales/Deliveries/Index', [
             'deliveries' => $deliveries,
-            'branches' => UiCatalogCache::activeBranchesForUser($request->user()),
+            'branches' => UiCatalogCache::activeBranchesForUser($request->user(), ['id', 'name', 'address', 'latitude', 'longitude']),
             'sales' => $sales,
             'saleItems' => $this->deliverableSaleItems($request),
             'drivers' => $this->drivers($request),
@@ -80,15 +83,61 @@ class DeliveryNoteController extends Controller
         ]);
     }
 
+    public function geocode(Request $request, TransportRouteService $routes): JsonResponse
+    {
+        abort_unless($request->user()?->can('sales.deliveries.manage'), 403);
+
+        $data = $request->validate([
+            'query' => ['required', 'string', 'min:3', 'max:255'],
+        ]);
+
+        return response()->json([
+            'results' => $routes->geocode($data['query'], $this->routeThrottleKey($request)),
+            'attribution' => '© OpenStreetMap contributors',
+        ]);
+    }
+
+    public function route(Request $request, TransportRouteService $routes): JsonResponse
+    {
+        abort_unless($request->user()?->can('sales.deliveries.manage'), 403);
+
+        $data = $request->validate([
+            'sale_id' => ['required', 'integer', 'exists:sales,id'],
+            'destination_latitude' => ['required', 'numeric', 'between:-90,90'],
+            'destination_longitude' => ['required', 'numeric', 'between:-180,180'],
+        ]);
+
+        $sale = Sale::query()
+            ->where('document_type', 'sale_note')
+            ->findOrFail((int) $data['sale_id']);
+        abort_unless(BranchAccess::canAccess($request->user(), (int) $sale->branch_id), 403);
+
+        $branch = Branch::query()->findOrFail((int) $sale->branch_id);
+
+        return response()->json([
+            'route' => $routes->routeForBranch(
+                $branch,
+                (float) $data['destination_latitude'],
+                (float) $data['destination_longitude'],
+                $this->routeThrottleKey($request),
+            ),
+            'attribution' => 'Ruta por OSRM con datos © OpenStreetMap contributors',
+        ]);
+    }
+
     public function store(StoreDeliveryNoteRequest $request, SaleInventoryService $inventory, SalesWorkflowPolicy $workflow): RedirectResponse
     {
-        DB::transaction(function () use ($request, $inventory, $workflow) {
+        $route = $this->confirmedRouteForDelivery($request, Branch::query()
+            ->findOrFail((int) Sale::query()->whereKey($request->integer('sale_id'))->value('branch_id')));
+
+        DB::transaction(function () use ($request, $inventory, $workflow, $route) {
             $sale = Sale::query()
                 ->where('document_type', 'sale_note')
                 ->where('status', '!=', 'void')
                 ->where('requires_delivery', true)
                 ->lockForUpdate()
                 ->findOrFail($request->integer('sale_id'));
+            $branch = Branch::query()->findOrFail((int) $sale->branch_id);
             $driver = $request->filled('delivery_driver_id') ? DeliveryDriver::query()->find($request->integer('delivery_driver_id')) : null;
             $truck = $request->filled('delivery_truck_id') ? DeliveryTruck::query()->find($request->integer('delivery_truck_id')) : null;
 
@@ -108,6 +157,17 @@ class DeliveryNoteController extends Controller
                 'recipient_phone' => $request->validated('recipient_phone'),
                 'driver_name' => $driver?->name ?? $request->validated('driver_name'),
                 'vehicle_plate' => $truck?->plate ?? $request->validated('vehicle_plate'),
+                'origin_address' => $route['origin']['address'] ?? $branch->address,
+                'origin_latitude' => $route['origin']['latitude'] ?? $branch->latitude,
+                'origin_longitude' => $route['origin']['longitude'] ?? $branch->longitude,
+                'destination_address' => $request->validated('destination_address'),
+                'destination_latitude' => $request->validated('destination_latitude'),
+                'destination_longitude' => $request->validated('destination_longitude'),
+                'route_distance_meters' => $route['distance_meters'] ?? null,
+                'route_duration_seconds' => $route['duration_seconds'] ?? null,
+                'route_provider' => $route['provider'] ?? null,
+                'route_cache_key' => $route['cache_key'] ?? null,
+                'route_geometry' => $route['geometry'] ?? null,
                 'status' => 'partial',
                 'notes' => $request->validated('notes'),
             ]);
@@ -178,6 +238,7 @@ class DeliveryNoteController extends Controller
                 'internal_notes' => trim(implode("\n", array_filter([
                     $sale->internal_notes,
                     "Despacho {$delivery->delivery_number}: ".$this->deliverySummary($delivery),
+                    $delivery->route_distance_meters ? "Ruta transporte: ".number_format($delivery->route_distance_meters / 1000, 2, '.', '').' km aprox.' : null,
                 ]))),
             ]);
         });
@@ -204,7 +265,7 @@ class DeliveryNoteController extends Controller
     {
         DeliveryTruck::query()->create($this->truckData($request));
 
-        return back()->with('success', 'Camion creado correctamente.');
+        return back()->with('success', 'Vehiculo creado correctamente.');
     }
 
     public function updateTruck(Request $request, DeliveryTruck $truck): RedirectResponse
@@ -212,7 +273,7 @@ class DeliveryNoteController extends Controller
         $this->authorizeCatalogBranch($request, $truck->branch_id);
         $truck->update($this->truckData($request, $truck));
 
-        return back()->with('success', 'Camion actualizado correctamente.');
+        return back()->with('success', 'Vehiculo actualizado correctamente.');
     }
 
     private function deliverableSaleItems(Request $request)
@@ -295,7 +356,7 @@ class DeliveryNoteController extends Controller
             ->where('is_active', true)
             ->where(fn ($query) => $query->whereNull('branch_id')->orWhereIn('branch_id', $branchIds))
             ->orderBy('plate')
-            ->get(['id', 'branch_id', 'plate', 'description', 'brand', 'model', 'capacity']);
+            ->get(['id', 'branch_id', 'plate', 'vehicle_type', 'description', 'brand', 'model', 'capacity']);
     }
 
     private function quantityToBase(SaleItem $saleItem, array $item): float
@@ -340,6 +401,25 @@ class DeliveryNoteController extends Controller
             ->join(', ');
     }
 
+    private function confirmedRouteForDelivery(StoreDeliveryNoteRequest $request, Branch $branch): ?array
+    {
+        if (! $request->filled('destination_latitude') || ! $request->filled('destination_longitude')) {
+            return null;
+        }
+
+        return app(TransportRouteService::class)->routeForBranch(
+            $branch,
+            (float) $request->validated('destination_latitude'),
+            (float) $request->validated('destination_longitude'),
+            $this->routeThrottleKey($request),
+        );
+    }
+
+    private function routeThrottleKey(Request $request): string
+    {
+        return (string) ($request->user()?->id ?? $request->ip());
+    }
+
     private function driverData(Request $request): array
     {
         $data = $request->validate([
@@ -361,6 +441,7 @@ class DeliveryNoteController extends Controller
         $data = $request->validate([
             'branch_id' => ['nullable', 'integer', 'exists:branches,id'],
             'plate' => ['required', 'string', 'max:40', Rule::unique('delivery_trucks', 'plate')->ignore($truck?->id)],
+            'vehicle_type' => ['required', 'string', Rule::in(['motorcycle', 'car', 'pickup', 'truck', 'other'])],
             'description' => ['nullable', 'string', 'max:255'],
             'brand' => ['nullable', 'string', 'max:80'],
             'model' => ['nullable', 'string', 'max:80'],

@@ -379,7 +379,7 @@ export default function Form({
                                     </SelectField>
                                     <SelectField label="Producto" name={`items.${index}.product_id`} value={item.product_id} onChange={(event) => selectProduct(index, event.target.value)} error={errors[`items.${index}.product_id`]}>
                                         <option value="">Seleccionar</option>
-                                        {productsForCategory(products, item.product_category_id, data.branch_id).map((product) => <option key={product.id} value={product.id}>{product.name} ({trackingLabel(product)})</option>)}
+                                        {productsForCategory(products, item.product_category_id, data.branch_id).map((product) => <option key={product.id} value={product.id}>{product.name} ({itemDescriptor(product)})</option>)}
                                     </SelectField>
                                     {documentType === 'sale_note' && product?.inventory_tracking_mode === 'coil' ? (
                                         <SelectField label="Lote/unidad fisica" name={`items.${index}.product_coil_id`} value={item.product_coil_id} onChange={(event) => updateItem(index, 'product_coil_id', event.target.value)} error={errors[`items.${index}.product_coil_id`]} helpTitle="Lote o unidad fisica" helpTooltip="Se usa para productos que se venden por una pieza fisica identificable: bobinas, rollos, lotes con vencimiento o materiales que se cortan por partes." helpText="Obligatorio solo si el producto se controla por lote, rollo, bobina o unidad fisica.">
@@ -869,9 +869,23 @@ function formatDocumentQuantity(value, item, product, units, decimalFormat) {
 }
 
 function trackingLabel(product) {
+    if (product?.item_type === 'service' || product?.is_inventory_item === false) {
+        return 'No descuenta stock';
+    }
+
     return product?.inventory_tracking_mode === 'coil'
         ? 'Stock por sucursal + lote/unidad'
         : 'Stock por sucursal';
+}
+
+function itemDescriptor(product) {
+    const serviceName = product?.service_type?.name ?? product?.serviceType?.name;
+
+    if (product?.item_type === 'service') {
+        return serviceName ? `Servicio: ${serviceName}` : 'Servicio';
+    }
+
+    return trackingLabel(product);
 }
 
 function productSalePrice(product) {

@@ -6,6 +6,8 @@ use App\Modules\Inventory\Models\Product;
 use App\Modules\Sales\Models\DeliveryNote;
 use App\Modules\Sales\Models\Sale;
 use App\Modules\Sales\Models\SaleReturn;
+use App\Modules\Sales\Models\TransportRouteCache;
+use Illuminate\Support\Facades\Http;
 use Inertia\Testing\AssertableInertia as Assert;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
@@ -24,6 +26,9 @@ function deliveriesUser(array $permissions): User
         'name' => 'Sucursal despachos',
         'code' => 'DES-'.$suffix,
         'barcode' => 'BR-DES-'.$suffix,
+        'address' => 'Av. Blanco Galindo, Cochabamba',
+        'latitude' => -17.3935000,
+        'longitude' => -66.1570000,
         'is_active' => true,
     ]);
 
@@ -181,6 +186,72 @@ it('bloquea despacho mayor al pendiente por entregar', function () {
         ])
         ->assertRedirect(route('sales.deliveries.index'))
         ->assertSessionHasErrors('items');
+});
+
+it('busca destino calcula ruta por carretera y guarda trazabilidad del despacho', function () {
+    $user = deliveriesUser(['sales.deliveries.view', 'sales.deliveries.manage']);
+    $product = deliveryProduct('DES-RUTA');
+    $sale = deliverySale($user, $product, 8);
+
+    Http::fake([
+        'nominatim.openstreetmap.org/search*' => Http::response([[
+            'display_name' => 'Plaza 14 de Septiembre, Cochabamba, Bolivia',
+            'lat' => '-17.3931200',
+            'lon' => '-66.1568300',
+            'type' => 'square',
+            'importance' => 0.8,
+        ]], 200),
+        'router.project-osrm.org/route/v1/driving/*' => Http::response([
+            'code' => 'Ok',
+            'routes' => [[
+                'distance' => 3450.4,
+                'duration' => 760.2,
+                'geometry' => [
+                    'type' => 'LineString',
+                    'coordinates' => [[-66.157, -17.3935], [-66.15683, -17.39312]],
+                ],
+            ]],
+        ], 200),
+    ]);
+
+    $this->actingAs($user)
+        ->getJson(route('sales.deliveries.geocode', ['query' => 'Plaza 14 de Septiembre']))
+        ->assertOk()
+        ->assertJsonPath('results.0.latitude', -17.39312);
+
+    $this->actingAs($user)
+        ->postJson(route('sales.deliveries.route'), [
+            'sale_id' => $sale->id,
+            'destination_latitude' => -17.39312,
+            'destination_longitude' => -66.15683,
+        ])
+        ->assertOk()
+        ->assertJsonPath('route.distance_meters', 3450)
+        ->assertJsonPath('route.cached', false);
+
+    $this->actingAs($user)
+        ->post(route('sales.deliveries.store'), [
+            'sale_id' => $sale->id,
+            'delivery_number' => 'DESP-RUTA-001',
+            'delivered_at' => now()->format('Y-m-d H:i:s'),
+            'recipient_name' => 'Cliente con ruta',
+            'destination_address' => 'Plaza 14 de Septiembre, Cochabamba, Bolivia',
+            'destination_latitude' => -17.39312,
+            'destination_longitude' => -66.15683,
+            'items' => [
+                ['sale_item_id' => $sale->items->first()->id, 'meters' => 8],
+            ],
+        ])
+        ->assertRedirect(route('sales.deliveries.index'))
+        ->assertSessionHasNoErrors();
+
+    $delivery = DeliveryNote::query()->where('delivery_number', 'DESP-RUTA-001')->firstOrFail();
+
+    expect($delivery->route_provider)->toBe('osrm')
+        ->and($delivery->route_distance_meters)->toBe(3450)
+        ->and($delivery->route_duration_seconds)->toBe(760)
+        ->and($delivery->route_cache_key)->not->toBeNull()
+        ->and(TransportRouteCache::query()->where('cache_key', $delivery->route_cache_key)->exists())->toBeTrue();
 });
 
 it('lista despachos con permiso y bloquea sin permiso', function () {

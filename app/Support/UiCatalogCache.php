@@ -85,12 +85,13 @@ class UiCatalogCache
             ->with([
                 'thickness:id,name,kg_to_meter_factor,kg_per_meter',
                 'unit:id,name,symbol,kind',
+                'serviceType:id,name,code,is_delivery',
                 'unitConversions.unit:id,name,symbol,kind',
                 'branchStocks:id,product_id,branch_id,is_enabled',
             ])
             ->where('is_active', true)
             ->orderBy('name')
-            ->get(['id', 'thickness_id', 'product_category_id', 'product_unit_id', 'name', 'sku', 'barcode', 'inventory_tracking_mode', 'base_unit', 'allowed_units', 'attributes', 'custom_attributes', 'purchase_price', 'sale_price']));
+            ->get(['id', 'thickness_id', 'product_category_id', 'product_unit_id', 'service_type_id', 'name', 'sku', 'barcode', 'inventory_tracking_mode', 'base_unit', 'item_type', 'is_inventory_item', 'allowed_units', 'attributes', 'custom_attributes', 'purchase_price', 'sale_price']));
     }
 
     public static function activeProductsWithThicknessForUser(User $user)
@@ -106,6 +107,7 @@ class UiCatalogCache
             ->with([
                 'thickness:id,name,kg_to_meter_factor,kg_per_meter',
                 'unit:id,name,symbol,kind',
+                'serviceType:id,name,code,is_delivery',
                 'unitConversions.unit:id,name,symbol,kind',
                 'branchStocks:id,product_id,branch_id,is_enabled',
             ])
@@ -114,7 +116,7 @@ class UiCatalogCache
                 ->where('is_enabled', true)
                 ->whereIn('branch_id', $branchIds))
             ->orderBy('name')
-            ->get(['id', 'thickness_id', 'product_category_id', 'product_unit_id', 'name', 'sku', 'barcode', 'inventory_tracking_mode', 'base_unit', 'allowed_units', 'attributes', 'custom_attributes', 'purchase_price', 'sale_price']));
+            ->get(['id', 'thickness_id', 'product_category_id', 'product_unit_id', 'service_type_id', 'name', 'sku', 'barcode', 'inventory_tracking_mode', 'base_unit', 'item_type', 'is_inventory_item', 'allowed_units', 'attributes', 'custom_attributes', 'purchase_price', 'sale_price']));
     }
 
     public static function activeCoilProducts()

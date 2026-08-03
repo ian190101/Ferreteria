@@ -7,6 +7,7 @@ use App\Modules\Inventory\Models\InventoryReservation;
 use App\Modules\Inventory\Models\Product;
 use App\Modules\Inventory\Models\ProductBranchStock;
 use App\Modules\Inventory\Models\ProductCoil;
+use App\Modules\Inventory\Services\ProductWorkflowPolicy;
 use App\Modules\Payments\Models\PaymentMethod;
 use App\Modules\Pos\Services\PosWorkflowPolicy;
 use App\Modules\Sales\Models\AdvanceOption;
@@ -235,6 +236,7 @@ class StoreSaleDocumentRequest extends FormRequest
 
             $fromPos = $this->boolean('from_pos') || $this->filled('pos_payment_method_id') || $this->filled('pos_payment_amount');
             $posPolicy = app(PosWorkflowPolicy::class);
+            $productPolicy = app(ProductWorkflowPolicy::class);
 
             if ($fromPos) {
                 if (! ActiveBusinessProfile::enabled('pos') && ! ActiveBusinessProfile::capable('uses_pos')) {
@@ -285,7 +287,7 @@ class StoreSaleDocumentRequest extends FormRequest
             $productIds = $items->pluck('product_id')->filter()->unique()->values();
             $products = Product::query()
                 ->whereIn('id', $productIds)
-                ->get(['id', 'base_unit', 'allowed_units', 'inventory_tracking_mode', 'item_type', 'is_sellable', 'is_active'])
+                ->get(['id', 'base_unit', 'allowed_units', 'inventory_tracking_mode', 'item_type', 'is_inventory_item', 'is_sellable', 'is_active'])
                 ->keyBy('id');
 
             $sourceQuotation = $this->filled('source_quotation_id')
@@ -338,13 +340,27 @@ class StoreSaleDocumentRequest extends FormRequest
                     $validator->errors()->add("items.{$index}.display_unit_label", 'La unidad seleccionada no esta habilitada para este producto.');
                 }
 
-                if ($fromPos) {
-                    if (! $product->is_active || ! $product->is_sellable) {
-                        $validator->errors()->add("items.{$index}.product_id", 'El POS solo puede vender items activos y vendibles.');
-                    }
+                if (! in_array($product->item_type ?: 'physical', $productPolicy->allowedItemTypes(), true)) {
+                    $validator->errors()->add("items.{$index}.product_id", 'Este tipo de item no esta habilitado para ventas en el perfil actual.');
+                }
 
+                if (($product->item_type ?: 'physical') === 'service' && ! $productPolicy->allowServiceItems()) {
+                    $validator->errors()->add("items.{$index}.product_id", 'El perfil actual no permite vender servicios.');
+                }
+
+                if (! $product->is_active || ! $product->is_sellable) {
+                    $validator->errors()->add("items.{$index}.product_id", 'Solo se pueden vender items activos y vendibles.');
+                }
+
+                if ($fromPos) {
                     if (! in_array($product->item_type ?: 'physical', $posPolicy->allowedItemTypes(), true)) {
                         $validator->errors()->add("items.{$index}.product_id", 'Este tipo de item no esta permitido en el POS del perfil actual.');
+                    }
+                }
+
+                if (! $product->is_inventory_item) {
+                    if (filled($item['product_coil_id'] ?? null)) {
+                        $validator->errors()->add("items.{$index}.product_coil_id", 'Los servicios o items sin inventario no deben seleccionar lote o unidad fisica.');
                     }
                 }
             }
@@ -378,6 +394,10 @@ class StoreSaleDocumentRequest extends FormRequest
                 $product = $products->get($item['product_id'] ?? null);
 
                 if (! $product) {
+                    continue;
+                }
+
+                if (! $product->is_inventory_item) {
                     continue;
                 }
 

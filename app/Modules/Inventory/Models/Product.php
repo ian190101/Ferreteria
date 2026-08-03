@@ -4,6 +4,7 @@ namespace App\Modules\Inventory\Models;
 
 use App\Modules\Billing\Models\SiatProductMapping;
 use App\Modules\Shared\Models\AuditableModel;
+use App\Modules\ServiceOrders\Models\ServiceType;
 use App\Modules\SystemSuperadmin\Models\ProductImage;
 use App\Modules\SystemSuperadmin\Models\ProductVariant;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -30,6 +31,7 @@ class Product extends AuditableModel
         'inventory_tracking_mode',
         'base_unit',
         'item_type',
+        'service_type_id',
         'is_sellable',
         'is_purchasable',
         'is_inventory_item',
@@ -86,6 +88,11 @@ class Product extends AuditableModel
     public function unit(): BelongsTo
     {
         return $this->belongsTo(ProductUnit::class, 'product_unit_id');
+    }
+
+    public function serviceType(): BelongsTo
+    {
+        return $this->belongsTo(ServiceType::class);
     }
 
     public function branchStocks(): HasMany

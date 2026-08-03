@@ -5,6 +5,7 @@ import ModuleHeader from '../../../../../Shared/Resources/Components/ModuleHeade
 import Pagination from '../../../../../Shared/Resources/Components/Pagination';
 import SelectField from '../../../../../Shared/Resources/Components/SelectField';
 import { decimalStep, useDecimalFormatter } from '@/Utils/formatters';
+import axios from 'axios';
 import { Head, router, useForm, usePage } from '@inertiajs/react';
 import { useState } from 'react';
 
@@ -14,6 +15,11 @@ export default function Index({ deliveries, branches, sales, saleItems, drivers 
     const decimalFormat = useDecimalFormatter('sales');
     const [editingDriver, setEditingDriver] = useState(null);
     const [editingTruck, setEditingTruck] = useState(null);
+    const [geoQuery, setGeoQuery] = useState('');
+    const [geoResults, setGeoResults] = useState([]);
+    const [routeInfo, setRouteInfo] = useState(null);
+    const [mapError, setMapError] = useState('');
+    const [mapLoading, setMapLoading] = useState(false);
     const filterForm = useForm({
         branch_id: filters.branch_id ?? '',
         status: filters.status ?? '',
@@ -36,6 +42,9 @@ export default function Index({ deliveries, branches, sales, saleItems, drivers 
         recipient_phone: '',
         driver_name: '',
         vehicle_plate: '',
+        destination_address: '',
+        destination_latitude: '',
+        destination_longitude: '',
         notes: '',
         items: [
             {
@@ -50,6 +59,7 @@ export default function Index({ deliveries, branches, sales, saleItems, drivers 
     const availableItems = saleItems.filter((item) => String(item.sale_id) === String(deliveryForm.data.sale_id));
     const selectedSale = sales.find((sale) => String(sale.id) === String(deliveryForm.data.sale_id));
     const saleBranchId = selectedSale?.branch_id ?? '';
+    const selectedBranch = branches.find((branch) => String(branch.id) === String(saleBranchId));
     const branchDrivers = drivers.filter((driver) => !driver.branch_id || String(driver.branch_id) === String(saleBranchId));
     const branchTrucks = trucks.filter((truck) => !truck.branch_id || String(truck.branch_id) === String(saleBranchId));
 
@@ -63,7 +73,11 @@ export default function Index({ deliveries, branches, sales, saleItems, drivers 
         deliveryForm.post(route('sales.deliveries.store'), {
             preserveScroll: true,
             onSuccess: () => {
-                deliveryForm.reset('recipient_name', 'recipient_document', 'recipient_phone', 'driver_name', 'vehicle_plate', 'notes', 'items');
+                deliveryForm.reset('recipient_name', 'recipient_document', 'recipient_phone', 'driver_name', 'vehicle_plate', 'destination_address', 'destination_latitude', 'destination_longitude', 'notes', 'items');
+                setGeoQuery('');
+                setGeoResults([]);
+                setRouteInfo(null);
+                setMapError('');
                 deliveryForm.setData({
                     ...deliveryForm.data,
                     delivery_number: nextDeliveryNumber(),
@@ -72,6 +86,9 @@ export default function Index({ deliveries, branches, sales, saleItems, drivers 
                     recipient_phone: '',
                     driver_name: '',
                     vehicle_plate: '',
+                    destination_address: '',
+                    destination_latitude: '',
+                    destination_longitude: '',
                     notes: '',
                     items: [{ sale_item_id: '', quantity: '' }],
                 });
@@ -89,8 +106,15 @@ export default function Index({ deliveries, branches, sales, saleItems, drivers 
             manual_truck: false,
             driver_name: '',
             vehicle_plate: '',
+            destination_address: '',
+            destination_latitude: '',
+            destination_longitude: '',
             items: [{ sale_item_id: '', quantity: '' }],
         });
+        setGeoQuery('');
+        setGeoResults([]);
+        setRouteInfo(null);
+        setMapError('');
     };
 
     const updateItem = (index, field, value) => {
@@ -184,12 +208,85 @@ export default function Index({ deliveries, branches, sales, saleItems, drivers 
         truckForm.setData({
             branch_id: truck.branch_id ?? '',
             plate: truck.plate ?? '',
+            vehicle_type: truck.vehicle_type ?? 'truck',
             description: truck.description ?? '',
             brand: truck.brand ?? '',
             model: truck.model ?? '',
             capacity: truck.capacity ?? '',
             is_active: truck.is_active ?? true,
         });
+    };
+
+    const searchDestination = async () => {
+        setMapError('');
+        setGeoResults([]);
+
+        if (geoQuery.trim().length < 3) {
+            setMapError('Ingresa al menos 3 caracteres para buscar.');
+            return;
+        }
+
+        setMapLoading(true);
+
+        try {
+            const response = await axios.get(route('sales.deliveries.geocode'), { params: { query: geoQuery } });
+            setGeoResults(response.data.results ?? []);
+
+            if ((response.data.results ?? []).length === 0) {
+                setMapError('No se encontraron coincidencias para esa direccion.');
+            }
+        } catch (error) {
+            setMapError(error.response?.data?.message ?? firstError(error.response?.data?.errors) ?? 'No se pudo buscar la direccion.');
+        } finally {
+            setMapLoading(false);
+        }
+    };
+
+    const selectDestination = (place) => {
+        deliveryForm.setData({
+            ...deliveryForm.data,
+            destination_address: place.label,
+            destination_latitude: place.latitude,
+            destination_longitude: place.longitude,
+        });
+        setGeoQuery(place.label);
+        setRouteInfo(null);
+        setMapError('');
+    };
+
+    const calculateRoute = async () => {
+        setMapError('');
+        setRouteInfo(null);
+
+        if (!deliveryForm.data.sale_id) {
+            setMapError('Selecciona una nota de venta antes de calcular ruta.');
+            return;
+        }
+
+        if (!selectedBranch?.latitude || !selectedBranch?.longitude) {
+            setMapError('Configura latitud y longitud de la sucursal para usarla como punto de salida.');
+            return;
+        }
+
+        if (!deliveryForm.data.destination_latitude || !deliveryForm.data.destination_longitude) {
+            setMapError('Selecciona un destino desde los resultados de busqueda.');
+            return;
+        }
+
+        setMapLoading(true);
+
+        try {
+            const response = await axios.post(route('sales.deliveries.route'), {
+                sale_id: deliveryForm.data.sale_id,
+                destination_latitude: deliveryForm.data.destination_latitude,
+                destination_longitude: deliveryForm.data.destination_longitude,
+            });
+            setRouteInfo(response.data.route ?? null);
+        } catch (error) {
+            setMapError(error.response?.data?.message ?? firstError(error.response?.data?.errors) ?? 'No se pudo calcular la ruta por carretera.');
+        } finally {
+            setMapLoading(false);
+        }
     };
 
     return (
@@ -210,10 +307,10 @@ export default function Index({ deliveries, branches, sales, saleItems, drivers 
                             <option value="manual">Conductor manual</option>
                             {branchDrivers.map((driver) => <option key={driver.id} value={driver.id}>{driver.name} {driver.license_number ? `- ${driver.license_number}` : ''}</option>)}
                         </SelectField>
-                        <SelectField label="Camion" name="delivery_truck_id" value={deliveryForm.data.delivery_truck_id} onChange={(event) => selectTruck(event.target.value)} error={deliveryForm.errors.delivery_truck_id}>
-                            <option value="">Sin camion</option>
-                            <option value="manual">Camion manual</option>
-                            {branchTrucks.map((truck) => <option key={truck.id} value={truck.id}>{truck.plate} {truck.description ? `- ${truck.description}` : ''}</option>)}
+                        <SelectField label="Vehiculo" name="delivery_truck_id" value={deliveryForm.data.delivery_truck_id} onChange={(event) => selectTruck(event.target.value)} error={deliveryForm.errors.delivery_truck_id}>
+                            <option value="">Sin vehiculo</option>
+                            <option value="manual">Vehiculo manual</option>
+                            {branchTrucks.map((truck) => <option key={truck.id} value={truck.id}>{truck.plate} - {vehicleTypeLabel(truck.vehicle_type)} {truck.description ? `- ${truck.description}` : ''}</option>)}
                         </SelectField>
                         <FormField label="Numero" name="delivery_number" value={deliveryForm.data.delivery_number} onChange={(event) => deliveryForm.setData('delivery_number', event.target.value)} error={deliveryForm.errors.delivery_number} required />
                         <FormField label="Fecha" name="delivered_at" value="Se registrara automaticamente al guardar" disabled className="mt-1 block w-full rounded-md border-gray-300 bg-slate-100 shadow-sm dark:border-gray-700 dark:bg-slate-800 dark:text-gray-300" error={deliveryForm.errors.delivered_at} />
@@ -221,7 +318,93 @@ export default function Index({ deliveries, branches, sales, saleItems, drivers 
                         <FormField label="Documento recibe" name="recipient_document" value={deliveryForm.data.recipient_document} onChange={(event) => deliveryForm.setData('recipient_document', event.target.value)} error={deliveryForm.errors.recipient_document} />
                         <FormField label="Telefono recibe" name="recipient_phone" value={deliveryForm.data.recipient_phone} onChange={(event) => deliveryForm.setData('recipient_phone', event.target.value)} error={deliveryForm.errors.recipient_phone} />
                         <FormField label="Nombre conductor" name="driver_name" value={deliveryForm.data.driver_name} onChange={(event) => deliveryForm.setData('driver_name', event.target.value)} error={deliveryForm.errors.driver_name} disabled={!deliveryForm.data.manual_driver && deliveryForm.data.delivery_driver_id !== ''} />
-                        <FormField label="Placa camion" name="vehicle_plate" value={deliveryForm.data.vehicle_plate} onChange={(event) => deliveryForm.setData('vehicle_plate', event.target.value.toUpperCase())} error={deliveryForm.errors.vehicle_plate} disabled={!deliveryForm.data.manual_truck && deliveryForm.data.delivery_truck_id !== ''} />
+                        <FormField label="Placa vehiculo" name="vehicle_plate" value={deliveryForm.data.vehicle_plate} onChange={(event) => deliveryForm.setData('vehicle_plate', event.target.value.toUpperCase())} error={deliveryForm.errors.vehicle_plate} disabled={!deliveryForm.data.manual_truck && deliveryForm.data.delivery_truck_id !== ''} />
+                        <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950 sm:col-span-2 lg:col-span-4">
+                            <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
+                                <div>
+                                    <h3 className="text-sm font-semibold text-slate-900 dark:text-white">Ruta transporte</h3>
+                                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                                        Busca el destino solo cuando sea necesario. La ruta definitiva se recalcula en backend al guardar.
+                                    </p>
+                                </div>
+                                <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-slate-600 ring-1 ring-slate-200 dark:bg-slate-900 dark:text-slate-300 dark:ring-slate-800">
+                                    © OpenStreetMap · OSRM
+                                </span>
+                            </div>
+
+                            <div className="grid gap-4 lg:grid-cols-[1fr_360px]">
+                                <div className="space-y-3">
+                                    <div className="rounded-md border border-slate-200 bg-white p-3 text-xs text-slate-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">
+                                        <span className="font-semibold">Origen:</span> {selectedBranch?.name ?? 'Selecciona una nota'} · {selectedBranch?.address ?? 'Sin direccion'}
+                                        {selectedBranch?.latitude && selectedBranch?.longitude ? (
+                                            <span className="ml-1">({selectedBranch.latitude}, {selectedBranch.longitude})</span>
+                                        ) : (
+                                            <span className="ml-1 text-amber-600 dark:text-amber-300">Coordenadas no configuradas.</span>
+                                        )}
+                                    </div>
+
+                                    <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
+                                        <FormField label="Buscar destino" name="destination_search" value={geoQuery} onChange={(event) => setGeoQuery(event.target.value)} error={deliveryForm.errors.destination_address} />
+                                        <div className="flex items-end">
+                                            <button type="button" onClick={searchDestination} disabled={mapLoading} className="w-full rounded-md border border-brand-primary px-4 py-2 text-sm font-semibold text-brand-primary disabled:opacity-50">
+                                                Buscar
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    {geoResults.length > 0 ? (
+                                        <div className="max-h-44 overflow-y-auto rounded-md border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
+                                            {geoResults.map((place, index) => (
+                                                <button key={`${place.latitude}-${place.longitude}-${index}`} type="button" onClick={() => selectDestination(place)} className="block w-full border-b border-slate-100 px-3 py-2 text-left text-sm last:border-b-0 hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-800">
+                                                    <span className="font-medium text-slate-900 dark:text-white">{place.label}</span>
+                                                    <span className="mt-1 block text-xs text-slate-500">{place.latitude}, {place.longitude}</span>
+                                                </button>
+                                            ))}
+                                        </div>
+                                    ) : null}
+
+                                    <div className="grid gap-3 sm:grid-cols-3">
+                                        <FormField label="Destino confirmado" name="destination_address" value={deliveryForm.data.destination_address} onChange={(event) => deliveryForm.setData('destination_address', event.target.value)} error={deliveryForm.errors.destination_address} />
+                                        <FormField label="Latitud destino" name="destination_latitude" type="number" step="0.0000001" value={deliveryForm.data.destination_latitude} onChange={(event) => { deliveryForm.setData('destination_latitude', event.target.value); setRouteInfo(null); }} error={deliveryForm.errors.destination_latitude} />
+                                        <FormField label="Longitud destino" name="destination_longitude" type="number" step="0.0000001" value={deliveryForm.data.destination_longitude} onChange={(event) => { deliveryForm.setData('destination_longitude', event.target.value); setRouteInfo(null); }} error={deliveryForm.errors.destination_longitude} />
+                                    </div>
+
+                                    <div className="flex flex-wrap items-center gap-3">
+                                        <button type="button" onClick={calculateRoute} disabled={mapLoading || !deliveryForm.data.destination_latitude || !deliveryForm.data.destination_longitude} className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50 dark:bg-white dark:text-slate-950">
+                                            Calcular ruta por carretera
+                                        </button>
+                                        {routeInfo ? (
+                                            <p className="text-sm font-semibold text-emerald-700 dark:text-emerald-300">
+                                                {routeInfo.distance_km} km · {routeInfo.duration_minutes} min aprox. {routeInfo.cached ? '(cache)' : ''}
+                                            </p>
+                                        ) : null}
+                                        {mapError ? <p className="text-sm text-red-600 dark:text-red-300">{mapError}</p> : null}
+                                    </div>
+                                </div>
+
+                                <div className="overflow-hidden rounded-lg border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
+                                    {deliveryForm.data.destination_latitude && deliveryForm.data.destination_longitude ? (
+                                        <iframe
+                                            title="Mapa destino transporte"
+                                            className="h-64 w-full"
+                                            loading="lazy"
+                                            src={osmEmbedUrl(selectedBranch, deliveryForm.data.destination_latitude, deliveryForm.data.destination_longitude)}
+                                        />
+                                    ) : (
+                                        <div className="flex h-64 items-center justify-center px-6 text-center text-sm text-slate-500 dark:text-slate-400">
+                                            Selecciona un destino para previsualizar el mapa.
+                                        </div>
+                                    )}
+                                    <div className="border-t border-slate-200 p-3 text-xs text-slate-500 dark:border-slate-800">
+                                        {deliveryForm.data.destination_latitude && deliveryForm.data.destination_longitude ? (
+                                            <a className="font-semibold text-brand-primary" href={osmDirectionsUrl(selectedBranch, deliveryForm.data.destination_latitude, deliveryForm.data.destination_longitude)} target="_blank" rel="noreferrer">
+                                                Abrir direccion en OpenStreetMap
+                                            </a>
+                                        ) : 'La vista usa tiles de OpenStreetMap con atribucion visible.'}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
                         <div className="sm:col-span-2 lg:col-span-4">
                             <div className="mb-3 flex items-center justify-between gap-3">
                                 <h3 className="text-sm font-semibold text-slate-900 dark:text-white">Productos a despachar</h3>
@@ -311,12 +494,19 @@ export default function Index({ deliveries, branches, sales, saleItems, drivers 
                             )} />
                         </CatalogPanel>
 
-                        <CatalogPanel title={editingTruck ? 'Editar camion' : 'Nuevo camion'} onSubmit={submitTruck} processing={truckForm.processing} buttonLabel={editingTruck ? 'Actualizar camion' : 'Crear camion'} onCancel={editingTruck ? () => { setEditingTruck(null); truckForm.setData(truckDefaults()); } : null}>
+                        <CatalogPanel title={editingTruck ? 'Editar vehiculo' : 'Nuevo vehiculo'} onSubmit={submitTruck} processing={truckForm.processing} buttonLabel={editingTruck ? 'Actualizar vehiculo' : 'Crear vehiculo'} onCancel={editingTruck ? () => { setEditingTruck(null); truckForm.setData(truckDefaults()); } : null}>
                             <SelectField label="Sucursal" name="truck_branch_id" value={truckForm.data.branch_id} onChange={(event) => truckForm.setData('branch_id', event.target.value)} error={truckForm.errors.branch_id}>
                                 <option value="">Global</option>
                                 {branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
                             </SelectField>
                             <FormField label="Placa" name="truck_plate" value={truckForm.data.plate} onChange={(event) => truckForm.setData('plate', event.target.value.toUpperCase())} error={truckForm.errors.plate} required />
+                            <SelectField label="Tipo vehiculo" name="truck_vehicle_type" value={truckForm.data.vehicle_type} onChange={(event) => truckForm.setData('vehicle_type', event.target.value)} error={truckForm.errors.vehicle_type}>
+                                <option value="motorcycle">Moto</option>
+                                <option value="car">Auto</option>
+                                <option value="pickup">Camioneta</option>
+                                <option value="truck">Camion</option>
+                                <option value="other">Otro</option>
+                            </SelectField>
                             <FormField label="Descripcion" name="truck_description" value={truckForm.data.description} onChange={(event) => truckForm.setData('description', event.target.value)} error={truckForm.errors.description} />
                             <FormField label="Marca" name="truck_brand" value={truckForm.data.brand} onChange={(event) => truckForm.setData('brand', event.target.value)} error={truckForm.errors.brand} />
                             <FormField label="Modelo" name="truck_model" value={truckForm.data.model} onChange={(event) => truckForm.setData('model', event.target.value)} error={truckForm.errors.model} />
@@ -328,7 +518,7 @@ export default function Index({ deliveries, branches, sales, saleItems, drivers 
                             <CatalogList items={trucks} renderItem={(truck) => (
                                 <button key={truck.id} type="button" onClick={() => editTruck(truck)} className="rounded-md border border-slate-200 px-3 py-2 text-left text-sm dark:border-slate-800">
                                     <span className="font-semibold">{truck.plate}</span>
-                                    <span className="block text-xs text-slate-500">{truck.description ?? 'Sin descripcion'} {truck.branch_id ? '- Sucursal' : '- Global'}</span>
+                                    <span className="block text-xs text-slate-500">{vehicleTypeLabel(truck.vehicle_type)} · {truck.description ?? 'Sin descripcion'} {truck.branch_id ? '- Sucursal' : '- Global'}</span>
                                 </button>
                             )} />
                         </CatalogPanel>
@@ -368,6 +558,7 @@ export default function Index({ deliveries, branches, sales, saleItems, drivers 
                                 <th className="px-4 py-3 font-medium">Despacho</th>
                                 <th className="px-4 py-3 font-medium">Venta</th>
                                 <th className="px-4 py-3 font-medium">Entrega</th>
+                                <th className="px-4 py-3 font-medium">Ruta</th>
                                 <th className="px-4 py-3 font-medium">Items</th>
                                 <th className="px-4 py-3 text-right font-medium">Metros</th>
                                 <th className="px-4 py-3 font-medium">Estado</th>
@@ -391,6 +582,17 @@ export default function Index({ deliveries, branches, sales, saleItems, drivers 
                                         <p className="text-xs text-slate-500">{delivery.vehicle_plate ?? '-'}</p>
                                     </td>
                                     <td className="px-4 py-3">
+                                        {delivery.route_distance_meters ? (
+                                            <>
+                                                <p className="font-semibold text-emerald-700 dark:text-emerald-300">{formatKm(delivery.route_distance_meters)} km</p>
+                                                <p className="text-xs text-slate-500">{formatMinutes(delivery.route_duration_seconds)} min · {delivery.route_provider ?? 'ruta'}</p>
+                                                <p className="max-w-56 truncate text-xs text-slate-500">{delivery.destination_address ?? 'Destino con coordenadas'}</p>
+                                            </>
+                                        ) : (
+                                            <p className="text-xs text-slate-500">Sin ruta calculada</p>
+                                        )}
+                                    </td>
+                                    <td className="px-4 py-3">
                                         {delivery.items.map((item) => (
                                             <p key={item.id} className="text-xs">
                                                 {item.product?.name ?? '-'} - {quantityLabel(item.display_quantity || item.meters, item.display_unit_label || 'base', decimalFormat)} {item.coil ? `(${item.coil.barcode})` : '(global)'}
@@ -404,7 +606,7 @@ export default function Index({ deliveries, branches, sales, saleItems, drivers 
                             ))}
                             {deliveries.data.length === 0 ? (
                                 <tr>
-                                    <td className="px-4 py-6 text-center text-slate-500" colSpan="7">
+                                    <td className="px-4 py-6 text-center text-slate-500" colSpan="8">
                                         No hay despachos registrados.
                                     </td>
                                 </tr>
@@ -501,12 +703,65 @@ function truckDefaults() {
     return {
         branch_id: '',
         plate: '',
+        vehicle_type: 'truck',
         description: '',
         brand: '',
         model: '',
         capacity: '',
         is_active: true,
     };
+}
+
+function firstError(errors) {
+    if (!errors) {
+        return null;
+    }
+
+    const first = Object.values(errors)[0];
+
+    return Array.isArray(first) ? first[0] : first;
+}
+
+function vehicleTypeLabel(type) {
+    return {
+        motorcycle: 'Moto',
+        car: 'Auto',
+        pickup: 'Camioneta',
+        truck: 'Camion',
+        other: 'Otro',
+    }[type] ?? 'Vehiculo';
+}
+
+function osmEmbedUrl(branch, destinationLatitude, destinationLongitude) {
+    const destination = {
+        latitude: Number(destinationLatitude),
+        longitude: Number(destinationLongitude),
+    };
+    const origin = branch?.latitude && branch?.longitude
+        ? { latitude: Number(branch.latitude), longitude: Number(branch.longitude) }
+        : destination;
+    const minLon = Math.min(origin.longitude, destination.longitude) - 0.01;
+    const minLat = Math.min(origin.latitude, destination.latitude) - 0.01;
+    const maxLon = Math.max(origin.longitude, destination.longitude) + 0.01;
+    const maxLat = Math.max(origin.latitude, destination.latitude) + 0.01;
+
+    return `https://www.openstreetmap.org/export/embed.html?bbox=${minLon}%2C${minLat}%2C${maxLon}%2C${maxLat}&layer=mapnik&marker=${destination.latitude}%2C${destination.longitude}`;
+}
+
+function osmDirectionsUrl(branch, destinationLatitude, destinationLongitude) {
+    if (!branch?.latitude || !branch?.longitude) {
+        return `https://www.openstreetmap.org/?mlat=${destinationLatitude}&mlon=${destinationLongitude}#map=17/${destinationLatitude}/${destinationLongitude}`;
+    }
+
+    return `https://www.openstreetmap.org/directions?engine=fossgis_osrm_car&route=${branch.latitude}%2C${branch.longitude}%3B${destinationLatitude}%2C${destinationLongitude}`;
+}
+
+function formatKm(meters) {
+    return (Number(meters || 0) / 1000).toLocaleString('es-BO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function formatMinutes(seconds) {
+    return Math.ceil(Number(seconds || 0) / 60).toLocaleString('es-BO');
 }
 
 function nextDeliveryNumber() {

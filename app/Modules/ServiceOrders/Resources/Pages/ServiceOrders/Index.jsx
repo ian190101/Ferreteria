@@ -8,6 +8,7 @@ export default function Index({
     policy = {},
     orders,
     statuses = {},
+    serviceTypes = [],
     workers = [],
     customers = [],
     materials = [],
@@ -20,6 +21,7 @@ export default function Index({
         customer_name: '',
         customer_phone: '',
         title: '',
+        service_type_id: serviceTypes[0]?.id ?? '',
         service_type: policy.mode === 'technical' ? 'Servicio tecnico' : 'Servicio',
         scheduled_at: '',
         labor_amount: 0,
@@ -42,7 +44,7 @@ export default function Index({
         event.preventDefault();
         form.post(route('service-orders.store'), {
             preserveScroll: true,
-            onSuccess: () => form.reset('customer_id', 'worker_id', 'customer_name', 'customer_phone', 'title', 'scheduled_at', 'labor_amount', 'advance_amount', 'diagnosis', 'work_performed', 'warranty_terms', 'notes', 'items'),
+            onSuccess: () => form.reset('customer_id', 'worker_id', 'customer_name', 'customer_phone', 'title', 'service_type_id', 'scheduled_at', 'labor_amount', 'advance_amount', 'diagnosis', 'work_performed', 'warranty_terms', 'notes', 'items'),
         });
     };
 
@@ -96,7 +98,11 @@ export default function Index({
                                     <Field label="Cliente manual" value={form.data.customer_name} onChange={(value) => form.setData('customer_name', value)} error={form.errors.customer_name} placeholder="Nombre si no esta registrado" />
                                     <Field label="Telefono/contacto" value={form.data.customer_phone} onChange={(value) => form.setData('customer_phone', value)} error={form.errors.customer_phone} />
                                     <Field label="Titulo del trabajo" value={form.data.title} onChange={(value) => form.setData('title', value)} error={form.errors.title} required />
-                                    <Field label="Tipo de servicio" value={form.data.service_type} onChange={(value) => form.setData('service_type', value)} error={form.errors.service_type} />
+                                    <SelectField label="Tipo de servicio" value={form.data.service_type_id} onChange={(value) => selectServiceType(form, value, serviceTypes)} error={form.errors.service_type_id}>
+                                        <option value="">Manual / sin tipo</option>
+                                        {serviceTypes.map((type) => <option key={type.id} value={type.id}>{type.name}{type.is_delivery ? ' (delivery)' : ''}</option>)}
+                                    </SelectField>
+                                    {!form.data.service_type_id ? <Field label="Servicio manual" value={form.data.service_type} onChange={(value) => form.setData('service_type', value)} error={form.errors.service_type} /> : null}
                                     <Field label="Fecha programada" type="datetime-local" value={form.data.scheduled_at} onChange={(value) => form.setData('scheduled_at', value)} error={form.errors.scheduled_at} />
                                     <Field label="Mano de obra Bs" type="number" step="0.1" value={form.data.labor_amount} onChange={(value) => form.setData('labor_amount', value)} error={form.errors.labor_amount} />
                                     <Field label="Anticipo Bs" type="number" step="0.1" value={form.data.advance_amount} onChange={(value) => form.setData('advance_amount', value)} error={form.errors.advance_amount} />
@@ -190,7 +196,7 @@ export default function Index({
                                                 <tr key={order.id}>
                                                     <td className="px-4 py-3 font-bold">{order.order_number}<br /><span className="text-xs font-normal text-slate-500">{formatDate(order.scheduled_at)}</span></td>
                                                     <td className="px-4 py-3">{order.customer?.name ?? order.customer_name ?? '-'}<br /><span className="text-xs text-slate-500">{order.customer?.phone ?? order.customer_phone ?? ''}</span></td>
-                                                    <td className="px-4 py-3">{order.title}<br /><span className="text-xs text-slate-500">{order.items?.length ?? 0} materiales</span></td>
+                                                    <td className="px-4 py-3">{order.title}<br /><span className="text-xs text-slate-500">{order.service_type_catalog?.name ?? order.service_type ?? 'Servicio'} - {order.items?.length ?? 0} materiales</span></td>
                                                     <td className="px-4 py-3">{order.worker?.name ?? '-'}</td>
                                                     <td className="px-4 py-3"><StatusBadge label={statuses[order.status] ?? order.status} /></td>
                                                     <td className="px-4 py-3 text-right font-bold">Bs {money(order.total_amount)}</td>
@@ -315,6 +321,16 @@ function updateItem(form, index, field, value, materials = []) {
 
 function removeItem(form, index) {
     form.setData('items', form.data.items.filter((_, itemIndex) => itemIndex !== index));
+}
+
+function selectServiceType(form, value, serviceTypes) {
+    const type = serviceTypes.find((entry) => Number(entry.id) === Number(value));
+
+    form.setData({
+        ...form.data,
+        service_type_id: value,
+        service_type: type?.name ?? form.data.service_type,
+    });
 }
 
 function money(value) {

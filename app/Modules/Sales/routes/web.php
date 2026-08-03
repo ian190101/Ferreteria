@@ -41,6 +41,12 @@ Route::middleware(['auth', 'verified'])
         Route::post('/deliveries', [DeliveryNoteController::class, 'store'])
             ->middleware(['business_feature:deliveries', 'permission:sales.deliveries.manage'])
             ->name('deliveries.store');
+        Route::get('/deliveries/geocode', [DeliveryNoteController::class, 'geocode'])
+            ->middleware(['business_feature:deliveries', 'permission:sales.deliveries.manage'])
+            ->name('deliveries.geocode');
+        Route::post('/deliveries/route', [DeliveryNoteController::class, 'route'])
+            ->middleware(['business_feature:deliveries', 'permission:sales.deliveries.manage'])
+            ->name('deliveries.route');
         Route::post('/deliveries/drivers', [DeliveryNoteController::class, 'storeDriver'])
             ->middleware(['business_feature:deliveries', 'permission:sales.deliveries.manage'])
             ->name('deliveries.drivers.store');

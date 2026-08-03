@@ -132,7 +132,10 @@ export default function Index({ products, branches = [], filters = {} }) {
                                             </div>
                                         </div>
                                     </td>
-                                    <td className="px-4 py-3">{itemTypeLabel(product.item_type)}</td>
+                                    <td className="px-4 py-3">
+                                        {itemTypeLabel(product.item_type)}
+                                        {product.service_type ? <span className="mt-1 block text-xs text-slate-500">{product.service_type.name}</span> : null}
+                                    </td>
                                     <td className="px-4 py-3">{product.product_category?.name ?? product.category ?? 'Ferreteria general'}</td>
                                     <td className="px-4 py-3">{product.sku}</td>
                                     <td className="px-4 py-3">{product.barcode}</td>

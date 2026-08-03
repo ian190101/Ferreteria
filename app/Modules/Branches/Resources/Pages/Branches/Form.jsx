@@ -16,6 +16,9 @@ export default function Form({ branch }) {
         secondary_phone: branch?.secondary_phone ?? '',
         point_of_sale_name: branch?.point_of_sale_name ?? '',
         address: branch?.address ?? '',
+        latitude: branch?.latitude ?? '',
+        longitude: branch?.longitude ?? '',
+        maps_reference: branch?.maps_reference ?? '',
         is_active: branch?.is_active ?? true,
         setting: {
             primary_color: branch?.setting?.primary_color ?? '#2563eb',
@@ -61,6 +64,14 @@ export default function Form({ branch }) {
                                 <div className="sm:col-span-2">
                                     <FormField label="Direccion" name="address" value={data.address} onChange={(event) => setData('address', event.target.value)} error={errors.address} />
                                 </div>
+                                <div className="sm:col-span-2 rounded-lg border border-blue-100 bg-blue-50 p-4 text-sm text-blue-900 dark:border-blue-900/50 dark:bg-blue-950/30 dark:text-blue-100">
+                                    Estas coordenadas se usan como punto de salida para Transporte/Delivery. Si no se configuran, el despacho funciona, pero no se podra calcular ruta por carretera.
+                                </div>
+                                <FormField label="Latitud origen" name="latitude" type="number" step="0.0000001" value={data.latitude} onChange={(event) => setData('latitude', event.target.value)} error={errors.latitude} />
+                                <FormField label="Longitud origen" name="longitude" type="number" step="0.0000001" value={data.longitude} onChange={(event) => setData('longitude', event.target.value)} error={errors.longitude} />
+                                <div className="sm:col-span-2">
+                                    <FormField label="Referencia mapa" name="maps_reference" value={data.maps_reference} onChange={(event) => setData('maps_reference', event.target.value)} error={errors.maps_reference} />
+                                </div>
                                 <SelectField label="Estado" name="is_active" value={data.is_active ? '1' : '0'} onChange={(event) => setData('is_active', event.target.value === '1')} error={errors.is_active}>
                                     <option value="1">Activa</option>
                                     <option value="0">Inactiva</option>
@@ -101,6 +112,7 @@ export default function Form({ branch }) {
                             </div>
                             <div className="p-4" style={{ color: data.setting.secondary_color }}>
                                 <p>{data.address || 'Direccion'}</p>
+                                <p className="text-sm">{data.latitude && data.longitude ? `${data.latitude}, ${data.longitude}` : 'Origen de transporte sin coordenadas'}</p>
                                 <p>{data.phone || 'Telefono'} {data.secondary_phone ? `- ${data.secondary_phone}` : ''}</p>
                                 <p className="mt-3 text-sm">Tema: {data.setting.theme_mode}</p>
                             </div>
