@@ -54,6 +54,7 @@ class BusinessCapabilityCatalog
             self::capability('uses_data_governance', 'Seguridad', 'Gobierno de datos', 'Gestiona retencion, datos sensibles, anonimizado, exportacion sensible y auditoria de lectura.', ['mixed', 'health_clinic', 'loans']),
             self::capability('uses_operational_traceability', 'Auditoria', 'Trazabilidad operativa', 'Registra responsables reales: quien preparo, entrego, cobro, aprobo o modifico campos sensibles.', ['restaurant', 'services', 'factory', 'loans']),
             self::capability('uses_integrations', 'Integraciones', 'Puntos de integracion', 'Deja preparados canales como WhatsApp, email, SIAT, impresoras, lectores, basculas, camaras o calendarios externos.', ['mixed']),
+            self::capability('uses_advanced_multibranch', 'Sucursales', 'Multi-sucursal avanzada', 'Controla politicas de transferencia, stock reservado, precios, caja, bancos, numeracion y acceso parcial por sucursal.', ['hardware_store', 'supermarket', 'factory', 'mixed']),
             self::capability('uses_health_records', 'Salud', 'Historia clinica', 'Activa ficha medica, antecedentes, diagnosticos, evoluciones y documentos sensibles.', ['health_clinic', 'dental_clinic'], ['uses_dynamic_entities', 'uses_dynamic_fields', 'uses_field_level_permissions']),
             self::capability('uses_dental_chart', 'Salud', 'Odontograma', 'Permite registrar tratamientos por pieza dental con diagrama de adulto o nino.', ['dental_clinic'], ['uses_health_records']),
             self::capability('uses_loans', 'Prestamos', 'Prestamos y cuotas', 'Gestiona solicitudes, desembolsos, cuotas, mora y cobranza.', ['loans'], ['uses_dynamic_entities']),
@@ -66,6 +67,7 @@ class BusinessCapabilityCatalog
             self::capability('uses_pet_records', 'Servicios', 'Mascotas', 'Relaciona clientes con mascotas, vacunas, consultas y servicios.', ['veterinary'], ['uses_dynamic_entities']),
             self::capability('uses_memberships', 'Servicios', 'Membresias', 'Controla planes, vigencias, pagos recurrentes y congelamientos.', ['gym'], ['uses_dynamic_entities']),
             self::capability('uses_courses', 'Servicios', 'Cursos e inscripciones', 'Controla cursos, estudiantes, pagos, horarios, docentes y certificados.', ['education'], ['uses_dynamic_entities']),
+            self::capability('uses_customer_qr_ordering', 'Ventas', 'Pedidos por QR cliente', 'Genera canales publicos por QR para que clientes pidan productos o servicios desde mesa, retiro, delivery o solicitud de cotizacion.', ['restaurant', 'foodtruck', 'store', 'supermarket'], ['uses_pos']),
         ])->keyBy('code')->all();
     }
 

@@ -32,7 +32,10 @@ use App\Modules\Settings\Models\ImportBatch;
 use App\Modules\Settings\Models\MaintenanceBackup;
 use App\Modules\Settings\Models\MaintenanceLog;
 use App\Modules\ServiceOrders\Models\ServiceOrder;
+use App\Modules\SystemSuperadmin\Models\DynamicReportTemplate;
 use App\Modules\SystemSuperadmin\Services\ActiveBusinessProfile;
+use App\Modules\SystemSuperadmin\Services\DataGovernanceService;
+use App\Modules\SystemSuperadmin\Services\DynamicTemplateService;
 use App\Support\BranchAccess;
 use App\Models\Audit;
 use App\Models\User;
@@ -43,13 +46,20 @@ use Illuminate\Support\Facades\DB;
 
 class ExportDatasetService
 {
+    public function __construct(
+        private readonly DataGovernanceService $governance,
+        private readonly DynamicTemplateService $templates,
+    )
+    {
+    }
+
     public function catalog(?Request $request = null): array
     {
         if (! $this->exportsEnabled($request)) {
             return [];
         }
 
-        return collect([
+        $baseCatalog = collect([
             'inventory' => [
                 'label' => 'Inventario',
                 'description' => 'Stock por producto, unidad configurada y sucursal.',
@@ -477,6 +487,11 @@ class ExportDatasetService
                 ],
             ],
         ])->filter(fn (array $definition, string $module) => $this->moduleAllowed($module, $request))->all();
+
+        return [
+            ...$baseCatalog,
+            ...$this->dynamicReportCatalog($baseCatalog, $request),
+        ];
     }
 
     public function build(Request $request): array
@@ -545,6 +560,10 @@ class ExportDatasetService
 
     private function rows(string $module, Request $request, Carbon $from, Carbon $to, ?int $branchId): array
     {
+        if ($this->isDynamicReportKey($module)) {
+            return $this->dynamicReportRows($module, $request, $from, $to, $branchId);
+        }
+
         return match ($module) {
             'inventory' => $this->inventoryRows($request, $branchId),
             'sales' => $this->salesRows($request, $from, $to, $branchId),
@@ -583,6 +602,96 @@ class ExportDatasetService
     private function moduleAllowed(string $module, ?Request $request): bool
     {
         return $this->moduleEnabled($module) && $this->canExport($module, $request);
+    }
+
+    /**
+     * @param array<string, array<string, mixed>> $baseCatalog
+     * @return array<string, array<string, mixed>>
+     */
+    private function dynamicReportCatalog(array $baseCatalog, ?Request $request): array
+    {
+        return collect($this->templates->reportTemplatesFor(onlyRuntimeEnabled: true))
+            ->filter(fn (DynamicReportTemplate $template) => $template->is_exportable)
+            ->filter(fn (DynamicReportTemplate $template) => filled($template->module) && isset($baseCatalog[$template->module]))
+            ->filter(fn (DynamicReportTemplate $template) => $this->canExportDynamicReport($template, $request))
+            ->mapWithKeys(function (DynamicReportTemplate $template) use ($baseCatalog): array {
+                $baseDefinition = $baseCatalog[$template->module];
+                $columns = collect($template->columns ?: array_keys($baseDefinition['fields']))
+                    ->filter(fn (string $column) => isset($baseDefinition['fields'][$column]))
+                    ->values()
+                    ->all();
+
+                if ($columns === []) {
+                    $columns = array_keys($baseDefinition['fields']);
+                }
+
+                $customLabels = (array) data_get($template->metadata, 'column_labels', []);
+
+                return [$this->dynamicReportKey($template->code) => [
+                    'label' => $template->name,
+                    'description' => $template->description ?: 'Reporte configurable basado en '.$baseDefinition['label'].'.',
+                    'fields' => collect($columns)
+                        ->mapWithKeys(fn (string $column) => [$column => $customLabels[$column] ?? $baseDefinition['fields'][$column]])
+                        ->all(),
+                    'dynamic_report_code' => $template->code,
+                    'base_module' => $template->module,
+                    'cache_ttl_minutes' => $template->cache_ttl_minutes,
+                ]];
+            })
+            ->all();
+    }
+
+    private function dynamicReportRows(string $dynamicModule, Request $request, Carbon $from, Carbon $to, ?int $branchId): array
+    {
+        $template = $this->templates->resolveReport($this->dynamicReportCode($dynamicModule));
+
+        if (! $template || ! $template->is_exportable || ! $this->canExportDynamicReport($template, $request)) {
+            return [];
+        }
+
+        $baseModule = (string) $template->module;
+
+        if ($baseModule === '' || $this->isDynamicReportKey($baseModule) || ! $this->moduleAllowed($baseModule, $request)) {
+            return [];
+        }
+
+        return $this->rows($baseModule, $request, $from, $to, $branchId);
+    }
+
+    private function dynamicReportKey(string $code): string
+    {
+        return 'report_template__'.$code;
+    }
+
+    private function dynamicReportCode(string $key): string
+    {
+        return str_replace('report_template__', '', $key);
+    }
+
+    private function isDynamicReportKey(string $key): bool
+    {
+        return str_starts_with($key, 'report_template__');
+    }
+
+    private function canExportDynamicReport(DynamicReportTemplate $template, ?Request $request): bool
+    {
+        if (! $request?->user()) {
+            return true;
+        }
+
+        if (! $this->canExport((string) $template->module, $request)) {
+            return false;
+        }
+
+        $exportRules = collect((array) data_get($template->permissions, 'export', []))
+            ->filter()
+            ->values();
+
+        if ($exportRules->isEmpty()) {
+            return true;
+        }
+
+        return $exportRules->contains(fn (string $rule) => $request->user()->can($rule) || $request->user()->hasRole($rule));
     }
 
     private function moduleEnabled(string $module): bool
@@ -650,12 +759,12 @@ class ExportDatasetService
             'sales' => $request->user()->can('sales.view'),
             'purchases', 'suppliers' => $request->user()->can('purchases.view'),
             'finance' => $request->user()->can('payments.view') || $request->user()->can('purchases.view') || $request->user()->can('expenses.view'),
-            'customers' => $request->user()->can('customers.view'),
+            'customers' => $request->user()->can('customers.view') && $this->governance->canExportEntity('customer', $request->user()),
             'expenses' => $request->user()->can('expenses.view'),
             'banks_accounts', 'banks_transactions' => $request->user()->can('banks.view'),
             'cash_sessions' => $request->user()->can('cash.view'),
-            'workers' => $request->user()->can('workers.view'),
-            'payroll' => $request->user()->can('payroll.view'),
+            'workers' => $request->user()->can('workers.view') && $this->governance->canExportEntity('worker', $request->user()),
+            'payroll' => $request->user()->can('payroll.view') && $this->governance->canExportEntity('salary', $request->user()),
             'barcode_templates' => $request->user()->can('barcode-labels.view'),
             'billing_invoices', 'billing_settings', 'billing_products', 'billing_events', 'billing_logs' => $request->user()->can('billing.view'),
             'deliveries' => $request->user()->can('sales.deliveries.view'),

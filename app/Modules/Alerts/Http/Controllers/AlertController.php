@@ -9,6 +9,7 @@ use App\Modules\Inventory\Models\ProductBranchStock;
 use App\Modules\Inventory\Models\ProductCoil;
 use App\Modules\Payments\Models\PaymentPromise;
 use App\Modules\Sales\Models\Sale;
+use App\Modules\SystemSuperadmin\Models\CustomerQrOrder;
 use App\Modules\SystemSuperadmin\Services\ActiveBusinessProfile;
 use App\Support\BranchAccess;
 use Illuminate\Http\Request;
@@ -51,6 +52,7 @@ class AlertController extends Controller
             ->merge($this->can($user, 'payments.view', 'sales_notes') ? $this->receivableAlerts($branchIds) : [])
             ->merge($this->can($user, 'payment-promises.view', 'payment_promises') ? $this->paymentPromiseAlerts($branchIds) : [])
             ->merge($this->can($user, 'cash.view', 'cash') ? $this->cashAlerts($branchIds) : [])
+            ->merge($this->can($user, 'customer-qr-orders.view', 'customer_qr_ordering') ? $this->customerQrOrderAlerts($branchIds) : [])
             ->merge($this->can($user, 'customers.view', 'customers') ? $this->customerFollowUpAlerts() : [])
             ->merge($this->can($user, 'inventory.coils.manage', 'inventory_lots') ? $this->coilAlerts($branchIds) : []);
     }
@@ -226,6 +228,32 @@ class AlertController extends Controller
             });
     }
 
+    private function customerQrOrderAlerts(array $branchIds): Collection
+    {
+        return CustomerQrOrder::query()
+            ->with(['branch:id,name', 'channel:id,name'])
+            ->where('status', CustomerQrOrder::STATUS_PENDING)
+            ->when($branchIds !== [], fn ($query) => $query->whereIn('branch_id', $branchIds))
+            ->oldest('submitted_at')
+            ->limit(100)
+            ->get(['id', 'branch_id', 'customer_qr_channel_id', 'public_code', 'customer_name', 'total', 'submitted_at', 'status'])
+            ->map(fn (CustomerQrOrder $order) => [
+                'id' => 'customer-qr-order-'.$order->id,
+                'type' => 'customer_qr_order',
+                'severity' => 'warning',
+                'title' => 'Pedido QR pendiente',
+                'message' => sprintf(
+                    '%s envio el pedido %s por Bs %s.',
+                    $order->customer_name ?: 'Cliente QR',
+                    $order->public_code,
+                    number_format((float) $order->total, 2, '.', ''),
+                ),
+                'branch' => $order->branch?->name,
+                'sort_at' => $order->submitted_at?->toISOString(),
+                'source_url' => route('customer-qr-orders.index', ['search' => $order->public_code]),
+            ]);
+    }
+
     private function paginate(Collection $alerts, Request $request): LengthAwarePaginator
     {
         $perPage = min(max($request->integer('per_page', 15), 5), 50);
@@ -250,6 +278,7 @@ class AlertController extends Controller
             $this->can($request->user(), 'payments.view', 'sales_notes') ? 'receivable' : null,
             $this->can($request->user(), 'payment-promises.view', 'payment_promises') ? 'payment_promise' : null,
             $this->can($request->user(), 'cash.view', 'cash') ? 'cash_open' : null,
+            $this->can($request->user(), 'customer-qr-orders.view', 'customer_qr_ordering') ? 'customer_qr_order' : null,
             $this->can($request->user(), 'customers.view', 'customers') ? 'customer_follow_up' : null,
             $this->can($request->user(), 'inventory.coils.manage', 'inventory_lots') ? 'depleted_coil' : null,
         ])->filter()->values()->all();

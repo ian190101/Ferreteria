@@ -12,12 +12,14 @@ it('define los presets oficiales acordados para tipos de negocio principales', f
     $presets = app(BusinessProfilePresetFactory::class)->officialPresets();
     $names = collect($presets)->pluck('name')->all();
 
-    expect($presets)->toHaveCount(11)
+    expect($presets)->toHaveCount(32)
         ->and($names)->toContain(
             'Ferreteria con cotizacion y nota',
             'Ferreteria POS',
+            'Farmacia',
             'Restaurante completo',
             'Comida rapida y cafeteria',
+            'Foodtruck',
             'Servicios profesionales',
             'Taller y servicio tecnico',
             'Supermercado',
@@ -25,6 +27,25 @@ it('define los presets oficiales acordados para tipos de negocio principales', f
             'Tienda general y ropa',
             'Fabrica simple',
             'Alquileres',
+            'Odontologia',
+            'Consultorio medico',
+            'Medicina estetica y spa',
+            'Peluqueria y barberia',
+            'Gimnasio',
+            'Veterinaria',
+            'Mecanica autos y motos',
+            'Reparacion celulares y laptops',
+            'Lavadero de autos',
+            'Mudanzas',
+            'Arquitectura y construccion',
+            'Prestamos y casa de empeno',
+            'Hotel y hostal',
+            'Canchas deportivas',
+            'Alquiler equipos y herramientas',
+            'Educacion y cursos',
+            'Eventos y salones',
+            'Transporte y logistica',
+            'Agropecuaria simple',
         );
 });
 
@@ -73,7 +94,7 @@ it('siembra presets oficiales sin tocar el perfil activo de ferreteria', functio
 
     $this->seed(BusinessProfilePresetSeeder::class);
 
-    expect(BusinessProfilePreset::query()->where('is_system', true)->count())->toBe(11)
+    expect(BusinessProfilePreset::query()->where('is_system', true)->count())->toBe(32)
         ->and($profile->refresh()->configuration)->toBe($activeConfiguration)
         ->and($profile->status)->toBe('active');
 });

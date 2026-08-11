@@ -24,6 +24,15 @@ const sectionOrder = [
     ['priceLists', 'price-lists', 'Precios'],
     ['commissions', 'commissions', 'Comisiones'],
     ['notifications', 'notifications', 'Notificaciones'],
+    ['approvalFlows', 'approval-flows', 'Aprobaciones'],
+    ['approvalRequests', 'approval-requests', 'Solicitudes'],
+    ['automationRules', 'automation-rules', 'Automatizaciones'],
+    ['automationRuns', 'automation-runs', 'Ejecuciones'],
+    ['operationalTraces', 'operational-traces', 'Trazabilidad'],
+    ['integrations', 'integrations', 'Integraciones'],
+    ['customerQrChannels', 'customer-qr-channels', 'Canales QR'],
+    ['customerQrOrders', 'customer-qr-orders', 'Pedidos QR'],
+    ['branchPolicies', 'branch-policies', 'Politicas sucursal'],
     ['currencies', 'currencies', 'Monedas'],
     ['printers', 'printers', 'Impresoras'],
     ['licenses', 'licenses', 'Licencias'],
@@ -48,6 +57,15 @@ const emptyForms = {
     priceLists: { branch_id: '', code: '', name: '', channel: 'counter', currency_code: 'BOB', starts_at: '', ends_at: '', rules_text: '', is_active: true },
     commissions: { branch_id: '', role_name: '', responsible_type: 'seller', product_id: '', calculation_base: 'subtotal', type: 'percentage', value: 0, conditions_text: '', is_active: true },
     notifications: { code: '', name: '', trigger: 'stock_low', channels_csv: 'system', recipients_text: '', conditions_text: '', is_active: true },
+    approvalFlows: { code: '', name: '', entity_type: 'sale', action: 'high_discount', trigger: 'before_action', conditions_text: '', approver_roles_csv: 'superadmin', approver_permissions_csv: '', min_approvals: 1, requires_reason: true, blocks_until_approved: true, expires_after_minutes: '', metadata_text: '', is_active: true },
+    approvalRequests: { note: '' },
+    automationRules: { code: '', name: '', entity_type: 'reservation', trigger: 'reservation_due', conditions_text: '', actions_text: '{"notify":["system"]}', cooldown_minutes: 60, metadata_text: '', is_active: true },
+    automationRuns: {},
+    operationalTraces: {},
+    integrations: { branch_id: '', code: '', name: '', provider: 'custom_api', channel: 'custom_api', direction: 'outbound', auth_type: 'none', base_url: '', webhook_url: '', rate_limit_per_minute: 60, timeout_seconds: 10, capabilities_csv: '', public_config_text: '', secret_config_text: '', metadata_text: '', last_status: 'pending', is_active: true },
+    customerQrChannels: { branch_id: '', code: '', name: '', token: '', context_type: 'general', context_reference: '', service_mode: 'pickup', allowed_order_types_csv: 'pickup', settings_text: '', expires_at: '', requires_customer_name: true, requires_customer_phone: false, requires_table_or_reference: false, is_active: true },
+    customerQrOrders: {},
+    branchPolicies: { branch_id: '', code: '', name: '', operation: 'transfer_inventory', scope: 'global', enforcement_mode: 'monitor', applies_to_modules_csv: 'inventory', rules_text: '{"require_user_branch_access":true,"allow_cross_branch":true}', permissions_text: '', metadata_text: '', is_active: true },
     currencies: { code: '', name: '', symbol: '', exchange_rate_to_base: 1, rounding_decimals: 2, is_base: false, cash_enabled: true, is_active: true, metadata_text: '' },
     printers: { branch_id: '', code: '', name: '', area: 'cashier', paper_type: 'letter', thermal_width_mm: '', copies: 1, auto_print: false, settings_text: '', is_active: true },
     licenses: { module: 'sales_notes', is_enabled: true, max_branches: '', max_users: '', max_pos_terminals: '', support_until: '', metadata_text: '' },
@@ -73,6 +91,15 @@ export default function Index({
     priceLists = [],
     commissions = [],
     notifications = [],
+    approvalFlows = [],
+    approvalRequests = [],
+    automationRules = [],
+    automationRuns = [],
+    operationalTraces = [],
+    integrations = [],
+    customerQrChannels = [],
+    customerQrOrders = [],
+    branchPolicies = [],
     currencies = [],
     printers = [],
     licenses = [],
@@ -80,13 +107,15 @@ export default function Index({
     branches = [],
     workers = [],
     products = [],
+    readiness = {},
     options = {},
 }) {
     const [activeSection, setActiveSection] = useState('customFields');
     const [editing, setEditing] = useState(null);
     const currentRouteSection = sectionOrder.find(([key]) => key === activeSection)?.[1] ?? 'custom-fields';
-    const rows = { entities, relationships, attachments, forms, formFields, documentTemplates, reportTemplates, calculationFormulas, commercialFlows, customFields, workflows, states, workflowTransitions, resources, priceLists, commissions, notifications, currencies, printers, licenses, imports }[activeSection] ?? [];
+    const rows = { entities, relationships, attachments, forms, formFields, documentTemplates, reportTemplates, calculationFormulas, commercialFlows, customFields, workflows, states, workflowTransitions, resources, priceLists, commissions, notifications, approvalFlows, approvalRequests, automationRules, automationRuns, operationalTraces, integrations, customerQrChannels, customerQrOrders, branchPolicies, currencies, printers, licenses, imports }[activeSection] ?? [];
     const form = useForm(emptyForms[activeSection]);
+    const readOnlySection = ['approvalRequests', 'automationRuns', 'operationalTraces', 'customerQrOrders'].includes(activeSection);
 
     const sectionLabel = sectionOrder.find(([key]) => key === activeSection)?.[2] ?? 'Configuracion';
     const helpText = useMemo(() => sectionHelp(activeSection), [activeSection]);
@@ -100,6 +129,10 @@ export default function Index({
 
     const submit = (event) => {
         event.preventDefault();
+        if (readOnlySection) {
+            return;
+        }
+
         const endpoint = editing
             ? route('system-superadmin.transversal-config.update', [currentRouteSection, editing.id])
             : route('system-superadmin.transversal-config.store', currentRouteSection);
@@ -132,6 +165,18 @@ export default function Index({
         });
     };
 
+    const resolveApproval = (row, decision) => {
+        const note = window.prompt(decision === 'approve' ? 'Nota de aprobacion (opcional)' : 'Motivo del rechazo');
+
+        if (note === null || (decision === 'reject' && note.trim().length < 3)) {
+            return;
+        }
+
+        router.post(route(`system-superadmin.transversal-config.approval-requests.${decision}`, row.id), { note }, {
+            preserveScroll: true,
+        });
+    };
+
     return (
         <AuthenticatedLayout header={<h2 className="text-xl font-semibold leading-tight text-slate-800 dark:text-slate-200">Configuracion transversal</h2>}>
             <Head title="Configuracion transversal" />
@@ -145,6 +190,8 @@ export default function Index({
                 <div className="mb-6 rounded-2xl border border-sky-200 bg-sky-50 p-4 text-sm leading-6 text-sky-900 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-100">
                     Esta seccion solo la ve el rol interno sistemasuperadmin. Crear estos datos no modifica ventas, compras ni stock actuales; quedan listos para usar cuando el perfil de negocio active cada capacidad.
                 </div>
+
+                <TransversalReadinessPanel readiness={readiness} onSelectSection={switchSection} />
 
                 <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
                     {sectionOrder.map(([key, , label]) => (
@@ -179,13 +226,25 @@ export default function Index({
                             ) : null}
                         </div>
 
-                        <div className="grid gap-4 md:grid-cols-2">
-                            <DynamicFormFields section={activeSection} form={form} options={options} branches={branches} workers={workers} products={products} forms={forms} />
-                        </div>
+                        {readOnlySection ? (
+                            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-100">
+                                {activeSection === 'approvalRequests'
+                                    ? 'Las solicitudes se generan desde los flujos operativos cuando una regla exige aprobacion. Desde aqui solo se revisan, aprueban o rechazan.'
+                                    : activeSection === 'operationalTraces'
+                                        ? 'La trazabilidad operativa registra responsables reales y eventos de negocio de motores activados. Es solo lectura.'
+                                        : 'Las ejecuciones se generan desde el motor de automatizaciones. Este historial es solo lectura para preservar trazabilidad.'}
+                            </div>
+                        ) : (
+                            <>
+                                <div className="grid gap-4 md:grid-cols-2">
+                                    <DynamicFormFields section={activeSection} form={form} options={options} branches={branches} workers={workers} products={products} forms={forms} />
+                                </div>
 
-                        <button type="submit" disabled={form.processing} className="mt-5 w-full rounded-2xl bg-brand-primary px-4 py-3 text-sm font-bold text-white shadow-sm shadow-brand-primary/20 disabled:opacity-60">
-                            {editing ? 'Guardar cambios' : 'Crear registro'}
-                        </button>
+                                <button type="submit" disabled={form.processing} className="mt-5 w-full rounded-2xl bg-brand-primary px-4 py-3 text-sm font-bold text-white shadow-sm shadow-brand-primary/20 disabled:opacity-60">
+                                    {editing ? 'Guardar cambios' : 'Crear registro'}
+                                </button>
+                            </>
+                        )}
                     </form>
 
                     <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
@@ -220,12 +279,27 @@ export default function Index({
                                             ))}
                                             <td className="px-3 py-3 text-right">
                                                 <div className="flex justify-end gap-2">
-                                                    <button type="button" onClick={() => editRow(row)} className="rounded-full border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:border-brand-primary hover:text-brand-primary dark:border-slate-700 dark:text-slate-300">
-                                                        Editar
-                                                    </button>
-                                                    <button type="button" onClick={() => deactivate(row)} className="rounded-full border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-100 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-200">
-                                                        Desactivar
-                                                    </button>
+                                                    {activeSection === 'approvalRequests' ? (
+                                                        <>
+                                                            <button type="button" disabled={row.status !== 'pending'} onClick={() => resolveApproval(row, 'approve')} className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-200">
+                                                                Aprobar
+                                                            </button>
+                                                            <button type="button" disabled={row.status !== 'pending'} onClick={() => resolveApproval(row, 'reject')} className="rounded-full border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-200">
+                                                                Rechazar
+                                                            </button>
+                                                        </>
+                                                    ) : activeSection === 'automationRuns' || activeSection === 'operationalTraces' ? (
+                                                        <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Solo lectura</span>
+                                                    ) : (
+                                                        <>
+                                                            <button type="button" onClick={() => editRow(row)} className="rounded-full border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:border-brand-primary hover:text-brand-primary dark:border-slate-700 dark:text-slate-300">
+                                                                Editar
+                                                            </button>
+                                                            <button type="button" onClick={() => deactivate(row)} className="rounded-full border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-100 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-200">
+                                                                Desactivar
+                                                            </button>
+                                                        </>
+                                                    )}
                                                 </div>
                                             </td>
                                         </tr>
@@ -238,6 +312,94 @@ export default function Index({
             </section>
         </AuthenticatedLayout>
     );
+}
+
+function TransversalReadinessPanel({ readiness = {}, onSelectSection }) {
+    const overall = readiness.overall ?? {};
+    const engines = readiness.engines ?? [];
+
+    if (engines.length === 0) {
+        return null;
+    }
+
+    return (
+        <div className="mb-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+            <div className="flex flex-wrap items-start justify-between gap-4">
+                <div>
+                    <h3 className="text-lg font-semibold text-slate-950 dark:text-white">Readiness de motores transversales</h3>
+                    <p className="mt-1 text-sm leading-6 text-slate-500 dark:text-slate-400">
+                        Verifica si cada motor esta listo, solo preparado o bloqueado antes de activar capacidades en un perfil.
+                    </p>
+                </div>
+                <div className={`rounded-full px-4 py-2 text-sm font-bold ${overall.can_apply_profile_safely ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-200' : 'bg-rose-50 text-rose-700 dark:bg-rose-500/10 dark:text-rose-200'}`}>
+                    {overall.can_apply_profile_safely ? 'Sin bloqueos criticos' : `${overall.blocked ?? 0} bloqueos criticos`}
+                </div>
+            </div>
+
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+                {[
+                    ['ready', 'Listos', overall.ready ?? 0],
+                    ['prepared', 'Preparados', overall.prepared ?? 0],
+                    ['warning', 'Advertencias', overall.warnings ?? 0],
+                    ['blocked', 'Bloqueados', overall.blocked ?? 0],
+                    ['inactive', 'Inactivos', overall.inactive ?? 0],
+                ].map(([status, label, value]) => (
+                    <div key={status} className={`rounded-2xl border px-4 py-3 ${readinessClasses(status)}`}>
+                        <p className="text-xs font-bold uppercase tracking-[0.14em]">{label}</p>
+                        <p className="mt-1 text-2xl font-black">{value}</p>
+                    </div>
+                ))}
+            </div>
+
+            <div className="mt-4 grid gap-3 lg:grid-cols-2">
+                {engines.map((engine) => (
+                    <button
+                        key={engine.code}
+                        type="button"
+                        onClick={() => onSelectSection?.(sectionKeyFromRoute(engine.section))}
+                        className={`rounded-2xl border p-4 text-left transition hover:-translate-y-0.5 hover:shadow-sm ${readinessClasses(engine.status)}`}
+                    >
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                            <div>
+                                <p className="font-semibold">{engine.label}</p>
+                                <p className="mt-1 text-xs opacity-80">{engine.message}</p>
+                            </div>
+                            <span className="rounded-full bg-white/70 px-3 py-1 text-xs font-bold dark:bg-slate-950/40">
+                                {readinessLabel(engine.status)}
+                            </span>
+                        </div>
+                        <p className="mt-3 text-xs opacity-80">
+                            Definiciones: {engine.definitions_count} - Capacidad: {engine.capability_enabled ? 'activa' : 'apagada'} - Flag: {engine.feature_flag_enabled ? 'activo' : 'apagado'}
+                        </p>
+                    </button>
+                ))}
+            </div>
+        </div>
+    );
+}
+
+function readinessClasses(status) {
+    return {
+        ready: 'border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-100',
+        prepared: 'border-sky-200 bg-sky-50 text-sky-800 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-100',
+        warning: 'border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-100',
+        blocked: 'border-rose-200 bg-rose-50 text-rose-800 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-100',
+        inactive: 'border-slate-200 bg-slate-50 text-slate-600 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300',
+    }[status] ?? 'border-slate-200 bg-slate-50 text-slate-600 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300';
+}
+
+function readinessLabel(status) {
+    return {
+        ready: 'Listo',
+        prepared: 'Preparado',
+        warning: 'Revisar',
+        blocked: 'Bloqueado',
+        inactive: 'Inactivo',
+    }[status] ?? 'Sin estado';
+}
+
+function sectionKeyFromRoute(section) {
+    return sectionOrder.find(([, routeSection]) => routeSection === section)?.[0] ?? 'customFields';
 }
 
 function DynamicFormFields({ section, form, options, branches, workers, products, forms }) {
@@ -647,6 +809,128 @@ function DynamicFormFields({ section, form, options, branches, workers, products
         );
     }
 
+    if (section === 'approvalFlows') {
+        return (
+            <>
+                <OptionSelect label="Entidad" value={form.data.entity_type} onChange={(value) => set('entity_type', value)} options={options.entities} />
+                <FormField label="Codigo" value={form.data.code} onChange={(event) => set('code', event.target.value)} error={form.errors.code} helpTooltip="Usa minusculas, numeros y guion bajo. Ejemplo: aprobar_descuento_alto." />
+                <FormField label="Nombre" value={form.data.name} onChange={(event) => set('name', event.target.value)} error={form.errors.name} />
+                <OptionSelect label="Accion critica" value={form.data.action} onChange={(value) => set('action', value)} options={options.approvalActions} />
+                <OptionSelect label="Disparador" value={form.data.trigger} onChange={(value) => set('trigger', value)} options={options.approvalTriggers} />
+                <FormField label="Condiciones JSON" value={form.data.conditions_text} onChange={(event) => set('conditions_text', event.target.value)} helpText='Ejemplo: {"discount_percent":15}' />
+                <FormField label="Roles aprobadores" value={form.data.approver_roles_csv} onChange={(event) => set('approver_roles_csv', event.target.value)} helpText="Separados por coma. Ejemplo: superadmin,gerente." />
+                <FormField label="Permisos aprobadores" value={form.data.approver_permissions_csv} onChange={(event) => set('approver_permissions_csv', event.target.value)} helpText="Separados por coma. Ejemplo: sales.manage,settings.manage." />
+                <FormField label="Aprobaciones minimas" type="number" value={form.data.min_approvals} onChange={(event) => set('min_approvals', event.target.value)} />
+                <FormField label="Expira en minutos" type="number" value={form.data.expires_after_minutes} onChange={(event) => set('expires_after_minutes', event.target.value)} />
+                <FormField label="Metadatos JSON" value={form.data.metadata_text} onChange={(event) => set('metadata_text', event.target.value)} />
+                {bool('requires_reason', 'Requiere motivo')}
+                {bool('blocks_until_approved', 'Bloquea hasta aprobar')}
+                {bool('is_active', 'Activo')}
+            </>
+        );
+    }
+
+    if (section === 'automationRules') {
+        return (
+            <>
+                <OptionSelect label="Entidad" value={form.data.entity_type} onChange={(value) => set('entity_type', value)} options={options.entities} />
+                <FormField label="Codigo" value={form.data.code} onChange={(event) => set('code', event.target.value)} error={form.errors.code} helpTooltip="Usa minusculas, numeros y guion bajo. Ejemplo: avisar_reserva_proxima." />
+                <FormField label="Nombre" value={form.data.name} onChange={(event) => set('name', event.target.value)} error={form.errors.name} />
+                <OptionSelect label="Disparador" value={form.data.trigger} onChange={(value) => set('trigger', value)} options={options.automationTriggers} />
+                <FormField label="Condiciones JSON" value={form.data.conditions_text} onChange={(event) => set('conditions_text', event.target.value)} helpText='Ejemplo: {"minutes_before":60}' />
+                <FormField label="Acciones JSON" value={form.data.actions_text} onChange={(event) => set('actions_text', event.target.value)} helpText='Ejemplo: {"notify":["system","email"],"create_task":true}' />
+                <FormField label="Espera entre ejecuciones min." type="number" value={form.data.cooldown_minutes} onChange={(event) => set('cooldown_minutes', event.target.value)} />
+                <FormField label="Metadatos JSON" value={form.data.metadata_text} onChange={(event) => set('metadata_text', event.target.value)} />
+                {bool('is_active', 'Activo')}
+            </>
+        );
+    }
+
+    if (section === 'integrations') {
+        return (
+            <>
+                <BranchSelect value={form.data.branch_id} onChange={(value) => set('branch_id', value)} branches={branches} />
+                <FormField label="Codigo" value={form.data.code} onChange={(event) => set('code', event.target.value)} error={form.errors.code} helpTooltip="Usa minusculas, numeros y guion bajo. Ejemplo: whatsapp_principal." />
+                <FormField label="Nombre" value={form.data.name} onChange={(event) => set('name', event.target.value)} error={form.errors.name} />
+                <OptionSelect label="Proveedor" value={form.data.provider} onChange={(value) => set('provider', value)} options={options.integrationProviders} />
+                <OptionSelect label="Canal" value={form.data.channel} onChange={(value) => set('channel', value)} options={options.integrationChannels} />
+                <OptionSelect label="Direccion" value={form.data.direction} onChange={(value) => set('direction', value)} options={options.integrationDirections} />
+                <OptionSelect label="Autenticacion" value={form.data.auth_type} onChange={(value) => set('auth_type', value)} options={options.integrationAuthTypes} />
+                <FormField label="URL base" type="url" value={form.data.base_url} onChange={(event) => set('base_url', event.target.value)} error={form.errors.base_url} helpText="Opcional. Endpoint principal del proveedor." />
+                <FormField label="URL webhook" type="url" value={form.data.webhook_url} onChange={(event) => set('webhook_url', event.target.value)} error={form.errors.webhook_url} helpText="Opcional. Solo para integraciones entrantes o bidireccionales." />
+                <FormField label="Limite por minuto" type="number" value={form.data.rate_limit_per_minute} onChange={(event) => set('rate_limit_per_minute', event.target.value)} />
+                <FormField label="Timeout segundos" type="number" value={form.data.timeout_seconds} onChange={(event) => set('timeout_seconds', event.target.value)} />
+                <FormField label="Capacidades" value={form.data.capabilities_csv} onChange={(event) => set('capabilities_csv', event.target.value)} helpText="Separadas por coma. Ejemplo: send_message,route_distance,print_ticket." />
+                <FormField label="Estado ultimo chequeo" value={form.data.last_status} onChange={(event) => set('last_status', event.target.value)} helpText="pending, ok, warning, failed o disabled." />
+                <div className="md:col-span-2">
+                    <FormField label="Configuracion publica JSON" value={form.data.public_config_text} onChange={(event) => set('public_config_text', event.target.value)} helpText='Ejemplo: {"from":"+59170000000","sandbox":true}. No pongas claves secretas aqui.' />
+                </div>
+                <div className="md:col-span-2">
+                    <FormField label="Secreto JSON" value={form.data.secret_config_text} onChange={(event) => set('secret_config_text', event.target.value)} helpText='Se cifra en base de datos y no se muestra al listar. Deja vacio al editar si no quieres reemplazarlo.' />
+                </div>
+                <div className="md:col-span-2">
+                    <FormField label="Metadatos JSON" value={form.data.metadata_text} onChange={(event) => set('metadata_text', event.target.value)} />
+                </div>
+                {bool('is_active', 'Activo')}
+            </>
+        );
+    }
+
+    if (section === 'customerQrChannels') {
+        const publicUrl = form.data.token ? route('customer-qr-ordering.show', form.data.token) : '';
+        const svgUrl = form.data.token ? route('customer-qr-ordering.svg', form.data.token) : '';
+
+        return (
+            <>
+                <BranchSelect value={form.data.branch_id} onChange={(value) => set('branch_id', value)} branches={branches} />
+                <FormField label="Codigo interno" value={form.data.code} onChange={(event) => set('code', event.target.value)} error={form.errors.code} helpTooltip="Usa minusculas, numeros y guion bajo. Ejemplo: mesa_01, delivery_cbba, retiro_central." />
+                <FormField label="Nombre visible" value={form.data.name} onChange={(event) => set('name', event.target.value)} error={form.errors.name} helpTooltip="Texto que vera el cliente al abrir el QR." />
+                <FormField label="Token publico" value={form.data.token} onChange={(event) => set('token', event.target.value)} error={form.errors.token} helpText="Opcional. Si lo dejas vacio se genera automaticamente." />
+                <OptionSelect label="Contexto" value={form.data.context_type} onChange={(value) => set('context_type', value)} options={options.qrContextTypes} />
+                <FormField label="Referencia" value={form.data.context_reference} onChange={(event) => set('context_reference', event.target.value)} helpText="Ejemplo: Mesa 4, Zona norte, Mostrador, Salon A." />
+                <OptionSelect label="Modo principal" value={form.data.service_mode} onChange={(value) => set('service_mode', value)} options={options.qrServiceModes} />
+                <FormField label="Tipos permitidos" value={form.data.allowed_order_types_csv} onChange={(event) => set('allowed_order_types_csv', event.target.value)} helpText="Separados por coma. Ejemplo: pickup,table,delivery,quote_request." />
+                <FormField label="Expira en" type="datetime-local" value={form.data.expires_at} onChange={(event) => set('expires_at', event.target.value)} />
+                <div className="md:col-span-2">
+                    <FormField label="Configuracion JSON" value={form.data.settings_text} onChange={(event) => set('settings_text', event.target.value)} helpText='Ejemplo: {"service_fee":5,"show_prices":true,"notice":"Confirma tu pedido en caja."}' />
+                </div>
+                <div className="md:col-span-2 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm dark:border-slate-800 dark:bg-white/5">
+                    <p className="font-semibold text-slate-800 dark:text-slate-100">Enlaces del canal</p>
+                    <p className="mt-2 break-all text-slate-600 dark:text-slate-300">{publicUrl || 'El enlace aparecera despues de guardar o escribir un token.'}</p>
+                    {svgUrl ? <p className="mt-1 break-all text-slate-500 dark:text-slate-400">SVG QR: {svgUrl}</p> : null}
+                </div>
+                {bool('requires_customer_name', 'Pedir nombre del cliente')}
+                {bool('requires_customer_phone', 'Pedir telefono')}
+                {bool('requires_table_or_reference', 'Pedir mesa o referencia')}
+                {bool('is_active', 'Activo')}
+            </>
+        );
+    }
+
+    if (section === 'branchPolicies') {
+        return (
+            <>
+                <BranchSelect value={form.data.branch_id} onChange={(value) => set('branch_id', value)} branches={branches} />
+                <FormField label="Codigo" value={form.data.code} onChange={(event) => set('code', event.target.value)} error={form.errors.code} helpTooltip="Usa minusculas, numeros y guion bajo. Ejemplo: transferencia_central_cbba." />
+                <FormField label="Nombre" value={form.data.name} onChange={(event) => set('name', event.target.value)} error={form.errors.name} />
+                <OptionSelect label="Operacion" value={form.data.operation} onChange={(value) => set('operation', value)} options={options.branchPolicyOperations} />
+                <OptionSelect label="Alcance" value={form.data.scope} onChange={(value) => set('scope', value)} options={options.branchPolicyScopes} />
+                <OptionSelect label="Modo de aplicacion" value={form.data.enforcement_mode} onChange={(value) => set('enforcement_mode', value)} options={options.branchPolicyEnforcementModes} />
+                <FormField label="Modulos afectados" value={form.data.applies_to_modules_csv} onChange={(event) => set('applies_to_modules_csv', event.target.value)} helpText="Separados por coma. Ejemplo: inventory,transfers,documents." />
+                <div className="md:col-span-2">
+                    <FormField label="Reglas JSON" value={form.data.rules_text} onChange={(event) => set('rules_text', event.target.value)} helpText='Ejemplo: {"require_user_branch_access":true,"allow_cross_branch":true,"max_transfer_quantity":500}' />
+                </div>
+                <div className="md:col-span-2">
+                    <FormField label="Permisos JSON" value={form.data.permissions_text} onChange={(event) => set('permissions_text', event.target.value)} helpText='Ejemplo: {"manage":"inventory.transfers.manage","approve":"inventory.transfers.approve"}' />
+                </div>
+                <div className="md:col-span-2">
+                    <FormField label="Metadatos JSON" value={form.data.metadata_text} onChange={(event) => set('metadata_text', event.target.value)} />
+                </div>
+                {bool('is_active', 'Activo')}
+            </>
+        );
+    }
+
     if (section === 'currencies') {
         return (
             <>
@@ -784,6 +1068,15 @@ function sectionHelp(section) {
         priceLists: 'Configura precios por canal, sucursal, cliente u horario. Las reglas se aplicaran cuando el perfil active precios avanzados.',
         commissions: 'Define comisiones por vendedor, mesero, tecnico, producto, margen o cobro.',
         notifications: 'Configura alertas operativas como stock bajo, reservas proximas, pagos vencidos, SIAT fallido o backup fallido.',
+        approvalFlows: 'Define aprobaciones para acciones criticas como descuentos altos, anulaciones, cambios de precio, stock negativo, prestamos, garantias o exportaciones sensibles. No opera hasta activar approval_engine en el perfil.',
+        approvalRequests: 'Revisa solicitudes reales generadas por reglas activas. Una solicitud pendiente puede aprobarse o rechazarse, y la resolucion queda registrada.',
+        automationRules: 'Define automatizaciones y recordatorios como reservas por vencer, mora, orden lista o caja sin cerrar. No ejecuta acciones hasta activar automation_engine en el perfil.',
+        automationRuns: 'Consulta el historial de ejecuciones de automatizaciones, incluyendo contexto, estado y regla aplicada. Es solo lectura.',
+        operationalTraces: 'Consulta la bitacora operativa transversal: quien solicito, aprobo, rechazo, anonimizo o ejecuto eventos de motores activados. No reemplaza auditoria tecnica; agrega responsabilidad operativa.',
+        integrations: 'Define conectores externos como WhatsApp, email, SIAT, impresoras, lectores, basculas, camaras, calendarios, pagos, mapas o APIs. No ejecuta llamadas hasta activar integrations_engine y el canal en el perfil.',
+        customerQrChannels: 'Define enlaces QR publicos para que clientes creen pedidos desde mesa, delivery, retiro o cotizacion. No responde publicamente si el perfil activo no habilita el modulo, la capacidad y el feature flag.',
+        customerQrOrders: 'Consulta pedidos recibidos desde QR. Es solo lectura; la conversion a venta, comanda o cotizacion debe pasar por el flujo comercial autorizado.',
+        branchPolicies: 'Define reglas avanzadas por sucursal para transferencias, stock reservado, precios, caja, bancos, numeracion y acceso parcial. No cambia ferreteria hasta activar advanced_multibranch_engine.',
         currencies: 'Gestiona moneda base, monedas permitidas, redondeos y disponibilidad en caja.',
         printers: 'Separa impresoras por area: caja, cocina, barra, etiquetas, factura o reporte de cierre.',
         licenses: 'Controla modulos contratados, limites de sucursales, usuarios, POS y fecha de soporte.',
@@ -810,6 +1103,15 @@ function columnsFor(section) {
         priceLists: [{ key: 'name', label: 'Lista' }, { key: 'channel', label: 'Canal' }, { key: 'currency_code', label: 'Moneda' }, { key: 'is_active', label: 'Estado' }],
         commissions: [{ key: 'responsible_type', label: 'Responsable' }, { key: 'calculation_base', label: 'Base' }, { key: 'type', label: 'Tipo' }, { key: 'value', label: 'Valor' }],
         notifications: [{ key: 'name', label: 'Alerta' }, { key: 'trigger', label: 'Disparador' }, { key: 'channels', label: 'Canales' }, { key: 'is_active', label: 'Estado' }],
+        approvalFlows: [{ key: 'name', label: 'Regla' }, { key: 'entity_type', label: 'Entidad' }, { key: 'action', label: 'Accion' }, { key: 'min_approvals', label: 'Min.' }, { key: 'is_active', label: 'Estado' }],
+        approvalRequests: [{ key: 'rule.name', label: 'Regla' }, { key: 'entity_type', label: 'Entidad' }, { key: 'action', label: 'Accion' }, { key: 'requested_by.name', label: 'Solicitado por' }, { key: 'status', label: 'Estado' }],
+        automationRules: [{ key: 'name', label: 'Regla' }, { key: 'entity_type', label: 'Entidad' }, { key: 'trigger', label: 'Disparador' }, { key: 'cooldown_minutes', label: 'Espera' }, { key: 'is_active', label: 'Estado' }],
+        automationRuns: [{ key: 'rule.name', label: 'Regla' }, { key: 'entity_type', label: 'Entidad' }, { key: 'trigger', label: 'Disparador' }, { key: 'status', label: 'Estado' }, { key: 'executed_at', label: 'Ejecucion' }],
+        operationalTraces: [{ key: 'occurred_at', label: 'Fecha' }, { key: 'event', label: 'Evento' }, { key: 'entity_type', label: 'Entidad' }, { key: 'actor.name', label: 'Responsable' }, { key: 'branch.name', label: 'Sucursal' }, { key: 'status', label: 'Estado' }],
+        integrations: [{ key: 'name', label: 'Conector' }, { key: 'provider', label: 'Proveedor' }, { key: 'channel', label: 'Canal' }, { key: 'branch.name', label: 'Sucursal' }, { key: 'secret_summary', label: 'Secreto' }, { key: 'is_active', label: 'Estado' }],
+        customerQrChannels: [{ key: 'name', label: 'Canal' }, { key: 'code', label: 'Codigo' }, { key: 'branch.name', label: 'Sucursal' }, { key: 'context_type', label: 'Contexto' }, { key: 'service_mode', label: 'Modo' }, { key: 'is_active', label: 'Estado' }],
+        customerQrOrders: [{ key: 'submitted_at', label: 'Fecha' }, { key: 'public_code', label: 'Codigo' }, { key: 'channel.name', label: 'Canal' }, { key: 'branch.name', label: 'Sucursal' }, { key: 'order_type', label: 'Tipo' }, { key: 'total', label: 'Total' }, { key: 'status', label: 'Estado' }],
+        branchPolicies: [{ key: 'name', label: 'Politica' }, { key: 'operation', label: 'Operacion' }, { key: 'branch.name', label: 'Sucursal' }, { key: 'enforcement_mode', label: 'Modo' }, { key: 'is_active', label: 'Estado' }],
         currencies: [{ key: 'code', label: 'Codigo' }, { key: 'name', label: 'Moneda' }, { key: 'exchange_rate_to_base', label: 'Cambio' }, { key: 'is_base', label: 'Base' }],
         printers: [{ key: 'name', label: 'Impresora' }, { key: 'area', label: 'Area' }, { key: 'paper_type', label: 'Papel' }, { key: 'auto_print', label: 'Auto' }],
         licenses: [{ key: 'module', label: 'Modulo' }, { key: 'is_enabled', label: 'Activo' }, { key: 'max_users', label: 'Usuarios' }, { key: 'support_until', label: 'Soporte' }],
@@ -904,6 +1206,26 @@ function formFromRow(section, row) {
 
     if (section === 'notifications') {
         return { ...base, ...pick(row, ['code', 'name', 'trigger', 'is_active']), channels_csv: (row.channels ?? []).join(', '), recipients_text: stringify(row.recipients), conditions_text: stringify(row.conditions) };
+    }
+
+    if (section === 'approvalFlows') {
+        return { ...base, ...pick(row, ['code', 'name', 'entity_type', 'action', 'trigger', 'min_approvals', 'requires_reason', 'blocks_until_approved', 'expires_after_minutes', 'is_active']), conditions_text: stringify(row.conditions), approver_roles_csv: (row.approver_roles ?? []).join(', '), approver_permissions_csv: (row.approver_permissions ?? []).join(', '), metadata_text: stringify(row.metadata) };
+    }
+
+    if (section === 'automationRules') {
+        return { ...base, ...pick(row, ['code', 'name', 'entity_type', 'trigger', 'cooldown_minutes', 'is_active']), conditions_text: stringify(row.conditions), actions_text: stringify(row.actions), metadata_text: stringify(row.metadata) };
+    }
+
+    if (section === 'integrations') {
+        return { ...base, ...pick(row, ['branch_id', 'code', 'name', 'provider', 'channel', 'direction', 'auth_type', 'base_url', 'webhook_url', 'rate_limit_per_minute', 'timeout_seconds', 'last_status', 'is_active']), capabilities_csv: (row.capabilities ?? []).join(', '), public_config_text: stringify(row.public_config), metadata_text: stringify(row.metadata), secret_config_text: '' };
+    }
+
+    if (section === 'customerQrChannels') {
+        return { ...base, ...pick(row, ['branch_id', 'code', 'name', 'token', 'context_type', 'context_reference', 'service_mode', 'requires_customer_name', 'requires_customer_phone', 'requires_table_or_reference', 'is_active']), allowed_order_types_csv: (row.allowed_order_types ?? []).join(', '), settings_text: stringify(row.settings), expires_at: toInputDateTime(row.expires_at) };
+    }
+
+    if (section === 'branchPolicies') {
+        return { ...base, ...pick(row, ['branch_id', 'code', 'name', 'operation', 'scope', 'enforcement_mode', 'is_active']), applies_to_modules_csv: (row.applies_to_modules ?? []).join(', '), rules_text: stringify(row.rules), permissions_text: stringify(row.permissions), metadata_text: stringify(row.metadata) };
     }
 
     if (section === 'currencies') {

@@ -25,6 +25,7 @@ use App\Modules\Sales\Models\SaleItem;
 use App\Modules\Sales\Services\CommercialPolicy;
 use App\Modules\Sales\Services\SaleInventoryService;
 use App\Modules\Sales\Services\SalesDocumentPolicy;
+use App\Modules\Sales\Services\SalesApprovalGate;
 use App\Modules\Sales\Services\SalesWorkflowPolicy;
 use App\Support\BranchAccess;
 use App\Support\SystemCacheInvalidator;
@@ -112,6 +113,8 @@ class SaleController extends Controller
 
     public function store(StoreSaleDocumentRequest $request): RedirectResponse
     {
+        $this->requireApprovalForRequestedDiscounts($request);
+
         $sale = DB::transaction(function () use ($request) {
             $currency = Currency::query()->findOrFail($request->integer('currency_id'));
             $customer = $request->filled('customer_id')
@@ -233,6 +236,46 @@ class SaleController extends Controller
         $this->issueFiscalInvoiceIfRequired($sale, $request->user()->id, afterQuotationConversion: false);
 
         return redirect()->route('sales.show', $sale)->with('success', 'Documento generado correctamente.');
+    }
+
+    private function requireApprovalForRequestedDiscounts(StoreSaleDocumentRequest $request): void
+    {
+        $commercialPolicy = app(CommercialPolicy::class);
+        $items = collect($request->validated('items'));
+        $products = Product::query()
+            ->whereIn('id', $items->pluck('product_id')->unique()->values())
+            ->get(['id', 'sale_price'])
+            ->keyBy('id');
+
+        foreach ($items as $item) {
+            $discount = (float) ($item['discount_amount'] ?? 0);
+
+            if ($discount <= 0) {
+                continue;
+            }
+
+            $product = $products->get($item['product_id']);
+            $unitPrice = $request->user()->can('sales.prices.override')
+                ? (float) ($item['unit_price'] ?? 0)
+                : (float) ($product?->sale_price ?? 0);
+            $lineGross = (float) ($item['meters'] ?? 0) * $unitPrice;
+
+            if (! $commercialPolicy->discountExceedsLimit($lineGross, $discount)) {
+                continue;
+            }
+
+            app(SalesApprovalGate::class)->requireForHighDiscount(
+                user: $request->user(),
+                branchId: $request->integer('branch_id'),
+                discountPercent: $lineGross > 0 ? round(($discount / $lineGross) * 100, 2) : 0,
+                payload: [
+                    'product_id' => $item['product_id'] ?? null,
+                    'line_gross' => $lineGross,
+                    'discount_amount' => $discount,
+                    'document_type' => $request->string('document_type')->toString(),
+                ],
+            );
+        }
     }
 
     public function show(Sale $sale): Response
@@ -403,6 +446,7 @@ class SaleController extends Controller
     public function void(VoidSaleRequest $request, Sale $sale, SaleInventoryService $inventory): RedirectResponse
     {
         abort_unless(BranchAccess::canAccess($request->user(), (int) $sale->branch_id), 403);
+        app(SalesApprovalGate::class)->requireForVoid($sale, $request->user(), $request->string('reason')->toString());
 
         DB::transaction(function () use ($request, $sale, $inventory) {
             $sale = Sale::query()

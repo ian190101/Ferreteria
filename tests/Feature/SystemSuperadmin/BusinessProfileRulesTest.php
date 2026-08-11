@@ -17,11 +17,13 @@ use App\Modules\SystemSuperadmin\Services\ActiveBusinessProfile;
 use App\Modules\SystemSuperadmin\Services\BusinessProfileCompatibilityValidator;
 use App\Modules\SystemSuperadmin\Services\BusinessProfileConfiguration;
 use App\Modules\SystemSuperadmin\Services\BusinessProfileSandboxService;
+use Database\Seeders\BusinessProfilePresetSeeder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Http\Request;
 use App\Support\RouteSecurityAuditService;
 use App\Support\SystemRoles;
 use Illuminate\Support\Facades\Cache;
+use Inertia\Testing\AssertableInertia as Assert;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 
@@ -169,6 +171,23 @@ it('solo permite entrar al configurador empresarial al rol sistemasuperadmin', f
     $this->actingAs($systemUser)
         ->get(route('system-superadmin.business-profiles.index'))
         ->assertOk();
+});
+
+it('expone readiness de presets oficiales en el configurador maestro', function () {
+    $systemUser = businessProfileUser(systemSuperadmin: true);
+
+    $this->seed(BusinessProfilePresetSeeder::class);
+
+    $this->actingAs($systemUser)
+        ->get(route('system-superadmin.business-profiles.index'))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('SystemSuperadmin/BusinessProfiles/Index', false)
+            ->has('presets', 32)
+            ->has('presetReadiness.Ferreteria con cotizacion y nota')
+            ->where('presetReadiness.Ferreteria con cotizacion y nota.ready', true)
+            ->where('presetReadiness.Alquiler equipos y herramientas.ready', true)
+        );
 });
 
 it('valida columnas y metodos avanzados antes de guardar un borrador', function () {

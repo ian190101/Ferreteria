@@ -25,7 +25,7 @@ const configSteps = [
     ['summary', 'Resumen final'],
 ];
 
-export default function Index({ activeProfile, drafts, versions, presets = [], options, defaultConfiguration, sandboxSession = null, capabilitiesCatalog = {}, capabilitiesMatrix = {}, activePreflight = null, draftPreflights = {} }) {
+export default function Index({ activeProfile, drafts, versions, presets = [], presetReadiness = {}, options, defaultConfiguration, sandboxSession = null, capabilitiesCatalog = {}, capabilitiesMatrix = {}, activePreflight = null, draftPreflights = {} }) {
     const [selectedDraftId, setSelectedDraftId] = useState(drafts[0]?.id ?? null);
     const selectedDraft = drafts.find((draft) => draft.id === selectedDraftId) ?? null;
     const selectedDraftPreflight = selectedDraft ? draftPreflights?.[selectedDraft.id] ?? null : activePreflight;
@@ -586,7 +586,7 @@ export default function Index({ activeProfile, drafts, versions, presets = [], o
                         {mode === 'compare' ? <ComparisonPanel rows={comparison} /> : null}
                         {mode === 'history' ? (
                             <div className="space-y-6">
-                                <PresetPanel presets={presets} />
+                                <PresetPanel presets={presets} presetReadiness={presetReadiness} />
                                 <HistoryPanel versions={versions} activeConfiguration={activeProfile?.configuration ?? defaultConfiguration} options={options} />
                             </div>
                         ) : null}
@@ -1862,7 +1862,7 @@ function HistoryPanel({ versions, activeConfiguration, options }) {
     );
 }
 
-function PresetPanel({ presets }) {
+function PresetPanel({ presets, presetReadiness = {} }) {
     return (
         <div className="space-y-3">
             <div>
@@ -1872,14 +1872,49 @@ function PresetPanel({ presets }) {
                 </p>
             </div>
             {presets.length === 0 ? <p className="rounded-2xl border border-dashed border-slate-300 p-4 text-sm text-slate-500 dark:border-slate-700">Todavia no hay presets personalizados.</p> : null}
-            {presets.map((preset) => (
+            {presets.map((preset) => {
+                const readiness = presetReadiness?.[preset.name] ?? null;
+                const status = readiness?.status ?? 'unknown';
+                const draftDisabled = Boolean(readiness && !readiness.ready);
+                const statusClasses = {
+                    ready: 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-200',
+                    warning: 'border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-100',
+                    blocked: 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-200',
+                    unknown: 'border-slate-200 bg-slate-50 text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300',
+                };
+
+                return (
                 <div key={preset.id} className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 p-4 dark:border-slate-800">
-                    <div>
+                    <div className="min-w-0 flex-1">
                         <p className="font-semibold text-slate-950 dark:text-white">{preset.name}</p>
                         <p className="text-xs text-slate-500">{preset.business_type} - {preset.is_system ? 'Base del sistema' : 'Personalizado'}</p>
+                        <div className={`mt-3 rounded-xl border px-3 py-2 text-xs ${statusClasses[status] ?? statusClasses.unknown}`}>
+                            <div className="flex flex-wrap items-center gap-2 font-semibold">
+                                <span>{readinessLabel(status)}</span>
+                                {readiness ? <span>{readiness.criteria?.length ?? 0} criterios revisados</span> : null}
+                            </div>
+                            {readiness?.blockers?.length ? (
+                                <ul className="mt-2 space-y-1">
+                                    {readiness.blockers.slice(0, 3).map((item) => <li key={`${preset.id}-${item.code}`}>- {item.message}</li>)}
+                                </ul>
+                            ) : null}
+                            {readiness?.warnings?.length ? (
+                                <p className="mt-2">{readiness.warnings.length} advertencias antes de aplicar.</p>
+                            ) : null}
+                            {readiness ? (
+                                <p className="mt-2 text-[11px] opacity-80">
+                                    Blueprint: {readiness.specialized_blueprint ? 'listo' : 'no requerido'} - Reportes: {readiness.specialized_reports ?? 0}
+                                </p>
+                            ) : null}
+                        </div>
                     </div>
                     <div className="flex flex-wrap gap-2">
-                        <button type="button" onClick={() => router.post(route('system-superadmin.business-profiles.presets.draft', preset.id), {}, { preserveScroll: true })} className="rounded-full bg-brand-primary px-4 py-2 text-sm font-semibold text-white">
+                        <button
+                            type="button"
+                            disabled={draftDisabled}
+                            onClick={() => router.post(route('system-superadmin.business-profiles.presets.draft', preset.id), {}, { preserveScroll: true })}
+                            className={`rounded-full px-4 py-2 text-sm font-semibold ${draftDisabled ? 'cursor-not-allowed bg-slate-200 text-slate-500 dark:bg-slate-800 dark:text-slate-400' : 'bg-brand-primary text-white'}`}
+                        >
                             Crear borrador
                         </button>
                         {!preset.is_system ? (
@@ -1889,9 +1924,19 @@ function PresetPanel({ presets }) {
                         ) : null}
                     </div>
                 </div>
-            ))}
+                );
+            })}
         </div>
     );
+}
+
+function readinessLabel(status) {
+    return {
+        ready: 'Listo para borrador',
+        warning: 'Listo con advertencias',
+        blocked: 'Bloqueado por readiness',
+        unknown: 'Sin readiness calculado',
+    }[status] ?? 'Sin readiness calculado';
 }
 
 function buildComparison(current, next, options) {

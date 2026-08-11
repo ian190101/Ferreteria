@@ -324,7 +324,7 @@ it('compra recibida aumenta inventario por sucursal aunque el producto activo no
 
 it('venta descuenta inventario y cobro QR se refleja en banco y cierre de caja de la sucursal', function () {
     e2ePresetProfile('Finanzas inventario E2E', 'hardware_store', [
-        'modules' => ['sales_notes' => true, 'cash' => true, 'banks' => true, 'inventory' => true],
+        'modules' => ['sales_notes' => true, 'pos' => true, 'cash' => true, 'banks' => true, 'inventory' => true],
         'sales' => [
             'workflow' => 'pos',
             'quotation_mode' => 'disabled',

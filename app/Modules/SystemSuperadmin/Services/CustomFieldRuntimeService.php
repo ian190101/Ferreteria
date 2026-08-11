@@ -4,7 +4,9 @@ namespace App\Modules\SystemSuperadmin\Services;
 
 use App\Modules\SystemSuperadmin\Models\CustomFieldDefinition;
 use App\Models\User;
+use App\Support\SystemCacheInvalidator;
 use Illuminate\Support\Facades\Crypt;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\ValidationException;
 
@@ -23,13 +25,13 @@ class CustomFieldRuntimeService
             return [];
         }
 
-        return CustomFieldDefinition::query()
+        return Cache::remember($this->cacheKey('definitions', [$entityType, $onlyActive ? 'active' : 'all']), $this->cacheTtl(), fn (): array => CustomFieldDefinition::query()
             ->where('entity_type', $entityType)
             ->when($onlyActive, fn ($query) => $query->where('is_active', true))
             ->orderBy('sort_order')
             ->orderBy('label')
             ->get()
-            ->all();
+            ->all());
     }
 
     /**
@@ -177,5 +179,17 @@ class CustomFieldRuntimeService
         }
 
         return $rules;
+    }
+
+    private function cacheKey(string $scope, array $parts = []): string
+    {
+        return 'business-custom-fields:'.SystemCacheInvalidator::operationalVersion().':'.$scope.':'.implode(':', $parts);
+    }
+
+    private function cacheTtl(): \DateTimeInterface
+    {
+        $minutes = (int) data_get(ActiveBusinessProfile::payload(), 'performance.cache_capabilities_minutes', 60);
+
+        return now()->addMinutes(max($minutes, 1));
     }
 }

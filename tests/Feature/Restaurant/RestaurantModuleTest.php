@@ -255,5 +255,5 @@ it('guarda recetas y descuenta insumos al enviar una comanda', function () {
 
     expect(ProductBranchStock::query()->where('product_id', $ingredient->id)->value('available_meters'))->toBe('4.000')
         ->and(KitchenOrder::query()->first()?->items()->first()?->recipe_id)->toBe($recipe->id)
-        ->and(InventoryMovement::query()->where('type', 'restaurant_recipe_consumption')->sum('meters_delta'))->toBe('-6.000');
+        ->and((float) InventoryMovement::query()->where('type', 'restaurant_recipe_consumption')->sum('meters_delta'))->toBe(-6.0);
 });

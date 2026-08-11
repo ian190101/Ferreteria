@@ -15,6 +15,7 @@ use App\Modules\SystemSuperadmin\Services\BusinessProfileConfiguration;
 use App\Modules\SystemSuperadmin\Services\BusinessProfileDiffService;
 use App\Modules\SystemSuperadmin\Services\BusinessProfileMigrationMapper;
 use App\Modules\SystemSuperadmin\Services\BusinessProfileSandboxService;
+use App\Modules\SystemSuperadmin\Services\BusinessPresetReadinessService;
 use App\Support\SystemCacheInvalidator;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -57,6 +58,7 @@ class BusinessProfileController extends Controller
         $diffService = app(BusinessProfileDiffService::class);
 
         $activationChecklist = app(BusinessProfileActivationChecklist::class);
+        $presetReadiness = app(BusinessPresetReadinessService::class);
 
         return Inertia::render('SystemSuperadmin/BusinessProfiles/Index', [
             'activeProfile' => $activeProfile,
@@ -76,6 +78,7 @@ class BusinessProfileController extends Controller
                         : [],
                 ]),
             'presets' => $presets,
+            'presetReadiness' => collect($presetReadiness->all())->keyBy('name')->all(),
             'options' => BusinessProfileConfiguration::options(),
             'defaultConfiguration' => BusinessProfileConfiguration::defaults(),
             'capabilitiesCatalog' => BusinessCapabilityCatalog::all(),

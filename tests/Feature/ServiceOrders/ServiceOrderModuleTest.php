@@ -276,7 +276,7 @@ it('registra orden con materiales y descuenta inventario de la sucursal', functi
     expect($order->total_amount)->toBe('150.0000')
         ->and($order->items)->toHaveCount(1)
         ->and(ProductBranchStock::query()->where('product_id', $material->id)->value('available_meters'))->toBe('6.000')
-        ->and(InventoryMovement::query()->where('type', 'service_order_material_consumption')->sum('meters_delta'))->toBe('-2.000');
+        ->and((float) InventoryMovement::query()->where('type', 'service_order_material_consumption')->sum('meters_delta'))->toBe(-2.0);
 });
 
 it('respeta estados personalizados y valida transiciones', function () {

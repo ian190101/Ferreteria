@@ -6,6 +6,7 @@ const permissionGroups = {
     branches: 'Sucursales',
     cash: 'Caja',
     'cash-flow': 'Flujo de efectivo',
+    'customer-qr-orders': 'Pedidos QR',
     customers: 'Clientes',
     dashboard: 'Panel principal',
     expenses: 'Gastos',
@@ -43,6 +44,11 @@ const permissionNames = {
     'cash.view': 'Ver caja',
     'cash.manage': 'Abrir, cerrar y gestionar caja',
     'cash-flow.view': 'Ver flujo de efectivo',
+    'customer-qr-orders.view': 'Ver pedidos QR',
+    'customer-qr-orders.accept': 'Aceptar y avanzar pedidos QR',
+    'customer-qr-orders.reject': 'Rechazar pedidos QR',
+    'customer-qr-orders.convert': 'Convertir pedidos QR a documentos',
+    'customer-qr-orders.manage-channels': 'Gestionar canales QR',
     'customers.view': 'Ver clientes',
     'customers.manage': 'Gestionar clientes',
     'credit-notes.view': 'Ver notas de credito',
@@ -115,6 +121,7 @@ const permissionNames = {
 
 const groupOrder = [
     'Ventas',
+    'Pedidos QR',
     'Panel principal',
     'Pagos',
     'Caja',

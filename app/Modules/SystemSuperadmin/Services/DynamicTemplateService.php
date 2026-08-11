@@ -4,6 +4,8 @@ namespace App\Modules\SystemSuperadmin\Services;
 
 use App\Modules\SystemSuperadmin\Models\DynamicDocumentTemplate;
 use App\Modules\SystemSuperadmin\Models\DynamicReportTemplate;
+use App\Support\SystemCacheInvalidator;
+use Illuminate\Support\Facades\Cache;
 
 class DynamicTemplateService
 {
@@ -20,7 +22,7 @@ class DynamicTemplateService
             return [];
         }
 
-        return DynamicDocumentTemplate::query()
+        return Cache::remember($this->cacheKey('documents', [$documentType, (string) ($branchId ?? 'all')]), $this->cacheTtl(), fn (): array => DynamicDocumentTemplate::query()
             ->with('branch:id,name')
             ->where('document_type', $documentType)
             ->where('is_active', true)
@@ -29,7 +31,7 @@ class DynamicTemplateService
             ->orderByDesc('is_default')
             ->orderBy('name')
             ->get()
-            ->all();
+            ->all());
     }
 
     public function resolveDocument(string $documentType, ?int $branchId = null): ?DynamicDocumentTemplate
@@ -51,14 +53,14 @@ class DynamicTemplateService
             return [];
         }
 
-        return DynamicReportTemplate::query()
+        return Cache::remember($this->cacheKey('reports', [(string) ($module ?? 'all'), (string) ($entityType ?? 'all')]), $this->cacheTtl(), fn (): array => DynamicReportTemplate::query()
             ->where('is_active', true)
             ->when($module, fn ($query) => $query->where(fn ($scoped) => $scoped->whereNull('module')->orWhere('module', $module)))
             ->when($entityType, fn ($query) => $query->where(fn ($scoped) => $scoped->whereNull('entity_type')->orWhere('entity_type', $entityType)))
             ->orderByDesc('is_default')
             ->orderBy('name')
             ->get()
-            ->all();
+            ->all());
     }
 
     public function resolveReport(string $code): ?DynamicReportTemplate
@@ -67,10 +69,10 @@ class DynamicTemplateService
             return null;
         }
 
-        return DynamicReportTemplate::query()
+        return Cache::remember($this->cacheKey('report', [$code]), $this->cacheTtl(), fn (): ?DynamicReportTemplate => DynamicReportTemplate::query()
             ->where('code', $code)
             ->where('is_active', true)
-            ->first();
+            ->first());
     }
 
     public function documentRuntimeEnabled(): bool
@@ -83,5 +85,17 @@ class DynamicTemplateService
     {
         return ActiveBusinessProfile::featureEnabled('report_templates_engine')
             && ActiveBusinessProfile::capable('uses_report_templates');
+    }
+
+    private function cacheKey(string $scope, array $parts = []): string
+    {
+        return 'business-dynamic-templates:'.SystemCacheInvalidator::operationalVersion().':'.$scope.':'.implode(':', $parts);
+    }
+
+    private function cacheTtl(): \DateTimeInterface
+    {
+        $minutes = (int) data_get(ActiveBusinessProfile::payload(), 'performance.cache_capabilities_minutes', 60);
+
+        return now()->addMinutes(max($minutes, 1));
     }
 }

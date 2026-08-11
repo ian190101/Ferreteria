@@ -563,6 +563,207 @@ class BusinessProfilePresetFactory
                 'documents' => ['active' => ['quotation', 'reservation_receipt', 'simple_contract', 'delivery_receipt']],
                 'activation_checklist' => ['minimum_requirements' => ['branch', 'resources', 'calendar', 'deposit_policy']],
             ]),
+            ...$this->specializedPresets(),
+        ];
+    }
+
+    /**
+     * @return array<int, array{name:string,business_type:string,description:string,configuration:array<string,mixed>}>
+     */
+    private function specializedPresets(): array
+    {
+        return [
+            $this->preset('Farmacia', 'store', 'Retail con POS, vencimientos, lotes opcionales, clientes fiscales y control de productos sensibles.', [
+                'identity' => ['business_type' => 'store', 'specific_industry' => 'Farmacia o venta de medicamentos', 'uses_product_images' => true, 'uses_pos_points' => true],
+                'modules' => ['pos' => true, 'quick_purchases' => true, 'inventory' => true, 'customers' => true, 'suppliers' => true, 'billing' => true, 'cash' => true, 'banks' => true],
+                'capabilities' => ['uses_inventory' => true, 'uses_lots' => true, 'uses_expiration_dates' => true, 'uses_pos' => true, 'uses_barcode_scanner' => true, 'allows_direct_sale' => true, 'requires_customer' => false, 'requires_cash_session' => true, 'uses_cash' => true, 'uses_banks' => true, 'uses_billing' => true, 'uses_price_lists' => true, 'uses_printer_profiles' => true],
+                'sales' => ['workflow' => 'pos', 'quotation_mode' => 'disabled', 'document_main' => 'invoice_direct', 'customer_mode' => 'optional', 'price_policy' => 'branch_price', 'discount_policy' => 'permission'],
+                'billing' => ['enabled' => true, 'invoice_flow' => 'direct_invoice', 'issue_from' => 'pos', 'issue_timing' => 'automatic_direct'],
+                'products' => ['catalog_mode' => 'barcode_retail', 'item_types' => ['physical'], 'barcode_required' => true, 'images_enabled' => true],
+                'activation_checklist' => ['minimum_requirements' => ['branch', 'cash', 'products', 'barcodes', 'expiration_policy']],
+            ]),
+            $this->preset('Foodtruck', 'fast_food', 'Venta movil con POS rapido, combos, insumos, caja por turno y ticket simple.', [
+                'identity' => ['business_type' => 'fast_food', 'specific_industry' => 'Foodtruck o punto movil de comida', 'uses_product_images' => true, 'uses_pos_points' => true],
+                'modules' => ['pos' => true, 'sales_notes' => true, 'cash' => true, 'banks' => true, 'inventory' => true, 'kitchen_orders' => true, 'recipes' => true, 'combos' => true, 'deliveries' => true],
+                'submodules' => ['tips' => true, 'delivery' => true, 'thermal_printing' => true],
+                'capabilities' => ['uses_inventory' => true, 'uses_recipes' => true, 'uses_kitchen_orders' => true, 'uses_tips' => true, 'uses_delivery' => true, 'uses_pos' => true, 'allows_direct_sale' => true, 'requires_customer' => false, 'requires_cash_session' => true, 'uses_cash' => true, 'uses_banks' => true, 'uses_printer_profiles' => true],
+                'sales' => ['workflow' => 'restaurant_counter', 'quotation_mode' => 'disabled', 'document_main' => 'ticket', 'customer_mode' => 'optional', 'inventory_discount_timing' => 'payment'],
+                'products' => ['catalog_mode' => 'restaurant_menu', 'item_types' => ['prepared_product', 'internal_supply', 'combo'], 'images_enabled' => true],
+                'restaurant' => ['mode' => 'fast_food', 'tables_enabled' => false, 'kitchen_areas' => ['cocina'], 'tips_mode' => 'optional'],
+                'activation_checklist' => ['minimum_requirements' => ['branch', 'cash', 'menu', 'recipes']],
+            ]),
+            $this->preset('Odontologia', 'dental_clinic', 'Pacientes, odontograma adulto/nino, tratamientos por pieza, citas, presupuestos y consentimiento.', $this->healthPreset([
+                'identity' => ['business_type' => 'dental_clinic', 'specific_industry' => 'Clinica odontologica o consultorio dental'],
+                'capabilities' => ['uses_dental_chart' => true],
+                'documents' => ['active' => ['quotation', 'medical_record', 'dental_chart', 'consent_form', 'advance_receipt']],
+                'services' => ['mode' => 'professional', 'orders_enabled' => true, 'technician_required' => false, 'evidence_enabled' => true, 'signature_enabled' => true],
+                'activation_checklist' => ['minimum_requirements' => ['branch', 'patients', 'professionals', 'dental_chart', 'service_catalog']],
+            ])),
+            $this->preset('Consultorio medico', 'health_clinic', 'Historia clinica, consultas, diagnosticos, recetas, archivos, citas y campos sensibles.', $this->healthPreset([
+                'identity' => ['business_type' => 'health_clinic', 'specific_industry' => 'Consultorio medico o especialidad de salud'],
+                'documents' => ['active' => ['medical_record', 'medical_prescription', 'consent_form', 'advance_receipt']],
+                'activation_checklist' => ['minimum_requirements' => ['branch', 'patients', 'professionals', 'medical_forms']],
+            ])),
+            $this->preset('Medicina estetica y spa', 'aesthetic_medicine', 'Servicios por sesion, fotos antes/despues, insumos, paquetes, citas y consentimientos.', [
+                'identity' => ['business_type' => 'aesthetic_medicine', 'specific_industry' => 'Medicina estetica, spa o centro de belleza', 'uses_product_images' => true],
+                'modules' => ['services' => true, 'service_orders' => true, 'reservations' => true, 'customers' => true, 'inventory' => true, 'purchases' => true, 'cash' => true, 'banks' => true],
+                'capabilities' => ['uses_inventory' => true, 'uses_services' => true, 'uses_service_orders' => true, 'uses_reservations' => true, 'uses_reservable_resources' => true, 'uses_dynamic_entities' => true, 'uses_dynamic_fields' => true, 'uses_dynamic_forms' => true, 'uses_attachments' => true, 'uses_document_templates' => true, 'uses_formula_calculations' => true, 'requires_customer' => true, 'allows_direct_sale' => true, 'uses_cash' => true, 'uses_banks' => true],
+                'feature_flags' => ['dynamic_entities_engine' => true, 'dynamic_fields_engine' => true, 'dynamic_forms_engine' => true, 'attachments_engine' => true, 'document_engine_v2' => true, 'formula_engine' => true],
+                'sales' => ['workflow' => 'service_sale', 'quotation_mode' => 'optional', 'customer_mode' => 'required', 'inventory_discount_timing' => 'manual'],
+                'products' => ['catalog_mode' => 'services', 'item_types' => ['service', 'internal_supply', 'combo'], 'allow_service_items' => true, 'images_enabled' => true],
+                'services' => ['mode' => 'professional', 'orders_enabled' => true, 'evidence_enabled' => true, 'signature_enabled' => true],
+            ]),
+            $this->preset('Peluqueria y barberia', 'services', 'Servicios rapidos, agenda opcional, trabajadores, comisiones y POS de mostrador.', [
+                'identity' => ['business_type' => 'services', 'specific_industry' => 'Peluqueria, barberia o salon de belleza', 'uses_product_images' => true],
+                'modules' => ['services' => true, 'reservations' => true, 'pos' => true, 'customers' => true, 'cash' => true, 'banks' => true, 'workers' => true],
+                'capabilities' => ['uses_services' => true, 'uses_reservations' => true, 'uses_reservable_resources' => true, 'uses_pos' => true, 'allows_direct_sale' => true, 'requires_customer' => false, 'requires_cash_session' => true, 'uses_cash' => true, 'uses_banks' => true, 'uses_commissions' => true],
+                'sales' => ['workflow' => 'service_sale', 'quotation_mode' => 'disabled', 'document_main' => 'ticket', 'customer_mode' => 'optional'],
+                'products' => ['catalog_mode' => 'services', 'item_types' => ['service', 'physical'], 'allow_service_items' => true],
+                'services' => ['mode' => 'quick', 'orders_enabled' => false],
+            ]),
+            $this->preset('Gimnasio', 'gym', 'Membresias, planes, pagos recurrentes, reservas de clases y control de alumnos.', [
+                'identity' => ['business_type' => 'gym', 'specific_industry' => 'Gimnasio, box o centro deportivo'],
+                'modules' => ['services' => true, 'reservations' => true, 'customers' => true, 'cash' => true, 'banks' => true],
+                'capabilities' => ['uses_services' => true, 'uses_reservations' => true, 'uses_reservable_resources' => true, 'uses_dynamic_entities' => true, 'uses_memberships' => true, 'requires_customer' => true, 'allows_direct_sale' => true, 'uses_cash' => true, 'uses_banks' => true],
+                'feature_flags' => ['dynamic_entities_engine' => true],
+                'sales' => ['workflow' => 'service_sale', 'quotation_mode' => 'disabled', 'customer_mode' => 'required'],
+                'products' => ['catalog_mode' => 'services', 'item_types' => ['service', 'digital'], 'allow_service_items' => true],
+            ]),
+            $this->preset('Veterinaria', 'veterinary', 'Clientes con mascotas, consultas, vacunas, productos, agenda y evidencias clinicas.', [
+                'identity' => ['business_type' => 'veterinary', 'specific_industry' => 'Veterinaria o pet shop', 'uses_product_images' => true],
+                'modules' => ['services' => true, 'service_orders' => true, 'reservations' => true, 'customers' => true, 'inventory' => true, 'purchases' => true, 'cash' => true, 'banks' => true],
+                'capabilities' => ['uses_inventory' => true, 'uses_expiration_dates' => true, 'uses_services' => true, 'uses_service_orders' => true, 'uses_reservations' => true, 'uses_dynamic_entities' => true, 'uses_dynamic_fields' => true, 'uses_pet_records' => true, 'uses_attachments' => true, 'requires_customer' => true, 'allows_direct_sale' => true, 'uses_cash' => true, 'uses_banks' => true],
+                'feature_flags' => ['dynamic_entities_engine' => true, 'dynamic_fields_engine' => true, 'attachments_engine' => true],
+                'sales' => ['workflow' => 'service_sale', 'quotation_mode' => 'optional', 'customer_mode' => 'required'],
+                'products' => ['catalog_mode' => 'mixed_inventory', 'item_types' => ['service', 'physical', 'internal_supply'], 'allow_service_items' => true],
+            ]),
+            $this->preset('Mecanica autos y motos', 'auto_mechanic', 'Vehiculos por cliente, ordenes, diagnostico, repuestos, mano de obra, garantia y almacen.', $this->workshopPreset('auto_mechanic', 'Mecanica autos y motos', ['uses_vehicles' => true])),
+            $this->preset('Reparacion celulares y laptops', 'electronics_repair', 'Equipos recibidos, diagnostico, repuestos, evidencias, estados y entrega final.', $this->workshopPreset('electronics_repair', 'Reparacion de celulares, laptops y electronica', ['uses_equipment_repairs' => true])),
+            $this->preset('Lavadero de autos', 'car_wash', 'Servicios rapidos por tipo de vehiculo, cola de atencion, trabajador y POS.', [
+                'identity' => ['business_type' => 'car_wash', 'specific_industry' => 'Lavadero de autos, motos o detailing'],
+                'modules' => ['services' => true, 'pos' => true, 'customers' => true, 'cash' => true, 'banks' => true, 'workers' => true],
+                'capabilities' => ['uses_services' => true, 'uses_dynamic_entities' => true, 'uses_vehicles' => true, 'uses_pos' => true, 'allows_direct_sale' => true, 'requires_customer' => false, 'requires_cash_session' => true, 'uses_cash' => true, 'uses_banks' => true, 'uses_commissions' => true],
+                'feature_flags' => ['dynamic_entities_engine' => true],
+                'sales' => ['workflow' => 'service_sale', 'quotation_mode' => 'disabled', 'document_main' => 'ticket', 'customer_mode' => 'optional'],
+                'products' => ['catalog_mode' => 'services', 'item_types' => ['service'], 'allow_service_items' => true],
+            ]),
+            $this->preset('Mudanzas', 'moving_service', 'Cotizacion por origen, destino, volumen, ayudantes, camion, gastos y servicio final.', [
+                'identity' => ['business_type' => 'moving_service', 'specific_industry' => 'Mudanzas, transporte local o carga liviana'],
+                'modules' => ['quotes' => true, 'services' => true, 'service_orders' => true, 'reservations' => true, 'deliveries' => true, 'customers' => true, 'cash' => true, 'banks' => true, 'workers' => true],
+                'capabilities' => ['uses_services' => true, 'uses_service_orders' => true, 'uses_reservations' => true, 'uses_reservable_resources' => true, 'uses_dynamic_entities' => true, 'uses_dynamic_fields' => true, 'uses_vehicles' => true, 'uses_formula_calculations' => true, 'uses_delivery' => true, 'requires_customer' => true, 'allows_direct_sale' => true, 'uses_cash' => true, 'uses_banks' => true],
+                'feature_flags' => ['dynamic_entities_engine' => true, 'dynamic_fields_engine' => true, 'formula_engine' => true],
+                'contacts' => ['delivery_address_mode' => 'required'],
+                'sales' => ['workflow' => 'service_sale', 'quotation_mode' => 'optional', 'customer_mode' => 'required'],
+            ]),
+            $this->preset('Arquitectura y construccion', 'construction', 'Proyectos, computos metricos, materiales, mano de obra, presupuesto y avance.', [
+                'identity' => ['business_type' => 'construction', 'specific_industry' => 'Arquitectura, construccion u obras civiles'],
+                'modules' => ['quotes' => true, 'services' => true, 'purchases' => true, 'inventory' => true, 'customers' => true, 'suppliers' => true, 'cash' => true, 'banks' => true],
+                'capabilities' => ['uses_inventory' => true, 'uses_services' => true, 'uses_dynamic_entities' => true, 'uses_dynamic_fields' => true, 'uses_projects' => true, 'uses_construction_calculations' => true, 'uses_formula_calculations' => true, 'uses_document_templates' => true, 'requires_customer' => true, 'allows_direct_sale' => true, 'uses_cash' => true, 'uses_banks' => true],
+                'feature_flags' => ['dynamic_entities_engine' => true, 'dynamic_fields_engine' => true, 'formula_engine' => true, 'document_engine_v2' => true],
+                'sales' => ['workflow' => 'quotation_to_sale_note', 'quotation_mode' => 'optional', 'customer_mode' => 'required'],
+                'products' => ['catalog_mode' => 'mixed_inventory', 'item_types' => ['service', 'physical', 'internal_supply'], 'unit_equivalences' => true],
+                'documents' => ['active' => ['quotation', 'construction_budget', 'simple_contract']],
+            ]),
+            $this->preset('Prestamos y casa de empeno', 'loans', 'Solicitud, garantias, interes, cuotas, mora, contrato, cobranza y aprobaciones.', [
+                'identity' => ['business_type' => 'loans', 'specific_industry' => 'Prestamos, microcredito o casa de empeno'],
+                'modules' => ['customers' => true, 'cash' => true, 'banks' => true, 'reports' => true, 'exports' => true],
+                'capabilities' => ['uses_dynamic_entities' => true, 'uses_dynamic_fields' => true, 'uses_dynamic_relationships' => true, 'uses_dynamic_forms' => true, 'uses_field_level_permissions' => true, 'uses_loans' => true, 'uses_guarantees' => true, 'uses_formula_calculations' => true, 'uses_attachments' => true, 'uses_document_templates' => true, 'uses_approval_flows' => true, 'uses_automation_rules' => true, 'uses_data_governance' => true, 'uses_operational_traceability' => true, 'requires_customer' => true, 'uses_cash' => true, 'uses_banks' => true],
+                'feature_flags' => ['dynamic_entities_engine' => true, 'dynamic_fields_engine' => true, 'dynamic_relationships_engine' => true, 'dynamic_forms_engine' => true, 'field_permissions_engine' => true, 'data_governance_engine' => true, 'operational_traceability_engine' => true, 'formula_engine' => true, 'attachments_engine' => true, 'document_engine_v2' => true, 'approval_engine' => true, 'automation_engine' => true],
+                'sales' => ['workflow' => 'direct_sale', 'quotation_mode' => 'disabled', 'customer_mode' => 'required'],
+                'finance' => ['accounting_mode' => 'receivable_payable', 'uses_accounts_receivable' => true],
+                'documents' => ['active' => ['loan_contract', 'guarantee_receipt', 'advance_receipt']],
+                'approvals' => ['enabled' => true],
+                'automations' => ['enabled' => true],
+            ]),
+            $this->preset('Hotel y hostal', 'hotel', 'Habitaciones, calendario, reservas, anticipos, penalidades, check-in y check-out.', $this->reservationPreset('hotel', 'Hotel, hostal o alojamiento', ['ticket', 'reservation_receipt', 'simple_contract'])),
+            $this->preset('Canchas deportivas', 'sports_court', 'Canchas por horario, reservas, anticipos, penalidades y pagos rapidos.', $this->reservationPreset('sports_court', 'Canchas deportivas o espacios por hora', ['ticket', 'reservation_receipt'])),
+            $this->preset('Alquiler equipos y herramientas', 'rentals', 'Alquiler de equipos o herramientas con garantia, penalidad y estado antes/despues.', [
+                'identity' => ['business_type' => 'rentals', 'specific_industry' => 'Alquiler de equipos, herramientas o maquinaria', 'uses_product_images' => true],
+                'modules' => ['quotes' => true, 'sales_notes' => true, 'inventory' => true, 'reservations' => true, 'rentals' => true, 'customers' => true, 'cash' => true, 'banks' => true],
+                'capabilities' => ['uses_inventory' => true, 'uses_reservations' => true, 'uses_reservable_resources' => true, 'uses_rentals' => true, 'uses_guarantees' => true, 'uses_dynamic_entities' => true, 'uses_dynamic_fields' => true, 'requires_customer' => true, 'allows_direct_sale' => true, 'requires_cash_session' => true, 'uses_cash' => true, 'uses_banks' => true],
+                'feature_flags' => ['dynamic_entities_engine' => true, 'dynamic_fields_engine' => true],
+                'sales' => ['workflow' => 'rental_flow', 'quotation_mode' => 'optional', 'customer_mode' => 'required', 'inventory_discount_timing' => 'delivery'],
+                'rentals' => ['enabled' => true, 'deposit_required' => true, 'late_penalty_enabled' => true, 'condition_check_required' => true],
+            ]),
+            $this->preset('Educacion y cursos', 'education', 'Cursos, estudiantes, horarios, docentes, pagos, inscripciones y certificados.', [
+                'identity' => ['business_type' => 'education', 'specific_industry' => 'Instituto, cursos o capacitaciones'],
+                'modules' => ['services' => true, 'reservations' => true, 'customers' => true, 'cash' => true, 'banks' => true],
+                'capabilities' => ['uses_services' => true, 'uses_reservations' => true, 'uses_reservable_resources' => true, 'uses_dynamic_entities' => true, 'uses_courses' => true, 'requires_customer' => true, 'allows_direct_sale' => true, 'uses_cash' => true, 'uses_banks' => true],
+                'feature_flags' => ['dynamic_entities_engine' => true],
+                'sales' => ['workflow' => 'service_sale', 'quotation_mode' => 'optional', 'customer_mode' => 'required'],
+            ]),
+            $this->preset('Eventos y salones', 'events', 'Salones, eventos, reservas, anticipos, contratos, recursos y servicios adicionales.', $this->reservationPreset('events', 'Eventos, salones o recepciones', ['quotation', 'reservation_receipt', 'simple_contract'])),
+            $this->preset('Transporte y logistica', 'transport_logistics', 'Flota, conductores, rutas, cotizaciones, servicios, gastos y entregas.', [
+                'identity' => ['business_type' => 'transport_logistics', 'specific_industry' => 'Transporte, delivery avanzado o logistica'],
+                'modules' => ['quotes' => true, 'services' => true, 'service_orders' => true, 'deliveries' => true, 'customers' => true, 'cash' => true, 'banks' => true, 'workers' => true],
+                'capabilities' => ['uses_services' => true, 'uses_service_orders' => true, 'uses_dynamic_entities' => true, 'uses_dynamic_fields' => true, 'uses_vehicles' => true, 'uses_formula_calculations' => true, 'uses_integrations' => true, 'uses_delivery' => true, 'requires_customer' => true, 'allows_direct_sale' => true, 'uses_cash' => true, 'uses_banks' => true],
+                'feature_flags' => ['dynamic_entities_engine' => true, 'dynamic_fields_engine' => true, 'formula_engine' => true, 'integrations_engine' => true],
+                'integrations' => ['enabled' => true, 'channels' => ['maps' => true]],
+                'contacts' => ['delivery_address_mode' => 'required'],
+                'sales' => ['workflow' => 'service_sale', 'quotation_mode' => 'optional', 'customer_mode' => 'required'],
+            ]),
+            $this->preset('Agropecuaria simple', 'agriculture', 'Insumos, compras, inventario, vencimientos, lotes, ventas y produccion simple opcional.', [
+                'identity' => ['business_type' => 'agriculture', 'specific_industry' => 'Agropecuaria, insumos agricolas o pequenos productores', 'uses_product_images' => true],
+                'modules' => ['sales_notes' => true, 'purchases' => true, 'inventory' => true, 'customers' => true, 'suppliers' => true, 'cash' => true, 'banks' => true, 'production' => true],
+                'capabilities' => ['uses_inventory' => true, 'uses_lots' => true, 'uses_expiration_dates' => true, 'uses_production' => true, 'requires_customer' => false, 'allows_direct_sale' => true, 'uses_cash' => true, 'uses_banks' => true],
+                'sales' => ['workflow' => 'direct_sale', 'quotation_mode' => 'optional', 'customer_mode' => 'optional', 'inventory_discount_timing' => 'sale_note'],
+                'products' => ['catalog_mode' => 'mixed_inventory', 'item_types' => ['physical', 'internal_supply', 'finished_product'], 'unit_equivalences' => true],
+                'production_flow' => ['enabled' => true, 'bom_enabled' => true, 'waste_tracking' => true],
+            ]),
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $overrides
+     * @return array<string, mixed>
+     */
+    private function healthPreset(array $overrides = []): array
+    {
+        return BusinessProfileConfiguration::normalized(array_replace_recursive([
+            'identity' => ['uses_product_images' => true],
+            'modules' => ['services' => true, 'service_orders' => true, 'reservations' => true, 'customers' => true, 'inventory' => false, 'cash' => true, 'banks' => true],
+            'capabilities' => ['uses_services' => true, 'uses_service_orders' => true, 'uses_reservations' => true, 'uses_reservable_resources' => true, 'uses_dynamic_entities' => true, 'uses_dynamic_fields' => true, 'uses_dynamic_relationships' => true, 'uses_dynamic_forms' => true, 'uses_field_level_permissions' => true, 'uses_attachments' => true, 'uses_document_templates' => true, 'uses_automation_rules' => true, 'uses_data_governance' => true, 'uses_health_records' => true, 'requires_customer' => true, 'allows_direct_sale' => true, 'uses_cash' => true, 'uses_banks' => true],
+            'feature_flags' => ['dynamic_entities_engine' => true, 'dynamic_fields_engine' => true, 'dynamic_relationships_engine' => true, 'dynamic_forms_engine' => true, 'field_permissions_engine' => true, 'data_governance_engine' => true, 'attachments_engine' => true, 'document_engine_v2' => true, 'automation_engine' => true],
+            'sales' => ['workflow' => 'service_sale', 'quotation_mode' => 'optional', 'document_main' => 'receipt', 'customer_mode' => 'required'],
+            'products' => ['catalog_mode' => 'services', 'item_types' => ['service', 'internal_supply'], 'allow_service_items' => true],
+            'reservations' => ['calendar_enabled' => true, 'resource_required' => true, 'advance_mode' => 'optional', 'reminders_enabled' => true],
+            'automations' => ['enabled' => true],
+            'governance' => ['allow_anonymization' => true, 'sensitive_entities' => ['customer', 'health_record', 'attachment'], 'export_sensitive_requires_permission' => true],
+        ], $overrides));
+    }
+
+    /**
+     * @param array<string, bool> $extraCapabilities
+     * @return array<string, mixed>
+     */
+    private function workshopPreset(string $businessType, string $industry, array $extraCapabilities): array
+    {
+        return [
+            'identity' => ['business_type' => $businessType, 'specific_industry' => $industry, 'uses_product_images' => true, 'uses_internal_warehouses' => true],
+            'modules' => ['quotes' => true, 'sales_notes' => true, 'services' => true, 'service_orders' => true, 'reservations' => true, 'inventory' => true, 'purchases' => true, 'customers' => true, 'suppliers' => true, 'cash' => true, 'banks' => true, 'workers' => true],
+            'capabilities' => array_replace(['uses_inventory' => true, 'uses_services' => true, 'uses_service_orders' => true, 'uses_reservations' => true, 'uses_reservable_resources' => true, 'uses_dynamic_entities' => true, 'uses_dynamic_fields' => true, 'uses_dynamic_relationships' => true, 'uses_attachments' => true, 'uses_custom_statuses' => true, 'requires_customer' => true, 'allows_direct_sale' => true, 'uses_cash' => true, 'uses_banks' => true, 'uses_commissions' => true], $extraCapabilities),
+            'feature_flags' => ['dynamic_entities_engine' => true, 'dynamic_fields_engine' => true, 'dynamic_relationships_engine' => true, 'attachments_engine' => true],
+            'sales' => ['workflow' => 'service_sale', 'quotation_mode' => 'optional', 'customer_mode' => 'required', 'inventory_discount_timing' => 'manual'],
+            'products' => ['catalog_mode' => 'mixed_inventory', 'item_types' => ['service', 'physical', 'internal_supply'], 'allow_service_items' => true, 'images_enabled' => true],
+            'services' => ['mode' => 'technical', 'orders_enabled' => true, 'technician_required' => true, 'evidence_enabled' => true, 'warranty_enabled' => true],
+            'activation_checklist' => ['minimum_requirements' => ['branch', 'technicians', 'service_states', 'customers', 'parts']],
+        ];
+    }
+
+    /**
+     * @param array<int, string> $documents
+     * @return array<string, mixed>
+     */
+    private function reservationPreset(string $businessType, string $industry, array $documents): array
+    {
+        return [
+            'identity' => ['business_type' => $businessType, 'specific_industry' => $industry, 'uses_product_images' => true],
+            'modules' => ['services' => true, 'reservations' => true, 'customers' => true, 'cash' => true, 'banks' => true],
+            'capabilities' => ['uses_services' => true, 'uses_reservations' => true, 'uses_reservable_resources' => true, 'uses_dynamic_entities' => true, 'uses_dynamic_fields' => true, 'uses_document_templates' => true, 'requires_customer' => true, 'allows_direct_sale' => true, 'uses_cash' => true, 'uses_banks' => true],
+            'feature_flags' => ['dynamic_entities_engine' => true, 'dynamic_fields_engine' => true, 'document_engine_v2' => true],
+            'sales' => ['workflow' => 'reservation_to_sale', 'quotation_mode' => 'optional', 'customer_mode' => 'required'],
+            'reservations' => ['calendar_enabled' => true, 'resource_required' => true, 'advance_mode' => 'required', 'expiration_enabled' => true],
+            'documents' => ['active' => $documents],
         ];
     }
 

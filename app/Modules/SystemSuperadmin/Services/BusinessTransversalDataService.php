@@ -6,12 +6,20 @@ use App\Modules\Branches\Models\Branch;
 use App\Modules\HumanResources\Models\Worker;
 use App\Modules\Inventory\Models\Product;
 use App\Modules\SystemSuperadmin\Models\AttachmentDefinition;
+use App\Modules\SystemSuperadmin\Models\ApprovalFlowRule;
+use App\Modules\SystemSuperadmin\Models\ApprovalRequest;
+use App\Modules\SystemSuperadmin\Models\AutomationRule;
+use App\Modules\SystemSuperadmin\Models\AutomationRun;
 use App\Modules\SystemSuperadmin\Models\BusinessCurrency;
 use App\Modules\SystemSuperadmin\Models\BusinessCommercialFlowRule;
+use App\Modules\SystemSuperadmin\Models\BusinessIntegrationConnector;
 use App\Modules\SystemSuperadmin\Models\BusinessModuleLicense;
+use App\Modules\SystemSuperadmin\Models\BranchOperationPolicy;
 use App\Modules\SystemSuperadmin\Models\BusinessStateDefinition;
 use App\Modules\SystemSuperadmin\Models\CalculationFormula;
 use App\Modules\SystemSuperadmin\Models\CommissionRule;
+use App\Modules\SystemSuperadmin\Models\CustomerQrChannel;
+use App\Modules\SystemSuperadmin\Models\CustomerQrOrder;
 use App\Modules\SystemSuperadmin\Models\CustomFieldDefinition;
 use App\Modules\SystemSuperadmin\Models\DynamicEntity;
 use App\Modules\SystemSuperadmin\Models\DynamicDocumentTemplate;
@@ -21,6 +29,7 @@ use App\Modules\SystemSuperadmin\Models\DynamicReportTemplate;
 use App\Modules\SystemSuperadmin\Models\DynamicRelationshipDefinition;
 use App\Modules\SystemSuperadmin\Models\ImportProfileTemplate;
 use App\Modules\SystemSuperadmin\Models\NotificationRule;
+use App\Modules\SystemSuperadmin\Models\OperationalTrace;
 use App\Modules\SystemSuperadmin\Models\PriceList;
 use App\Modules\SystemSuperadmin\Models\PrinterProfile;
 use App\Modules\SystemSuperadmin\Models\ReservableResource;
@@ -53,6 +62,15 @@ class BusinessTransversalDataService
                 'price_lists' => PriceList::query()->count(),
                 'commissions' => CommissionRule::query()->count(),
                 'notifications' => NotificationRule::query()->count(),
+                'approval_flows' => ApprovalFlowRule::query()->count(),
+                'approval_requests' => ApprovalRequest::query()->count(),
+                'automation_rules' => AutomationRule::query()->count(),
+                'automation_runs' => AutomationRun::query()->count(),
+                'operational_traces' => OperationalTrace::query()->count(),
+                'integrations' => BusinessIntegrationConnector::query()->count(),
+                'customer_qr_channels' => CustomerQrChannel::query()->count(),
+                'customer_qr_orders' => CustomerQrOrder::query()->count(),
+                'branch_policies' => BranchOperationPolicy::query()->count(),
                 'currencies' => BusinessCurrency::query()->count(),
                 'printers' => PrinterProfile::query()->count(),
                 'licenses' => BusinessModuleLicense::query()->count(),
@@ -75,6 +93,15 @@ class BusinessTransversalDataService
             'priceLists' => PriceList::query()->with('branch:id,name')->latest('updated_at')->limit(80)->get(),
             'commissions' => CommissionRule::query()->with(['branch:id,name', 'product:id,name'])->latest('updated_at')->limit(80)->get(),
             'notifications' => NotificationRule::query()->latest('updated_at')->limit(80)->get(),
+            'approvalFlows' => ApprovalFlowRule::query()->latest('updated_at')->limit(80)->get(),
+            'approvalRequests' => ApprovalRequest::query()->with(['rule:id,name', 'requestedBy:id,name', 'resolvedBy:id,name'])->latest('updated_at')->limit(80)->get(),
+            'automationRules' => AutomationRule::query()->latest('updated_at')->limit(80)->get(),
+            'automationRuns' => AutomationRun::query()->with('rule:id,name')->latest('executed_at')->limit(80)->get(),
+            'operationalTraces' => OperationalTrace::query()->with(['actor:id,name', 'branch:id,name'])->latest('occurred_at')->limit(80)->get(),
+            'integrations' => BusinessIntegrationConnector::query()->with('branch:id,name')->latest('updated_at')->limit(80)->get(),
+            'customerQrChannels' => CustomerQrChannel::query()->with('branch:id,name')->latest('updated_at')->limit(80)->get(),
+            'customerQrOrders' => CustomerQrOrder::query()->with(['channel:id,name,code', 'branch:id,name'])->latest('submitted_at')->limit(80)->get(),
+            'branchPolicies' => BranchOperationPolicy::query()->with('branch:id,name')->latest('updated_at')->limit(80)->get(),
             'currencies' => BusinessCurrency::query()->orderByDesc('is_base')->orderBy('code')->limit(80)->get(),
             'printers' => PrinterProfile::query()->with('branch:id,name')->latest('updated_at')->limit(80)->get(),
             'licenses' => BusinessModuleLicense::query()->orderBy('module')->limit(80)->get(),
@@ -82,6 +109,7 @@ class BusinessTransversalDataService
             'branches' => Branch::query()->select('id', 'name')->where('is_active', true)->orderBy('name')->get(),
             'workers' => Worker::query()->select('id', 'branch_id', 'name', 'position')->where('is_active', true)->orderBy('name')->limit(200)->get(),
             'products' => Product::query()->select('id', 'name')->where('is_active', true)->orderBy('name')->limit(120)->get(),
+            'readiness' => app(BusinessTransversalReadinessService::class)->evaluate(),
             'options' => $this->options(),
         ];
     }

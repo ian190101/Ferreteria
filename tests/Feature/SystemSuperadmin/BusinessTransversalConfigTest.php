@@ -4,9 +4,16 @@ use App\Models\User;
 use App\Modules\Branches\Models\Branch;
 use App\Modules\HumanResources\Models\Worker;
 use App\Modules\SystemSuperadmin\Models\AttachmentDefinition;
+use App\Modules\SystemSuperadmin\Models\ApprovalFlowRule;
+use App\Modules\SystemSuperadmin\Models\ApprovalRequest;
+use App\Modules\SystemSuperadmin\Models\AutomationRule;
+use App\Modules\SystemSuperadmin\Models\AutomationRun;
 use App\Modules\SystemSuperadmin\Models\BusinessCommercialFlowRule;
 use App\Modules\SystemSuperadmin\Models\BusinessCurrency;
+use App\Modules\SystemSuperadmin\Models\BusinessIntegrationConnector;
+use App\Modules\SystemSuperadmin\Models\BranchOperationPolicy;
 use App\Modules\SystemSuperadmin\Models\BusinessProfileSandboxSession;
+use App\Modules\SystemSuperadmin\Models\BusinessProfile;
 use App\Modules\SystemSuperadmin\Models\BusinessStateDefinition;
 use App\Modules\SystemSuperadmin\Models\CalculationFormula;
 use App\Modules\SystemSuperadmin\Models\CustomFieldDefinition;
@@ -16,13 +23,18 @@ use App\Modules\SystemSuperadmin\Models\DynamicFormDefinition;
 use App\Modules\SystemSuperadmin\Models\DynamicFormFieldRule;
 use App\Modules\SystemSuperadmin\Models\DynamicReportTemplate;
 use App\Modules\SystemSuperadmin\Models\DynamicRelationshipDefinition;
+use App\Modules\SystemSuperadmin\Models\OperationalTrace;
 use App\Modules\SystemSuperadmin\Models\PrinterProfile;
 use App\Modules\SystemSuperadmin\Models\ReservableResource;
 use App\Modules\SystemSuperadmin\Models\WorkflowDefinition;
 use App\Modules\SystemSuperadmin\Models\WorkflowTransition;
 use App\Modules\SystemSuperadmin\Services\BusinessProfileConfiguration;
+use App\Modules\SystemSuperadmin\Services\ApprovalFlowService;
+use App\Modules\SystemSuperadmin\Services\AutomationRuleService;
+use App\Modules\SystemSuperadmin\Services\BusinessTransversalReadinessService;
 use App\Modules\SystemSuperadmin\Services\CustomFieldRuntimeService;
 use App\Modules\SystemSuperadmin\Services\DynamicEntityRegistry;
+use App\Support\SystemCacheInvalidator;
 use App\Support\SystemRoles;
 use Inertia\Testing\AssertableInertia as Assert;
 use Spatie\Permission\Models\Role;
@@ -60,11 +72,74 @@ it('solo sistemasuperadmin puede ver la configuracion transversal', function () 
         ->assertInertia(fn (Assert $page) => $page
             ->component('SystemSuperadmin/BusinessTransversal/Index', false)
             ->has('options')
+            ->has('readiness.overall')
+            ->has('readiness.engines')
             ->has('summary'));
 
     $this->actingAs($clientSuperadmin)
         ->get(route('system-superadmin.transversal-config.index'))
         ->assertForbidden();
+});
+
+it('calcula readiness transversal sin activar el perfil actual de ferreteria', function () {
+    $user = transversalUser();
+
+    CustomFieldDefinition::query()->create([
+        'entity_type' => 'product',
+        'code' => 'color_preparado',
+        'label' => 'Color preparado',
+        'type' => 'text',
+        'visible_in_forms' => true,
+        'is_active' => true,
+    ]);
+
+    $readiness = app(BusinessTransversalReadinessService::class)->evaluate();
+    $fieldsEngine = collect($readiness['engines'])->firstWhere('code', 'dynamic_fields');
+    $configuration = BusinessProfileConfiguration::normalized([]);
+
+    expect($fieldsEngine['status'])->toBe('prepared')
+        ->and($fieldsEngine['definitions_count'])->toBe(1)
+        ->and($readiness['overall']['blocked'])->toBe(0)
+        ->and($configuration['identity']['business_type'])->toBe('hardware_store')
+        ->and($configuration['feature_flags']['dynamic_fields_engine'])->toBeFalse()
+        ->and($configuration['capabilities']['uses_dynamic_fields'])->toBeFalse();
+
+    $this->actingAs($user)
+        ->get(route('system-superadmin.transversal-config.index'))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('SystemSuperadmin/BusinessTransversal/Index', false)
+            ->where('readiness.overall.prepared', 1)
+            ->where('readiness.overall.blocked', 0)
+        );
+});
+
+it('bloquea readiness cuando una capacidad transversal esta activa sin su feature flag tecnico', function () {
+    $user = transversalUser();
+
+    BusinessProfile::query()->create([
+        'name' => 'Perfil inconsistente para readiness',
+        'business_type' => 'hardware_store',
+        'status' => 'active',
+        'configuration' => BusinessProfileConfiguration::normalized([
+            'capabilities' => [
+                'uses_dynamic_fields' => true,
+            ],
+            'feature_flags' => [
+                'dynamic_fields_engine' => false,
+            ],
+        ]),
+        'applied_at' => now(),
+        'applied_by' => $user->id,
+    ]);
+    SystemCacheInvalidator::bumpOperational();
+
+    $readiness = app(BusinessTransversalReadinessService::class)->evaluate();
+    $fieldsEngine = collect($readiness['engines'])->firstWhere('code', 'dynamic_fields');
+
+    expect($fieldsEngine['status'])->toBe('blocked')
+        ->and($readiness['overall']['blocked'])->toBe(1)
+        ->and($readiness['overall']['can_apply_profile_safely'])->toBeFalse();
 });
 
 it('crea campos personalizados sin modificar el perfil activo', function () {
@@ -158,6 +233,364 @@ it('bloquea codigos duplicados de atributos dentro de la misma entidad', functio
         ->assertSessionHasErrors('code');
 
     expect(CustomFieldDefinition::query()->where('entity_type', 'customer')->where('code', 'ci')->count())->toBe(1);
+});
+
+it('gestiona reglas de aprobacion y automatizacion sin activarlas en ferreteria por defecto', function () {
+    $user = transversalUser();
+
+    $this->actingAs($user)
+        ->post(route('system-superadmin.transversal-config.store', 'approval-flows'), [
+            'code' => 'aprobar_descuento_alto',
+            'name' => 'Aprobar descuento alto',
+            'entity_type' => 'sale',
+            'action' => 'high_discount',
+            'trigger' => 'before_action',
+            'conditions_text' => '{"discount_percent":15}',
+            'approver_roles_csv' => 'superadmin,gerente',
+            'approver_permissions_csv' => 'sales.manage',
+            'min_approvals' => 1,
+            'requires_reason' => true,
+            'blocks_until_approved' => true,
+            'expires_after_minutes' => 120,
+            'is_active' => true,
+        ])
+        ->assertRedirect();
+
+    $this->actingAs($user)
+        ->post(route('system-superadmin.transversal-config.store', 'automation-rules'), [
+            'code' => 'avisar_reserva_proxima',
+            'name' => 'Avisar reserva proxima',
+            'entity_type' => 'reservation',
+            'trigger' => 'reservation_due',
+            'conditions_text' => '{"minutes_before":60}',
+            'actions_text' => '{"notify":["system"]}',
+            'cooldown_minutes' => 60,
+            'is_active' => true,
+        ])
+        ->assertRedirect();
+
+    $configuration = BusinessProfileConfiguration::normalized([]);
+
+    expect(ApprovalFlowRule::query()->where('code', 'aprobar_descuento_alto')->first())
+        ->not->toBeNull()
+        ->conditions->toBe(['discount_percent' => 15])
+        ->approver_roles->toBe(['superadmin', 'gerente'])
+        ->and(AutomationRule::query()->where('code', 'avisar_reserva_proxima')->first())
+        ->not->toBeNull()
+        ->actions->toBe(['notify' => ['system']])
+        ->and($configuration['feature_flags']['approval_engine'])->toBeFalse()
+        ->and($configuration['feature_flags']['automation_engine'])->toBeFalse()
+        ->and(app(ApprovalFlowService::class)->requiredRule('sale', 'high_discount', ['discount_percent' => 15]))->toBeNull()
+        ->and(app(AutomationRuleService::class)->matchingRules('reservation', 'reservation_due', ['minutes_before' => 60]))->toBe([]);
+});
+
+it('gestiona conectores externos sin activarlos en ferreteria por defecto', function () {
+    $user = transversalUser();
+
+    $this->actingAs($user)
+        ->post(route('system-superadmin.transversal-config.store', 'integrations'), [
+            'branch_id' => $user->branch_id,
+            'code' => 'whatsapp_principal',
+            'name' => 'WhatsApp principal',
+            'provider' => 'whatsapp',
+            'channel' => 'whatsapp',
+            'direction' => 'outbound',
+            'auth_type' => 'bearer_token',
+            'base_url' => 'https://api.example.test',
+            'rate_limit_per_minute' => 30,
+            'timeout_seconds' => 15,
+            'capabilities_csv' => 'send_message,send_template',
+            'public_config_text' => '{"sandbox":true}',
+            'secret_config_text' => '{"token":"secreto-no-visible"}',
+            'last_status' => 'pending',
+            'is_active' => true,
+        ])
+        ->assertRedirect();
+
+    $connector = BusinessIntegrationConnector::query()->where('code', 'whatsapp_principal')->firstOrFail();
+    $configuration = BusinessProfileConfiguration::normalized([]);
+
+    expect($connector->provider)->toBe('whatsapp')
+        ->and($connector->capabilities)->toBe(['send_message', 'send_template'])
+        ->and($connector->public_config)->toBe(['sandbox' => true])
+        ->and($connector->decodedSecretConfig())->toBe(['token' => 'secreto-no-visible'])
+        ->and($connector->getRawOriginal('secret_config'))->not->toContain('secreto-no-visible')
+        ->and($connector->toArray())->not->toHaveKey('secret_config')
+        ->and($configuration['capabilities']['uses_integrations'])->toBeFalse()
+        ->and($configuration['feature_flags']['integrations_engine'])->toBeFalse();
+});
+
+it('gestiona politicas multi-sucursal sin activarlas en ferreteria por defecto', function () {
+    $user = transversalUser();
+
+    $this->actingAs($user)
+        ->post(route('system-superadmin.transversal-config.store', 'branch-policies'), [
+            'branch_id' => $user->branch_id,
+            'code' => 'transferencia_controlada',
+            'name' => 'Transferencia controlada',
+            'operation' => 'transfer_inventory',
+            'scope' => 'source_destination',
+            'enforcement_mode' => 'block',
+            'applies_to_modules_csv' => 'inventory,transfers',
+            'rules_text' => '{"require_user_branch_access":true,"allow_cross_branch":true,"max_transfer_quantity":500}',
+            'permissions_text' => '{"manage":"inventory.transfers.manage","approve":"inventory.transfers.approve"}',
+            'metadata_text' => '{"nota":"Regla preparada para multi-sucursal avanzada"}',
+            'is_active' => true,
+        ])
+        ->assertRedirect();
+
+    $policy = BranchOperationPolicy::query()->where('code', 'transferencia_controlada')->first();
+    $configuration = BusinessProfileConfiguration::normalized([]);
+
+    expect($policy)->not->toBeNull()
+        ->and($policy->branch_id)->toBe($user->branch_id)
+        ->and($policy->operation)->toBe('transfer_inventory')
+        ->and($policy->applies_to_modules)->toBe(['inventory', 'transfers'])
+        ->and($policy->rules)->toBe([
+            'require_user_branch_access' => true,
+            'allow_cross_branch' => true,
+            'max_transfer_quantity' => 500,
+        ])
+        ->and($policy->permissions)->toBe([
+            'manage' => 'inventory.transfers.manage',
+            'approve' => 'inventory.transfers.approve',
+        ])
+        ->and($configuration['capabilities']['uses_advanced_multibranch'])->toBeFalse()
+        ->and($configuration['feature_flags']['advanced_multibranch_engine'])->toBeFalse()
+        ->and($configuration['multibranch']['enabled'])->toBeFalse();
+});
+
+it('evalua y registra aprobaciones solo cuando el perfil activa el motor', function () {
+    $user = transversalUser();
+
+    BusinessProfile::query()->create([
+        'name' => 'Perfil con aprobaciones',
+        'business_type' => 'hardware_store',
+        'status' => 'active',
+        'configuration' => BusinessProfileConfiguration::normalized([
+            'feature_flags' => ['approval_engine' => true, 'automation_engine' => true],
+            'approvals' => ['enabled' => true],
+            'automations' => ['enabled' => true],
+        ]),
+        'applied_at' => now(),
+        'applied_by' => $user->id,
+    ]);
+    SystemCacheInvalidator::bumpOperational();
+
+    $rule = ApprovalFlowRule::query()->create([
+        'code' => 'aprobar_stock_negativo',
+        'name' => 'Aprobar stock negativo',
+        'entity_type' => 'sale',
+        'action' => 'negative_stock',
+        'trigger' => 'before_action',
+        'conditions' => ['branch_id' => $user->branch_id],
+        'approver_roles' => ['superadmin'],
+        'min_approvals' => 1,
+        'is_active' => true,
+    ]);
+
+    AutomationRule::query()->create([
+        'code' => 'alerta_caja_sin_cerrar',
+        'name' => 'Caja sin cerrar',
+        'entity_type' => 'cash_session',
+        'trigger' => 'cash_not_closed',
+        'conditions' => ['branch_id' => $user->branch_id],
+        'actions' => ['notify' => ['system']],
+        'cooldown_minutes' => 10,
+        'is_active' => true,
+    ]);
+
+    $approvalService = app(ApprovalFlowService::class);
+    $matchedRule = $approvalService->requiredRule('sale', 'negative_stock', ['branch_id' => $user->branch_id]);
+    $request = $approvalService->createRequest($rule, 'sale', 10, 'negative_stock', $user, 'Venta urgente', ['amount' => 100]);
+    $approved = $approvalService->approve($request, $user, 'Autorizado por prueba');
+    $automationRules = app(AutomationRuleService::class)->matchingRules('cash_session', 'cash_not_closed', ['branch_id' => $user->branch_id]);
+
+    expect($matchedRule?->id)->toBe($rule->id)
+        ->and($request)->toBeInstanceOf(ApprovalRequest::class)
+        ->and($approved->status)->toBe(ApprovalRequest::STATUS_APPROVED)
+        ->and($approved->approvals)->toHaveCount(1)
+        ->and($automationRules)->toHaveCount(1)
+        ->and($automationRules[0]->code)->toBe('alerta_caja_sin_cerrar');
+});
+
+it('resuelve solicitudes de aprobacion desde sistemasuperadmin con trazabilidad', function () {
+    $user = transversalUser();
+
+    $rule = ApprovalFlowRule::query()->create([
+        'code' => 'aprobar_anulacion_test',
+        'name' => 'Aprobar anulacion test',
+        'entity_type' => 'sale',
+        'action' => 'void_sale',
+        'trigger' => 'before_action',
+        'approver_roles' => ['superadmin'],
+        'min_approvals' => 1,
+        'is_active' => true,
+    ]);
+
+    $approvalRequest = ApprovalRequest::query()->create([
+        'approval_flow_rule_id' => $rule->id,
+        'entity_type' => 'sale',
+        'entity_id' => 15,
+        'action' => 'void_sale',
+        'status' => ApprovalRequest::STATUS_PENDING,
+        'requested_by' => $user->id,
+        'reason' => 'Anulacion solicitada',
+        'payload' => ['total' => 100],
+        'approvals' => [],
+    ]);
+
+    $this->actingAs($user)
+        ->post(route('system-superadmin.transversal-config.approval-requests.approve', $approvalRequest), [
+            'note' => 'Aprobado por gerencia',
+        ])
+        ->assertRedirect();
+
+    $approvalRequest->refresh();
+
+    expect($approvalRequest->status)->toBe(ApprovalRequest::STATUS_APPROVED)
+        ->and($approvalRequest->resolved_by)->toBe($user->id)
+        ->and($approvalRequest->resolution_note)->toBe('Aprobado por gerencia')
+        ->and($approvalRequest->approvals)->toHaveCount(1);
+});
+
+it('bloquea resolver dos veces una solicitud de aprobacion', function () {
+    $user = transversalUser();
+
+    $rule = ApprovalFlowRule::query()->create([
+        'code' => 'aprobar_descuento_doble_test',
+        'name' => 'Aprobar descuento doble test',
+        'entity_type' => 'sale',
+        'action' => 'high_discount',
+        'trigger' => 'before_action',
+        'min_approvals' => 1,
+        'is_active' => true,
+    ]);
+
+    $approvalRequest = ApprovalRequest::query()->create([
+        'approval_flow_rule_id' => $rule->id,
+        'entity_type' => 'sale',
+        'entity_id' => 0,
+        'action' => 'high_discount',
+        'status' => ApprovalRequest::STATUS_APPROVED,
+        'requested_by' => $user->id,
+        'resolved_by' => $user->id,
+        'resolved_at' => now(),
+        'resolution_note' => 'Ya resuelto',
+        'approvals' => [['user_id' => $user->id, 'name' => $user->name, 'approved_at' => now()->toIso8601String()]],
+    ]);
+
+    $this->actingAs($user)
+        ->from(route('system-superadmin.transversal-config.index'))
+        ->post(route('system-superadmin.transversal-config.approval-requests.reject', $approvalRequest), [
+            'note' => 'Intento posterior',
+        ])
+        ->assertRedirect(route('system-superadmin.transversal-config.index'))
+        ->assertSessionHasErrors('note');
+
+    expect($approvalRequest->fresh()->status)->toBe(ApprovalRequest::STATUS_APPROVED);
+});
+
+it('ejecuta automatizaciones activas con historial y cooldown', function () {
+    $user = transversalUser();
+
+    BusinessProfile::query()->create([
+        'name' => 'Perfil con automatizaciones',
+        'business_type' => 'hardware_store',
+        'status' => 'active',
+            'configuration' => BusinessProfileConfiguration::normalized([
+                'capabilities' => ['uses_operational_traceability' => true],
+                'feature_flags' => ['automation_engine' => true, 'operational_traceability_engine' => true],
+                'automations' => ['enabled' => true],
+                'traceability' => ['enabled' => true],
+            ]),
+        'applied_at' => now(),
+        'applied_by' => $user->id,
+    ]);
+    SystemCacheInvalidator::bumpOperational();
+
+    $rule = AutomationRule::query()->create([
+        'code' => 'recordar_caja_abierta_test',
+        'name' => 'Recordar caja abierta test',
+        'entity_type' => 'cash_session',
+        'trigger' => 'cash_not_closed',
+        'conditions' => ['branch_id' => $user->branch_id],
+        'actions' => ['notify' => ['system']],
+        'cooldown_minutes' => 30,
+        'is_active' => true,
+    ]);
+
+    $service = app(AutomationRuleService::class);
+    $runs = $service->execute('cash_session', 'cash_not_closed', ['branch_id' => $user->branch_id], 20);
+    $secondRuns = $service->execute('cash_session', 'cash_not_closed', ['branch_id' => $user->branch_id], 20);
+
+    expect($runs)->toHaveCount(1)
+        ->and($runs[0])->toBeInstanceOf(AutomationRun::class)
+        ->and($runs[0]->status)->toBe(AutomationRun::STATUS_COMPLETED)
+        ->and($runs[0]->actions)->toBe(['notify' => ['system']])
+        ->and($rule->fresh()->last_run_at)->not->toBeNull()
+        ->and($secondRuns)->toBe([])
+        ->and(AutomationRun::query()->where('automation_rule_id', $rule->id)->count())->toBe(1)
+        ->and(OperationalTrace::query()->where('entity_type', 'cash_session')->where('entity_id', 20)->where('event', 'automation_executed')->exists())->toBeTrue();
+});
+
+it('registra trazabilidad operativa solo cuando el perfil activa la capacidad', function () {
+    $user = transversalUser();
+
+    $rule = ApprovalFlowRule::query()->create([
+        'code' => 'aprobar_descuento_trace_test',
+        'name' => 'Aprobar descuento trazable',
+        'entity_type' => 'sale',
+        'action' => 'high_discount',
+        'trigger' => 'before_action',
+        'approver_roles' => ['superadmin'],
+        'min_approvals' => 1,
+        'is_active' => true,
+    ]);
+
+    BusinessProfile::query()->create([
+        'name' => 'Perfil aprobaciones sin trazabilidad',
+        'business_type' => 'hardware_store',
+        'status' => 'active',
+        'configuration' => BusinessProfileConfiguration::normalized([
+            'feature_flags' => ['approval_engine' => true],
+            'approvals' => ['enabled' => true],
+            'traceability' => ['enabled' => true],
+        ]),
+        'applied_at' => now()->subMinute(),
+        'applied_by' => $user->id,
+    ]);
+    SystemCacheInvalidator::bumpOperational();
+
+    $service = app(ApprovalFlowService::class);
+    $requestWithoutCapability = $service->createRequest($rule, 'sale', 30, 'high_discount', $user, 'Sin capacidad', ['discount' => 15]);
+    $service->approve($requestWithoutCapability, $user, 'Aprobado sin trazabilidad');
+
+    expect(OperationalTrace::query()->count())->toBe(0);
+
+    BusinessProfile::query()->create([
+        'name' => 'Perfil aprobaciones con trazabilidad',
+        'business_type' => 'hardware_store',
+        'status' => 'active',
+            'configuration' => BusinessProfileConfiguration::normalized([
+                'capabilities' => ['uses_operational_traceability' => true],
+                'feature_flags' => ['approval_engine' => true, 'operational_traceability_engine' => true],
+                'approvals' => ['enabled' => true],
+                'traceability' => ['enabled' => true],
+            ]),
+        'applied_at' => now(),
+        'applied_by' => $user->id,
+    ]);
+    SystemCacheInvalidator::bumpOperational();
+
+    $requestWithCapability = $service->createRequest($rule, 'sale', 31, 'high_discount', $user, 'Con capacidad', ['discount' => 20]);
+    $approved = $service->approve($requestWithCapability, $user, 'Aprobado con trazabilidad');
+
+    expect($approved->status)->toBe(ApprovalRequest::STATUS_APPROVED)
+        ->and(OperationalTrace::query()->where('entity_type', 'sale')->where('entity_id', 31)->orderBy('id')->pluck('event')->all())->toBe([
+            'approval_requested',
+            'approval_approved',
+        ]);
 });
 
 it('crea flujos, estados y transiciones configurables sin cambiar ferreteria', function () {

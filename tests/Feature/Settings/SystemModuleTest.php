@@ -130,6 +130,10 @@ it('importa productos desde csv con stock inicial por sucursal', function () {
 });
 
 it('importa productos desde excel xlsx con stock inicial', function () {
+    if (! class_exists(ZipArchive::class)) {
+        $this->markTestSkipped('La extension PHP ZipArchive es necesaria para generar el XLSX de prueba.');
+    }
+
     $user = settingsUser(['settings.manage']);
     $branchId = $user->branch_id;
     $file = fakeXlsxUpload([

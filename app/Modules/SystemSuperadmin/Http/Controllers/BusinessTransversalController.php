@@ -4,13 +4,19 @@ namespace App\Modules\SystemSuperadmin\Http\Controllers;
 
 use App\Http\Controllers\Controller;
 use App\Modules\HumanResources\Models\Worker;
+use App\Modules\SystemSuperadmin\Models\ApprovalFlowRule;
+use App\Modules\SystemSuperadmin\Models\ApprovalRequest;
+use App\Modules\SystemSuperadmin\Models\AutomationRule;
 use App\Modules\SystemSuperadmin\Models\AttachmentDefinition;
 use App\Modules\SystemSuperadmin\Models\BusinessCommercialFlowRule;
 use App\Modules\SystemSuperadmin\Models\BusinessCurrency;
+use App\Modules\SystemSuperadmin\Models\BusinessIntegrationConnector;
 use App\Modules\SystemSuperadmin\Models\BusinessModuleLicense;
+use App\Modules\SystemSuperadmin\Models\BranchOperationPolicy;
 use App\Modules\SystemSuperadmin\Models\BusinessStateDefinition;
 use App\Modules\SystemSuperadmin\Models\CalculationFormula;
 use App\Modules\SystemSuperadmin\Models\CommissionRule;
+use App\Modules\SystemSuperadmin\Models\CustomerQrChannel;
 use App\Modules\SystemSuperadmin\Models\CustomFieldDefinition;
 use App\Modules\SystemSuperadmin\Models\DynamicEntity;
 use App\Modules\SystemSuperadmin\Models\DynamicDocumentTemplate;
@@ -27,6 +33,7 @@ use App\Modules\SystemSuperadmin\Models\WorkflowDefinition;
 use App\Modules\SystemSuperadmin\Models\WorkflowTransition;
 use App\Modules\SystemSuperadmin\Services\BusinessTransversalConfiguration;
 use App\Modules\SystemSuperadmin\Services\BusinessTransversalDataService;
+use App\Modules\SystemSuperadmin\Services\ApprovalFlowService;
 use App\Modules\SystemSuperadmin\Services\CalculationFormulaService;
 use App\Modules\SystemSuperadmin\Services\DynamicEntityRegistry;
 use App\Support\SystemCacheInvalidator;
@@ -34,6 +41,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
@@ -96,6 +104,30 @@ class BusinessTransversalController extends Controller
         return back()->with('success', $this->sectionLabel($section).' desactivado correctamente.');
     }
 
+    public function approveRequest(Request $request, ApprovalRequest $approvalRequest, ApprovalFlowService $approvals): RedirectResponse
+    {
+        $data = $request->validate([
+            'note' => ['nullable', 'string', 'max:1000'],
+        ]);
+
+        $approvals->approve($approvalRequest, $request->user(), $data['note'] ?? null);
+        SystemCacheInvalidator::bumpOperational();
+
+        return back()->with('success', 'Solicitud aprobada correctamente.');
+    }
+
+    public function rejectRequest(Request $request, ApprovalRequest $approvalRequest, ApprovalFlowService $approvals): RedirectResponse
+    {
+        $data = $request->validate([
+            'note' => ['required', 'string', 'min:3', 'max:1000'],
+        ]);
+
+        $approvals->reject($approvalRequest, $request->user(), $data['note']);
+        SystemCacheInvalidator::bumpOperational();
+
+        return back()->with('success', 'Solicitud rechazada correctamente.');
+    }
+
     /**
      * @return array<string, mixed>
      */
@@ -121,12 +153,101 @@ class BusinessTransversalController extends Controller
             'price-lists' => $this->validatePriceList($request, $options),
             'commissions' => $this->validateCommission($request, $options),
             'notifications' => $this->validateNotification($request, $options),
+            'approval-flows' => $this->validateApprovalFlow($request, $options, $current),
+            'automation-rules' => $this->validateAutomationRule($request, $options, $current),
+            'integrations' => $this->validateIntegrationConnector($request, $options, $current),
+            'customer-qr-channels' => $this->validateCustomerQrChannel($request, $options, $current),
+            'branch-policies' => $this->validateBranchPolicy($request, $options, $current),
             'currencies' => $this->validateCurrency($request),
             'printers' => $this->validatePrinter($request, $options),
             'licenses' => $this->validateLicense($request, $options),
             'imports' => $this->validateImportTemplate($request, $options),
             default => abort(404),
         };
+    }
+
+    /**
+     * @param array<string, mixed> $options
+     * @return array<string, mixed>
+     */
+    private function validateApprovalFlow(Request $request, array $options, ?Model $current = null): array
+    {
+        $uniqueCode = Rule::unique('approval_flow_rules', 'code');
+
+        if ($current instanceof ApprovalFlowRule) {
+            $uniqueCode->ignore($current->id);
+        }
+
+        $data = $request->validate([
+            'code' => ['required', 'string', 'max:120', 'regex:/^[a-z0-9_]+$/', $uniqueCode],
+            'name' => ['required', 'string', 'max:180'],
+            'entity_type' => ['required', 'string', Rule::in(array_keys(app(DynamicEntityRegistry::class)->options()))],
+            'action' => ['required', 'string', Rule::in(array_keys($options['approvalActions']))],
+            'trigger' => ['required', 'string', Rule::in(array_keys($options['approvalTriggers']))],
+            'conditions_text' => ['nullable', 'string', 'max:3000'],
+            'approver_roles_csv' => ['nullable', 'string', 'max:1000'],
+            'approver_permissions_csv' => ['nullable', 'string', 'max:1000'],
+            'min_approvals' => ['nullable', 'integer', 'min:1', 'max:10'],
+            'requires_reason' => ['boolean'],
+            'blocks_until_approved' => ['boolean'],
+            'expires_after_minutes' => ['nullable', 'integer', 'min:1', 'max:43200'],
+            'metadata_text' => ['nullable', 'string', 'max:3000'],
+            'is_active' => ['boolean'],
+        ]);
+
+        return [
+            'code' => $data['code'],
+            'name' => $data['name'],
+            'entity_type' => $data['entity_type'],
+            'action' => $data['action'],
+            'trigger' => $data['trigger'],
+            'conditions' => BusinessTransversalConfiguration::jsonFromText($data['conditions_text'] ?? null),
+            'approver_roles' => BusinessTransversalConfiguration::listFromCsv($data['approver_roles_csv'] ?? null),
+            'approver_permissions' => BusinessTransversalConfiguration::listFromCsv($data['approver_permissions_csv'] ?? null),
+            'min_approvals' => $data['min_approvals'] ?? 1,
+            'requires_reason' => $data['requires_reason'] ?? true,
+            'blocks_until_approved' => $data['blocks_until_approved'] ?? true,
+            'expires_after_minutes' => $data['expires_after_minutes'] ?? null,
+            'metadata' => BusinessTransversalConfiguration::jsonFromText($data['metadata_text'] ?? null),
+            'is_active' => $data['is_active'] ?? true,
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $options
+     * @return array<string, mixed>
+     */
+    private function validateAutomationRule(Request $request, array $options, ?Model $current = null): array
+    {
+        $uniqueCode = Rule::unique('automation_rules', 'code');
+
+        if ($current instanceof AutomationRule) {
+            $uniqueCode->ignore($current->id);
+        }
+
+        $data = $request->validate([
+            'code' => ['required', 'string', 'max:120', 'regex:/^[a-z0-9_]+$/', $uniqueCode],
+            'name' => ['required', 'string', 'max:180'],
+            'entity_type' => ['required', 'string', Rule::in(array_keys(app(DynamicEntityRegistry::class)->options()))],
+            'trigger' => ['required', 'string', Rule::in(array_keys($options['automationTriggers']))],
+            'conditions_text' => ['nullable', 'string', 'max:3000'],
+            'actions_text' => ['nullable', 'string', 'max:3000'],
+            'cooldown_minutes' => ['nullable', 'integer', 'min:0', 'max:43200'],
+            'metadata_text' => ['nullable', 'string', 'max:3000'],
+            'is_active' => ['boolean'],
+        ]);
+
+        return [
+            'code' => $data['code'],
+            'name' => $data['name'],
+            'entity_type' => $data['entity_type'],
+            'trigger' => $data['trigger'],
+            'conditions' => BusinessTransversalConfiguration::jsonFromText($data['conditions_text'] ?? null),
+            'actions' => BusinessTransversalConfiguration::jsonFromText($data['actions_text'] ?? null),
+            'cooldown_minutes' => $data['cooldown_minutes'] ?? 0,
+            'metadata' => BusinessTransversalConfiguration::jsonFromText($data['metadata_text'] ?? null),
+            'is_active' => $data['is_active'] ?? true,
+        ];
     }
 
     /**
@@ -1125,6 +1246,186 @@ class BusinessTransversalController extends Controller
     }
 
     /**
+     * @param array<string, mixed> $options
+     * @return array<string, mixed>
+     */
+    private function validateIntegrationConnector(Request $request, array $options, ?Model $current = null): array
+    {
+        $uniqueCode = Rule::unique('business_integration_connectors', 'code');
+
+        if ($current instanceof BusinessIntegrationConnector) {
+            $uniqueCode->ignore($current->id);
+        }
+
+        $data = $request->validate([
+            'branch_id' => ['nullable', 'integer', 'exists:branches,id'],
+            'code' => ['required', 'string', 'max:120', 'regex:/^[a-z0-9_]+$/', $uniqueCode],
+            'name' => ['required', 'string', 'max:180'],
+            'provider' => ['required', 'string', Rule::in(array_keys($options['integrationProviders']))],
+            'channel' => ['required', 'string', Rule::in(array_keys($options['integrationChannels']))],
+            'direction' => ['required', 'string', Rule::in(array_keys($options['integrationDirections']))],
+            'auth_type' => ['required', 'string', Rule::in(array_keys($options['integrationAuthTypes']))],
+            'base_url' => ['nullable', 'url', 'max:500'],
+            'webhook_url' => ['nullable', 'url', 'max:500'],
+            'rate_limit_per_minute' => ['required', 'integer', 'min:1', 'max:3600'],
+            'timeout_seconds' => ['required', 'integer', 'min:1', 'max:120'],
+            'capabilities_csv' => ['nullable', 'string', 'max:1000'],
+            'public_config_text' => ['nullable', 'string', 'max:5000'],
+            'secret_config_text' => ['nullable', 'string', 'max:5000'],
+            'metadata_text' => ['nullable', 'string', 'max:3000'],
+            'last_status' => ['nullable', 'string', Rule::in(['pending', 'ok', 'warning', 'failed', 'disabled'])],
+            'is_active' => ['boolean'],
+        ], [], [
+            'code' => 'codigo interno',
+            'name' => 'nombre',
+            'provider' => 'proveedor',
+            'channel' => 'canal',
+            'base_url' => 'URL base',
+            'webhook_url' => 'URL webhook',
+        ]);
+
+        $payload = [
+            'branch_id' => $data['branch_id'] ?? null,
+            'code' => $data['code'],
+            'name' => $data['name'],
+            'provider' => $data['provider'],
+            'channel' => $data['channel'],
+            'direction' => $data['direction'],
+            'auth_type' => $data['auth_type'],
+            'base_url' => $data['base_url'] ?? null,
+            'webhook_url' => $data['webhook_url'] ?? null,
+            'rate_limit_per_minute' => (int) $data['rate_limit_per_minute'],
+            'timeout_seconds' => (int) $data['timeout_seconds'],
+            'capabilities' => BusinessTransversalConfiguration::listFromCsv($data['capabilities_csv'] ?? null),
+            'public_config' => BusinessTransversalConfiguration::jsonFromText($data['public_config_text'] ?? null),
+            'metadata' => BusinessTransversalConfiguration::jsonFromText($data['metadata_text'] ?? null),
+            'last_status' => $data['last_status'] ?? null,
+            'is_active' => (bool) ($data['is_active'] ?? true),
+        ];
+
+        if (filled($data['secret_config_text'] ?? null)) {
+            $payload['secret_config'] = BusinessTransversalConfiguration::jsonFromText($data['secret_config_text']);
+        }
+
+        return $payload;
+    }
+
+    /**
+     * @param array<string, mixed> $options
+     * @return array<string, mixed>
+     */
+    private function validateCustomerQrChannel(Request $request, array $options, ?Model $current = null): array
+    {
+        $uniqueCode = Rule::unique('customer_qr_channels', 'code');
+        $uniqueToken = Rule::unique('customer_qr_channels', 'token');
+
+        if ($current instanceof CustomerQrChannel) {
+            $uniqueCode->ignore($current->id);
+            $uniqueToken->ignore($current->id);
+        }
+
+        $data = $request->validate([
+            'branch_id' => ['nullable', 'integer', 'exists:branches,id'],
+            'code' => ['required', 'string', 'max:120', 'regex:/^[a-z0-9_]+$/', $uniqueCode],
+            'name' => ['required', 'string', 'max:180'],
+            'token' => ['nullable', 'string', 'max:80', 'regex:/^[A-Za-z0-9_-]+$/', $uniqueToken],
+            'context_type' => ['required', 'string', Rule::in(array_keys($options['qrContextTypes']))],
+            'context_reference' => ['nullable', 'string', 'max:120'],
+            'service_mode' => ['required', 'string', Rule::in(array_keys($options['qrServiceModes']))],
+            'allowed_order_types_csv' => ['nullable', 'string', 'max:500'],
+            'settings_text' => ['nullable', 'string', 'max:3000'],
+            'expires_at' => ['nullable', 'date'],
+            'requires_customer_name' => ['boolean'],
+            'requires_customer_phone' => ['boolean'],
+            'requires_table_or_reference' => ['boolean'],
+            'is_active' => ['boolean'],
+        ], [], [
+            'code' => 'codigo interno',
+            'name' => 'nombre',
+            'context_type' => 'contexto',
+            'service_mode' => 'modo de servicio',
+            'token' => 'token publico',
+        ]);
+
+        $allowedOrderTypes = BusinessTransversalConfiguration::listFromCsv($data['allowed_order_types_csv'] ?? null);
+
+        if ($allowedOrderTypes === []) {
+            $allowedOrderTypes = [$data['service_mode']];
+        }
+
+        $unknownTypes = array_diff($allowedOrderTypes, array_keys($options['qrOrderTypes']));
+
+        if ($unknownTypes !== []) {
+            throw ValidationException::withMessages([
+                'allowed_order_types_csv' => 'Tipos no permitidos: '.implode(', ', $unknownTypes).'.',
+            ]);
+        }
+
+        return [
+            'branch_id' => $data['branch_id'] ?? null,
+            'code' => $data['code'],
+            'name' => $data['name'],
+            'token' => filled($data['token'] ?? null) ? $data['token'] : Str::random(40),
+            'context_type' => $data['context_type'],
+            'context_reference' => $data['context_reference'] ?? null,
+            'service_mode' => $data['service_mode'],
+            'allowed_order_types' => $allowedOrderTypes,
+            'settings' => BusinessTransversalConfiguration::jsonFromText($data['settings_text'] ?? null),
+            'expires_at' => $data['expires_at'] ?? null,
+            'requires_customer_name' => (bool) ($data['requires_customer_name'] ?? true),
+            'requires_customer_phone' => (bool) ($data['requires_customer_phone'] ?? false),
+            'requires_table_or_reference' => (bool) ($data['requires_table_or_reference'] ?? false),
+            'is_active' => (bool) ($data['is_active'] ?? true),
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $options
+     * @return array<string, mixed>
+     */
+    private function validateBranchPolicy(Request $request, array $options, ?Model $current = null): array
+    {
+        $uniqueCode = Rule::unique('branch_operation_policies', 'code');
+
+        if ($current instanceof BranchOperationPolicy) {
+            $uniqueCode->ignore($current->id);
+        }
+
+        $data = $request->validate([
+            'branch_id' => ['nullable', 'integer', 'exists:branches,id'],
+            'code' => ['required', 'string', 'max:120', 'regex:/^[a-z0-9_]+$/', $uniqueCode],
+            'name' => ['required', 'string', 'max:180'],
+            'operation' => ['required', 'string', Rule::in(array_keys($options['branchPolicyOperations']))],
+            'scope' => ['required', 'string', Rule::in(array_keys($options['branchPolicyScopes']))],
+            'enforcement_mode' => ['required', 'string', Rule::in(array_keys($options['branchPolicyEnforcementModes']))],
+            'applies_to_modules_csv' => ['nullable', 'string', 'max:1000'],
+            'rules_text' => ['nullable', 'string', 'max:5000'],
+            'permissions_text' => ['nullable', 'string', 'max:3000'],
+            'metadata_text' => ['nullable', 'string', 'max:3000'],
+            'is_active' => ['boolean'],
+        ], [], [
+            'branch_id' => 'sucursal',
+            'code' => 'codigo interno',
+            'operation' => 'operacion',
+            'enforcement_mode' => 'modo de aplicacion',
+        ]);
+
+        return [
+            'branch_id' => $data['branch_id'] ?? null,
+            'code' => $data['code'],
+            'name' => $data['name'],
+            'operation' => $data['operation'],
+            'scope' => $data['scope'],
+            'enforcement_mode' => $data['enforcement_mode'],
+            'applies_to_modules' => BusinessTransversalConfiguration::listFromCsv($data['applies_to_modules_csv'] ?? null),
+            'rules' => BusinessTransversalConfiguration::jsonFromText($data['rules_text'] ?? null),
+            'permissions' => BusinessTransversalConfiguration::jsonFromText($data['permissions_text'] ?? null),
+            'metadata' => BusinessTransversalConfiguration::jsonFromText($data['metadata_text'] ?? null),
+            'is_active' => (bool) ($data['is_active'] ?? true),
+        ];
+    }
+
+    /**
      * @return array<string, mixed>
      */
     private function validateCurrency(Request $request): array
@@ -1266,6 +1567,11 @@ class BusinessTransversalController extends Controller
             'price-lists' => PriceList::class,
             'commissions' => CommissionRule::class,
             'notifications' => NotificationRule::class,
+            'approval-flows' => ApprovalFlowRule::class,
+            'automation-rules' => AutomationRule::class,
+            'integrations' => BusinessIntegrationConnector::class,
+            'customer-qr-channels' => CustomerQrChannel::class,
+            'branch-policies' => BranchOperationPolicy::class,
             'currencies' => BusinessCurrency::class,
             'printers' => PrinterProfile::class,
             'licenses' => BusinessModuleLicense::class,
@@ -1304,6 +1610,11 @@ class BusinessTransversalController extends Controller
             'price-lists' => 'Lista de precios',
             'commissions' => 'Regla de comision',
             'notifications' => 'Regla de notificacion',
+            'approval-flows' => 'Regla de aprobacion',
+            'automation-rules' => 'Regla de automatizacion',
+            'integrations' => 'Conector de integracion',
+            'customer-qr-channels' => 'Canal de pedidos por QR',
+            'branch-policies' => 'Politica multi-sucursal',
             'currencies' => 'Moneda',
             'printers' => 'Perfil de impresora',
             'licenses' => 'Licencia de modulo',

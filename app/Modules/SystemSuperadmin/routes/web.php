@@ -2,7 +2,38 @@
 
 use App\Modules\SystemSuperadmin\Http\Controllers\BusinessProfileController;
 use App\Modules\SystemSuperadmin\Http\Controllers\BusinessTransversalController;
+use App\Modules\SystemSuperadmin\Http\Controllers\CustomerQrOrderOperationalController;
+use App\Modules\SystemSuperadmin\Http\Controllers\CustomerQrOrderingController;
 use Illuminate\Support\Facades\Route;
+
+Route::prefix('pedidos-qr')
+    ->name('customer-qr-ordering.')
+    ->group(function () {
+        Route::get('/{token}', [CustomerQrOrderingController::class, 'show'])->name('show');
+        Route::post('/{token}', [CustomerQrOrderingController::class, 'store'])->middleware('throttle:customer-qr-ordering')->name('store');
+        Route::get('/{token}/qr.svg', [CustomerQrOrderingController::class, 'svg'])->middleware('throttle:60,1')->name('svg');
+    });
+
+Route::middleware(['auth', 'verified', 'business_feature:customer_qr_ordering'])
+    ->prefix('customer-qr-orders')
+    ->name('customer-qr-orders.')
+    ->group(function () {
+        Route::get('/', [CustomerQrOrderOperationalController::class, 'index'])
+            ->middleware('permission:customer-qr-orders.view')
+            ->name('index');
+        Route::post('/{order}/accept', [CustomerQrOrderOperationalController::class, 'accept'])
+            ->middleware('permission:customer-qr-orders.accept')
+            ->name('accept');
+        Route::post('/{order}/reject', [CustomerQrOrderOperationalController::class, 'reject'])
+            ->middleware('permission:customer-qr-orders.reject')
+            ->name('reject');
+        Route::patch('/{order}/status', [CustomerQrOrderOperationalController::class, 'status'])
+            ->middleware('permission:customer-qr-orders.accept')
+            ->name('status');
+        Route::post('/{order}/convert', [CustomerQrOrderOperationalController::class, 'convert'])
+            ->middleware('permission:customer-qr-orders.convert')
+            ->name('convert');
+    });
 
 Route::middleware(['auth', 'verified', 'system_superadmin'])
     ->prefix('system-superadmin/business-profiles')
@@ -29,6 +60,8 @@ Route::middleware(['auth', 'verified', 'system_superadmin'])
     ->name('system-superadmin.transversal-config.')
     ->group(function () {
         Route::get('/', [BusinessTransversalController::class, 'index'])->name('index');
+        Route::post('/approval-requests/{approvalRequest}/approve', [BusinessTransversalController::class, 'approveRequest'])->name('approval-requests.approve');
+        Route::post('/approval-requests/{approvalRequest}/reject', [BusinessTransversalController::class, 'rejectRequest'])->name('approval-requests.reject');
         Route::post('/{section}', [BusinessTransversalController::class, 'store'])->name('store');
         Route::put('/{section}/{record}', [BusinessTransversalController::class, 'update'])->name('update');
         Route::delete('/{section}/{record}', [BusinessTransversalController::class, 'destroy'])->name('destroy');

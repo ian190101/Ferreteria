@@ -1,14 +1,17 @@
 <?php
 
 use App\Models\User;
+use App\Modules\Exports\Services\ExportDatasetService;
 use App\Modules\Branches\Models\Branch;
 use App\Modules\SystemSuperadmin\Models\AttachmentDefinition;
 use App\Modules\SystemSuperadmin\Models\BusinessAttachment;
 use App\Modules\SystemSuperadmin\Models\BusinessCommercialFlowRule;
 use App\Modules\SystemSuperadmin\Models\BusinessCurrency;
+use App\Modules\SystemSuperadmin\Models\BusinessIntegrationConnector;
 use App\Modules\SystemSuperadmin\Models\BusinessModuleLicense;
 use App\Modules\SystemSuperadmin\Models\BusinessProfile;
 use App\Modules\SystemSuperadmin\Models\BusinessStateDefinition;
+use App\Modules\SystemSuperadmin\Models\BranchOperationPolicy;
 use App\Modules\SystemSuperadmin\Models\CalculationFormula;
 use App\Modules\SystemSuperadmin\Models\CustomFieldDefinition;
 use App\Modules\SystemSuperadmin\Models\DynamicEntity;
@@ -18,13 +21,16 @@ use App\Modules\SystemSuperadmin\Models\DynamicFormFieldRule;
 use App\Modules\SystemSuperadmin\Models\DynamicReportTemplate;
 use App\Modules\SystemSuperadmin\Models\DynamicRelationshipDefinition;
 use App\Modules\SystemSuperadmin\Models\NotificationRule;
+use App\Modules\SystemSuperadmin\Models\OperationalTrace;
 use App\Modules\SystemSuperadmin\Models\PriceList;
 use App\Modules\SystemSuperadmin\Models\PrinterProfile;
 use App\Modules\SystemSuperadmin\Models\WorkflowDefinition;
 use App\Modules\SystemSuperadmin\Models\WorkflowTransition;
 use App\Modules\SystemSuperadmin\Services\BusinessCurrencyService;
 use App\Modules\SystemSuperadmin\Services\BusinessCommercialFlowRuleService;
+use App\Modules\SystemSuperadmin\Services\AdvancedBranchPolicyService;
 use App\Modules\SystemSuperadmin\Services\BusinessAttachmentService;
+use App\Modules\SystemSuperadmin\Services\BusinessIntegrationConnectorService;
 use App\Modules\SystemSuperadmin\Services\BusinessLicensePolicyService;
 use App\Modules\SystemSuperadmin\Services\BusinessNotificationRuleService;
 use App\Modules\SystemSuperadmin\Services\BusinessPriceListService;
@@ -33,11 +39,15 @@ use App\Modules\SystemSuperadmin\Services\BusinessPrinterProfileService;
 use App\Modules\SystemSuperadmin\Services\BusinessStateTransitionService;
 use App\Modules\SystemSuperadmin\Services\CalculationFormulaService;
 use App\Modules\SystemSuperadmin\Services\CustomFieldRuntimeService;
+use App\Modules\SystemSuperadmin\Services\DataGovernanceService;
 use App\Modules\SystemSuperadmin\Services\DynamicRelationshipService;
 use App\Modules\SystemSuperadmin\Services\DynamicFormService;
 use App\Modules\SystemSuperadmin\Services\DynamicTemplateService;
+use App\Modules\SystemSuperadmin\Services\FieldPermissionService;
+use App\Support\SystemCacheInvalidator;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
@@ -174,6 +184,7 @@ it('aplica permisos por campo sensible desde el perfil activo', function () {
                 'dynamic_entities_engine' => true,
                 'dynamic_fields_engine' => true,
                 'field_permissions_engine' => true,
+                'operational_traceability_engine' => true,
             ],
             'field_permissions' => [
                 'default_sensitive_visibility' => 'deny',
@@ -232,6 +243,292 @@ it('aplica permisos por campo sensible desde el perfil activo', function () {
         ->and(collect($service->definitionsForSurface('customer', 'report', false, $medico, $context))->pluck('code')->all())->toBe(['historia_clinica'])
         ->and(collect($service->editableDefinitionsFor('customer', $medico, $context))->pluck('code')->all())->toBe([])
         ->and(collect($service->editableDefinitionsFor('customer', $director, ['branch_id' => $branch->id]))->pluck('code')->all())->toBe(['historia_clinica']);
+});
+
+it('filtra valores sensibles por campo y audita accesos cuando el perfil lo exige', function () {
+    $branch = Branch::query()->create([
+        'name' => 'Sucursal seguridad campo',
+        'code' => 'FIELD-SEC',
+        'barcode' => 'BR-FIELD-SEC',
+        'is_active' => true,
+    ]);
+
+    BusinessProfile::query()->create([
+        'name' => 'Perfil seguridad por campo',
+        'business_type' => 'health_clinic',
+        'status' => 'active',
+        'configuration' => BusinessProfileConfiguration::normalized([
+            'capabilities' => [
+                'uses_dynamic_entities' => true,
+                'uses_dynamic_fields' => true,
+                'uses_field_level_permissions' => true,
+                'uses_operational_traceability' => true,
+            ],
+            'feature_flags' => [
+                'dynamic_entities_engine' => true,
+                'dynamic_fields_engine' => true,
+                'field_permissions_engine' => true,
+                'operational_traceability_engine' => true,
+            ],
+            'governance' => [
+                'audit_sensitive_reads' => true,
+            ],
+            'traceability' => [
+                'enabled' => true,
+            ],
+            'field_permissions' => [
+                'default_sensitive_visibility' => 'deny',
+                'rules' => [[
+                    'entity' => 'customer',
+                    'field' => 'historia_clinica',
+                    'actions' => ['view', 'export'],
+                    'roles' => ['auditor_clinico'],
+                    'branches' => [$branch->id],
+                    'effect' => 'allow',
+                ]],
+            ],
+        ]),
+        'applied_at' => now(),
+    ]);
+    Cache::flush();
+
+    CustomFieldDefinition::query()->create([
+        'entity_type' => 'customer',
+        'code' => 'nombre_visible',
+        'label' => 'Nombre visible',
+        'type' => 'text',
+        'is_exportable' => true,
+        'is_active' => true,
+    ]);
+    $sensitive = CustomFieldDefinition::query()->create([
+        'entity_type' => 'customer',
+        'code' => 'historia_clinica',
+        'label' => 'Historia clinica',
+        'type' => 'text',
+        'is_exportable' => true,
+        'is_sensitive' => true,
+        'is_active' => true,
+    ]);
+
+    $role = Role::findOrCreate('auditor_clinico', 'web');
+    $allowedUser = User::factory()->create(['branch_id' => $branch->id]);
+    $blockedUser = User::factory()->create(['branch_id' => $branch->id]);
+    $allowedUser->assignRole($role);
+
+    $service = app(FieldPermissionService::class);
+    $values = [
+        'nombre_visible' => 'Maria Perez',
+        'historia_clinica' => 'Diagnostico reservado',
+        'campo_no_definido' => 'No debe salir',
+    ];
+    $context = ['entity_id' => 44, 'branch_id' => $branch->id];
+
+    expect($service->filterValuesForSurface('customer', $values, 'export', $blockedUser, $context))->toBe([
+        'nombre_visible' => 'Maria Perez',
+    ])
+        ->and($service->filterValuesForSurface('customer', $values, 'export', $allowedUser, $context))->toBe([
+            'nombre_visible' => 'Maria Perez',
+            'historia_clinica' => 'Diagnostico reservado',
+        ]);
+
+    $service->recordSensitiveFieldChange($sensitive, $allowedUser, $context, 'antes', 'despues');
+
+    expect(OperationalTrace::query()->where('event', 'sensitive_field_exported')->where('entity_type', 'customer')->where('entity_id', 44)->count())->toBe(1)
+        ->and(OperationalTrace::query()->where('event', 'sensitive_field_changed')->where('entity_type', 'customer')->where('entity_id', 44)->count())->toBe(1);
+});
+
+it('cachea catalogos dinamicos e invalida con la version operativa del sistema', function () {
+    Cache::flush();
+
+    BusinessProfile::query()->create([
+        'name' => 'Perfil cache runtime dinamico',
+        'business_type' => 'mixed',
+        'status' => 'active',
+        'configuration' => BusinessProfileConfiguration::normalized([
+            'modules' => ['reports' => true],
+            'capabilities' => [
+                'uses_dynamic_entities' => true,
+                'uses_dynamic_fields' => true,
+                'uses_report_templates' => true,
+            ],
+            'feature_flags' => [
+                'dynamic_entities_engine' => true,
+                'dynamic_fields_engine' => true,
+                'report_templates_engine' => true,
+            ],
+            'performance' => [
+                'cache_profile_minutes' => 30,
+                'cache_capabilities_minutes' => 60,
+            ],
+        ]),
+        'applied_at' => now(),
+    ]);
+    Cache::flush();
+
+    $field = CustomFieldDefinition::query()->create([
+        'entity_type' => 'customer',
+        'code' => 'dato_cacheado',
+        'label' => 'Dato cacheado v1',
+        'type' => 'text',
+        'is_active' => true,
+    ]);
+    $template = DynamicReportTemplate::query()->create([
+        'code' => 'reporte_cacheado',
+        'name' => 'Reporte cacheado v1',
+        'module' => 'customers',
+        'entity_type' => 'customer',
+        'columns' => ['name'],
+        'is_active' => true,
+    ]);
+
+    $fields = app(CustomFieldRuntimeService::class);
+    $templates = app(DynamicTemplateService::class);
+
+    expect(collect($fields->definitionsFor('customer'))->firstWhere('code', 'dato_cacheado')?->label)->toBe('Dato cacheado v1')
+        ->and($templates->resolveReport('reporte_cacheado')?->name)->toBe('Reporte cacheado v1');
+
+    $field->update(['label' => 'Dato cacheado v2']);
+    $template->update(['name' => 'Reporte cacheado v2']);
+
+    expect(collect($fields->definitionsFor('customer'))->firstWhere('code', 'dato_cacheado')?->label)->toBe('Dato cacheado v1')
+        ->and($templates->resolveReport('reporte_cacheado')?->name)->toBe('Reporte cacheado v1');
+
+    SystemCacheInvalidator::bumpOperational();
+
+    expect(collect($fields->definitionsFor('customer'))->firstWhere('code', 'dato_cacheado')?->label)->toBe('Dato cacheado v2')
+        ->and($templates->resolveReport('reporte_cacheado')?->name)->toBe('Reporte cacheado v2');
+});
+
+it('aplica gobierno de datos para exportacion sensible y anonimizado controlado', function () {
+    $branch = Branch::query()->create([
+        'name' => 'Sucursal gobierno datos',
+        'code' => 'GOV-DATA',
+        'barcode' => 'BR-GOV-DATA',
+        'is_active' => true,
+    ]);
+
+    $plainUser = User::factory()->create(['branch_id' => $branch->id]);
+    $governanceUser = User::factory()->create(['branch_id' => $branch->id]);
+    $role = Role::findOrCreate('gobierno datos', 'web');
+    $role->givePermissionTo(Permission::findOrCreate('data-governance.manage', 'web'));
+    $role->givePermissionTo(Permission::findOrCreate('exports.sensitive', 'web'));
+    $governanceUser->assignRole($role);
+
+    $service = app(DataGovernanceService::class);
+
+    expect($service->enabled())->toBeFalse()
+        ->and($service->canExportEntity('customer', $plainUser))->toBeTrue()
+        ->and($service->anonymizationAllowed('customer'))->toBeFalse();
+
+    BusinessProfile::query()->create([
+        'name' => 'Perfil gobierno datos',
+        'business_type' => 'health_clinic',
+        'status' => 'active',
+        'configuration' => BusinessProfileConfiguration::normalized([
+            'capabilities' => [
+                'uses_data_governance' => true,
+                'uses_operational_traceability' => true,
+            ],
+            'feature_flags' => [
+                'data_governance_engine' => true,
+                'operational_traceability_engine' => true,
+            ],
+            'governance' => [
+                'allow_anonymization' => true,
+                'sensitive_entities' => ['customer'],
+                'export_sensitive_requires_permission' => true,
+                'retention_policy' => 'legal_hold',
+            ],
+            'traceability' => ['enabled' => true],
+        ]),
+        'applied_at' => now(),
+        'applied_by' => $governanceUser->id,
+    ]);
+    Cache::flush();
+
+    DynamicEntity::query()->create([
+        'code' => 'customer',
+        'label' => 'Cliente sensible',
+        'mode' => 'optional',
+        'is_visible' => true,
+        'is_sensitive' => true,
+        'retention_policy' => 'health_record',
+        'is_active' => true,
+    ]);
+
+    $customer = \App\Modules\Customers\Models\Customer::query()->create([
+        'name' => 'Paciente Sensible',
+        'document_number' => '1234567',
+        'phone' => '70000000',
+        'email' => 'paciente@example.com',
+        'address' => 'Direccion privada',
+        'is_active' => true,
+    ]);
+
+    expect($service->enabled())->toBeTrue()
+        ->and($service->isSensitiveEntity('customer'))->toBeTrue()
+        ->and($service->retentionPolicyFor('customer'))->toBe('health_record')
+        ->and($service->canExportEntity('customer', $plainUser))->toBeFalse()
+        ->and($service->canExportEntity('customer', $governanceUser))->toBeTrue();
+
+    $anon = $service->anonymizeCustomer($customer, $governanceUser, 'Solicitud formal del titular');
+
+    expect($anon->name)->toBe('Cliente anonimizado #'.$customer->id)
+        ->and($anon->document_number)->toBeNull()
+        ->and($anon->phone)->toBeNull()
+        ->and($anon->email)->toBeNull()
+        ->and($anon->address)->toBeNull()
+        ->and($anon->is_active)->toBeFalse()
+        ->and($anon->interactions()->where('type', 'data_governance')->exists())->toBeTrue()
+        ->and(OperationalTrace::query()->where('entity_type', 'customer')->where('entity_id', $customer->id)->where('event', 'customer_anonymized')->exists())->toBeTrue();
+});
+
+it('bloquea datasets sensibles en exportaciones sin permiso especial', function () {
+    $branch = Branch::query()->create([
+        'name' => 'Sucursal export sensible',
+        'code' => 'EXPORT-SENSITIVE',
+        'barcode' => 'BR-EXPORT-SENSITIVE',
+        'is_active' => true,
+    ]);
+
+    BusinessProfile::query()->create([
+        'name' => 'Perfil export sensible',
+        'business_type' => 'health_clinic',
+        'status' => 'active',
+            'configuration' => BusinessProfileConfiguration::normalized([
+                'modules' => ['exports' => true],
+                'capabilities' => ['uses_data_governance' => true],
+                'feature_flags' => ['data_governance_engine' => true],
+                'governance' => [
+                    'sensitive_entities' => ['customer', 'salary'],
+                    'export_sensitive_requires_permission' => true,
+            ],
+        ]),
+        'applied_at' => now(),
+    ]);
+    Cache::flush();
+
+    foreach (['customers.view', 'payroll.view', 'settings.manage', 'exports.sensitive'] as $permission) {
+        Permission::findOrCreate($permission, 'web');
+    }
+
+    $basicRole = Role::findOrCreate('exportador basico', 'web');
+    $basicRole->syncPermissions(['customers.view', 'payroll.view', 'settings.manage']);
+    $sensitiveRole = Role::findOrCreate('exportador sensible', 'web');
+    $sensitiveRole->syncPermissions(['customers.view', 'payroll.view', 'settings.manage', 'exports.sensitive']);
+
+    $basicUser = User::factory()->create(['branch_id' => $branch->id]);
+    $sensitiveUser = User::factory()->create(['branch_id' => $branch->id]);
+    $basicUser->assignRole($basicRole);
+    $sensitiveUser->assignRole($sensitiveRole);
+
+    $basicRequest = Request::create('/exports');
+    $basicRequest->setUserResolver(fn () => $basicUser);
+    $sensitiveRequest = Request::create('/exports');
+    $sensitiveRequest->setUserResolver(fn () => $sensitiveUser);
+
+    expect(app(ExportDatasetService::class)->catalog($basicRequest))->not->toHaveKeys(['customers', 'payroll'])
+        ->and(app(ExportDatasetService::class)->catalog($sensitiveRequest))->toHaveKeys(['customers', 'payroll']);
 });
 
 it('resuelve transiciones de estado con permisos finos', function () {
@@ -583,6 +880,91 @@ it('resuelve plantillas documentales y reportes solo con motores activos', funct
         ->and($service->documentTemplatesFor('sale_note', $branch->id))->toBe([])
         ->and($service->resolveReport('prestamos_mora')?->columns)->toBe(['cliente', 'monto', 'dias_mora'])
         ->and(collect($service->reportTemplatesFor('finance', 'customer'))->pluck('code')->all())->toBe(['prestamos_mora']);
+});
+
+it('expone reportes configurables en exportaciones solo con motor activo y permiso de plantilla', function () {
+    DynamicReportTemplate::query()->create([
+        'code' => 'clientes_contacto',
+        'name' => 'Clientes contacto',
+        'module' => 'customers',
+        'entity_type' => 'customer',
+        'description' => 'Reporte configurable de contactos de clientes.',
+        'columns' => ['name', 'phone'],
+        'permissions' => ['export' => ['reports.clientes.export']],
+        'metadata' => ['column_labels' => ['phone' => 'Celular cliente']],
+        'is_exportable' => true,
+        'is_active' => true,
+    ]);
+
+    $branch = Branch::query()->create([
+        'name' => 'Sucursal reportes dinamicos',
+        'code' => 'REPORT-DYN',
+        'barcode' => 'BR-REPORT-DYN',
+        'is_active' => true,
+    ]);
+
+    \App\Modules\Customers\Models\Customer::query()->create([
+        'name' => 'Cliente Reporte',
+        'phone' => '70001122',
+        'is_active' => true,
+    ]);
+
+    foreach (['customers.view', 'reports.clientes.export'] as $permission) {
+        Permission::findOrCreate($permission, 'web');
+    }
+
+    $roleBase = Role::findOrCreate('reportes cliente base', 'web');
+    $roleBase->syncPermissions(['customers.view']);
+    $roleExport = Role::findOrCreate('reportes cliente exporta', 'web');
+    $roleExport->syncPermissions(['customers.view', 'reports.clientes.export']);
+
+    $basicUser = User::factory()->create(['branch_id' => $branch->id]);
+    $allowedUser = User::factory()->create(['branch_id' => $branch->id]);
+    $basicUser->assignRole($roleBase);
+    $allowedUser->assignRole($roleExport);
+
+    $basicRequest = Request::create('/exports');
+    $basicRequest->setUserResolver(fn () => $basicUser);
+    $allowedRequest = Request::create('/exports', 'GET', [
+        'modules' => ['report_template__clientes_contacto'],
+        'fields' => ['report_template__clientes_contacto' => ['phone']],
+    ]);
+    $allowedRequest->setUserResolver(fn () => $allowedUser);
+
+    $service = app(ExportDatasetService::class);
+
+    expect($service->catalog($basicRequest))->not->toHaveKey('report_template__clientes_contacto');
+
+    BusinessProfile::query()->create([
+        'name' => 'Perfil reportes configurables exportables',
+        'business_type' => 'mixed',
+        'status' => 'active',
+        'configuration' => BusinessProfileConfiguration::normalized([
+            'modules' => [
+                'exports' => true,
+                'reports' => true,
+                'customers' => true,
+            ],
+            'capabilities' => [
+                'uses_report_templates' => true,
+            ],
+            'feature_flags' => [
+                'report_templates_engine' => true,
+            ],
+        ]),
+        'applied_at' => now(),
+    ]);
+    Cache::flush();
+
+    $catalog = $service->catalog($allowedRequest);
+    $export = $service->build($allowedRequest);
+
+    expect($service->catalog($basicRequest))->not->toHaveKey('report_template__clientes_contacto')
+        ->and($catalog)->toHaveKey('report_template__clientes_contacto')
+        ->and($catalog['report_template__clientes_contacto']['fields'])->toBe(['name' => 'Nombre', 'phone' => 'Celular cliente'])
+        ->and($export['sections'][0]['title'])->toBe('Clientes contacto')
+        ->and($export['sections'][0]['headers'])->toBe(['Celular cliente'])
+        ->and($export['sections'][0]['rows'])->toBe([['70001122']]);
 });
 
 it('evalua formulas controladas solo cuando el motor esta activo', function () {
@@ -947,4 +1329,127 @@ it('evalua licencias y reglas de notificacion activas', function () {
         ->and(app(BusinessLicensePolicyService::class)->moduleEnabled('unknown'))->toBeTrue()
         ->and(app(BusinessNotificationRuleService::class)->activeFor('stock_low')->pluck('code')->all())
         ->toBe(['stock_bajo']);
+});
+
+it('resuelve conectores externos solo con motor y canal activos', function () {
+    $branch = Branch::query()->create([
+        'name' => 'Sucursal integraciones',
+        'code' => 'INT-RUNTIME',
+        'barcode' => 'BR-INT-RUNTIME',
+        'is_active' => true,
+    ]);
+
+    $connector = BusinessIntegrationConnector::query()->create([
+        'branch_id' => $branch->id,
+        'code' => 'maps_osrm_principal',
+        'name' => 'OSRM principal',
+        'provider' => 'maps_routing',
+        'channel' => 'maps',
+        'direction' => 'outbound',
+        'auth_type' => 'none',
+        'base_url' => 'https://router.project-osrm.org',
+        'rate_limit_per_minute' => 60,
+        'timeout_seconds' => 10,
+        'capabilities' => ['route_distance'],
+        'public_config' => ['profile' => 'driving'],
+        'secret_config' => ['token' => 'no-debe-salir'],
+        'is_active' => true,
+    ]);
+
+    $service = app(BusinessIntegrationConnectorService::class);
+
+    expect($service->connectorsFor('maps', $branch->id))->toBe([])
+        ->and($service->resolve('maps_osrm_principal', $branch->id))->toBeNull();
+
+    BusinessProfile::query()->create([
+        'name' => 'Perfil integraciones activo',
+        'business_type' => 'mixed',
+        'status' => 'active',
+        'configuration' => BusinessProfileConfiguration::normalized([
+            'capabilities' => ['uses_integrations' => true],
+            'feature_flags' => ['integrations_engine' => true],
+            'integrations' => [
+                'enabled' => true,
+                'channels' => [
+                    'maps' => true,
+                    'whatsapp' => false,
+                ],
+            ],
+        ]),
+        'applied_at' => now(),
+    ]);
+    Cache::flush();
+
+    $resolved = $service->resolve('maps_osrm_principal', $branch->id);
+
+    expect(collect($service->connectorsFor('maps', $branch->id))->pluck('code')->all())->toBe(['maps_osrm_principal'])
+        ->and($resolved?->id)->toBe($connector->id)
+        ->and($service->secretConfig($resolved))->toBe(['token' => 'no-debe-salir'])
+        ->and($service->connectorsFor('whatsapp', $branch->id))->toBe([]);
+});
+
+it('evalua politicas multi-sucursal solo cuando el perfil activo habilita el motor', function () {
+    $origen = Branch::query()->create([
+        'name' => 'Sucursal origen avanzada',
+        'code' => 'MBA-ORIGEN',
+        'barcode' => 'BR-MBA-ORIGEN',
+        'is_active' => true,
+    ]);
+    $destino = Branch::query()->create([
+        'name' => 'Sucursal destino avanzada',
+        'code' => 'MBA-DESTINO',
+        'barcode' => 'BR-MBA-DESTINO',
+        'is_active' => true,
+    ]);
+
+    $user = User::factory()->create(['branch_id' => $origen->id]);
+    $user->accessibleBranches()->sync([$origen->id, $destino->id]);
+    Cache::flush();
+
+    BranchOperationPolicy::query()->create([
+        'branch_id' => $origen->id,
+        'code' => 'transferencia_avanzada_test',
+        'name' => 'Transferencia avanzada test',
+        'operation' => 'transfer_inventory',
+        'scope' => 'source_destination',
+        'enforcement_mode' => BranchOperationPolicy::ENFORCEMENT_BLOCK,
+        'applies_to_modules' => ['inventory', 'transfers'],
+        'rules' => [
+            'require_user_branch_access' => true,
+            'allow_cross_branch' => true,
+            'allowed_destination_branch_ids' => [$destino->id],
+            'max_transfer_quantity' => 100,
+        ],
+        'permissions' => ['manage' => 'inventory.transfers.manage'],
+        'is_active' => true,
+    ]);
+
+    $service = app(AdvancedBranchPolicyService::class);
+
+    expect($service->enabled())->toBeFalse()
+        ->and($service->policiesFor('transfer_inventory', $origen->id))->toBe([])
+        ->and($service->transferDecision($user, $origen->id, $destino->id, 150)['allowed'])->toBeTrue();
+
+    BusinessProfile::query()->create([
+        'name' => 'Perfil multi-sucursal avanzada',
+        'business_type' => 'hardware_store',
+        'status' => 'active',
+        'configuration' => BusinessProfileConfiguration::normalized([
+            'capabilities' => ['uses_advanced_multibranch' => true],
+            'feature_flags' => ['advanced_multibranch_engine' => true],
+            'multibranch' => ['enabled' => true],
+        ]),
+        'applied_at' => now(),
+    ]);
+    Cache::flush();
+
+    $allowed = $service->transferDecision($user, $origen->id, $destino->id, 50);
+    $blocked = $service->transferDecision($user, $origen->id, $destino->id, 150);
+
+    expect($service->enabled())->toBeTrue()
+        ->and(collect($service->policiesFor('transfer_inventory', $origen->id))->pluck('code')->all())->toBe(['transferencia_avanzada_test'])
+        ->and($allowed['allowed'])->toBeTrue()
+        ->and($allowed['errors'])->toBe([])
+        ->and($blocked['allowed'])->toBeFalse()
+        ->and($blocked['errors'])->toContain('La cantidad supera el limite configurado para transferencias.');
 });

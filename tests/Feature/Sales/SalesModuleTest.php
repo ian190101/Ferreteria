@@ -14,6 +14,8 @@ use App\Modules\Sales\Models\DocumentSequence;
 use App\Modules\Sales\Models\Sale;
 use App\Modules\Sales\Models\SaleType;
 use App\Modules\ServiceOrders\Models\ServiceType;
+use App\Modules\SystemSuperadmin\Models\ApprovalFlowRule;
+use App\Modules\SystemSuperadmin\Models\ApprovalRequest;
 use App\Modules\SystemSuperadmin\Models\BusinessProfile;
 use App\Modules\SystemSuperadmin\Services\BusinessProfileConfiguration;
 use App\Support\SystemCacheInvalidator;
@@ -788,6 +790,166 @@ it('devuelve stock global al anular nota de venta emitida', function () {
 
     expect((float) ProductBranchStock::query()->where('product_id', $product->id)->value('available_meters'))->toBe(100.0)
         ->and(InventoryMovement::query()->where('type', 'sale_void_return')->where('product_id', $product->id)->exists())->toBeTrue();
+});
+
+it('crea solicitud de aprobacion y bloquea venta con descuento alto cuando el motor esta activo', function () {
+    $user = salesUser(['sales.view', 'sales.manage']);
+    BusinessProfile::query()->where('status', 'active')->update([
+        'configuration' => BusinessProfileConfiguration::normalized([
+            'sales' => [
+                'workflow' => 'direct_sale',
+                'quotation_mode' => 'optional',
+                'customer_required' => false,
+                'customer_mode' => 'optional',
+                'max_discount_percent' => 10,
+            ],
+            'cash' => ['required_to_sell' => false],
+            'feature_flags' => ['approval_engine' => true],
+            'approvals' => ['enabled' => true],
+        ]),
+    ]);
+    SystemCacheInvalidator::bumpOperational();
+
+    ApprovalFlowRule::query()->create([
+        'code' => 'aprobar_descuento_venta',
+        'name' => 'Aprobar descuento de venta',
+        'entity_type' => 'sale',
+        'action' => 'high_discount',
+        'trigger' => 'before_action',
+        'approver_roles' => ['superadmin'],
+        'is_active' => true,
+    ]);
+
+    $saleType = SaleType::query()->create(['name' => 'Ocasionales', 'is_active' => true]);
+    $currency = Currency::query()->create([
+        'name' => 'Bolivianos',
+        'code' => 'BOB',
+        'symbol' => 'Bs',
+        'exchange_rate_to_bob' => 1,
+        'is_base' => true,
+        'is_active' => true,
+    ]);
+    $product = Product::query()->create([
+        'name' => 'Calamina aprobacion',
+        'sku' => 'CAL-APR',
+        'barcode' => 'PR-CAL-APR',
+        'inventory_tracking_mode' => Product::TRACKING_GLOBAL,
+        'base_unit' => 'M',
+        'sale_price' => 10,
+        'minimum_stock_meters' => 0,
+        'is_active' => true,
+    ]);
+    salesStock($user->branch_id, $product, 100);
+
+    $this->actingAs($user)
+        ->from(route('sales.create'))
+        ->post(route('sales.store'), [
+            'document_type' => 'sale_note',
+            'branch_id' => $user->branch_id,
+            'sale_type_id' => $saleType->id,
+            'currency_id' => $currency->id,
+            'receipt_number' => 'APR-DESC-001',
+            'customer_name' => 'Cliente aprobacion',
+            'sold_at' => now()->format('Y-m-d H:i:s'),
+            'items' => [[
+                'product_id' => $product->id,
+                'product_coil_id' => null,
+                'description' => 'CALAMINA APROBACION',
+                'unit_label' => 'M',
+                'meters' => 10,
+                'unit_price' => 10,
+                'discount_amount' => 50,
+            ]],
+        ])
+        ->assertRedirect(route('sales.create'))
+        ->assertSessionHasErrors('items');
+
+    expect(Sale::query()->where('receipt_number', 'APR-DESC-001')->exists())->toBeFalse()
+        ->and(ApprovalRequest::query()->where('action', 'high_discount')->where('status', ApprovalRequest::STATUS_PENDING)->exists())->toBeTrue();
+});
+
+it('crea solicitud de aprobacion y no anula venta cuando la anulacion requiere aprobacion', function () {
+    $user = salesUser(['sales.view', 'sales.manage']);
+    $saleType = SaleType::query()->create(['name' => 'Ocasionales', 'is_active' => true]);
+    $currency = Currency::query()->create([
+        'name' => 'Bolivianos',
+        'code' => 'BOB',
+        'symbol' => 'Bs',
+        'exchange_rate_to_bob' => 1,
+        'is_base' => true,
+        'is_active' => true,
+    ]);
+    $product = Product::query()->create([
+        'name' => 'Calamina anulacion aprobada',
+        'sku' => 'CAL-VOID-APR',
+        'barcode' => 'PR-CAL-VOID-APR',
+        'inventory_tracking_mode' => Product::TRACKING_GLOBAL,
+        'base_unit' => 'M',
+        'minimum_stock_meters' => 0,
+        'is_active' => true,
+    ]);
+    salesStock($user->branch_id, $product, 100);
+
+    $this->actingAs($user)
+        ->post(route('sales.store'), [
+            'document_type' => 'sale_note',
+            'branch_id' => $user->branch_id,
+            'sale_type_id' => $saleType->id,
+            'currency_id' => $currency->id,
+            'receipt_number' => 'APR-VOID-001',
+            'customer_name' => 'Cliente anulacion',
+            'sold_at' => now()->format('Y-m-d H:i:s'),
+            'items' => [[
+                'product_id' => $product->id,
+                'product_coil_id' => null,
+                'description' => 'CALAMINA VOID',
+                'unit_label' => 'M',
+                'meters' => 5,
+                'unit_price' => 20,
+                'discount_amount' => 0,
+            ]],
+        ])
+        ->assertRedirect();
+
+    $sale = Sale::query()->where('receipt_number', 'APR-VOID-001')->firstOrFail();
+    BusinessProfile::query()->where('status', 'active')->update([
+        'configuration' => BusinessProfileConfiguration::normalized([
+            'sales' => [
+                'workflow' => 'direct_sale',
+                'quotation_mode' => 'optional',
+                'customer_required' => false,
+                'customer_mode' => 'optional',
+                'max_discount_percent' => 100,
+            ],
+            'cash' => ['required_to_sell' => false],
+            'feature_flags' => ['approval_engine' => true],
+            'approvals' => ['enabled' => true],
+        ]),
+    ]);
+    SystemCacheInvalidator::bumpOperational();
+
+    ApprovalFlowRule::query()->create([
+        'code' => 'aprobar_anulacion_venta',
+        'name' => 'Aprobar anulacion de venta',
+        'entity_type' => 'sale',
+        'action' => 'void_sale',
+        'trigger' => 'before_action',
+        'approver_roles' => ['superadmin'],
+        'is_active' => true,
+    ]);
+
+    $this->actingAs($user)
+        ->from(route('sales.index'))
+        ->patch(route('sales.void', $sale->id), [
+            'reason' => 'Revision gerencial',
+        ])
+        ->assertRedirect(route('sales.index'))
+        ->assertSessionHasErrors('reason');
+
+    $sale->refresh();
+
+    expect($sale->status)->toBe('issued')
+        ->and(ApprovalRequest::query()->where('entity_id', $sale->id)->where('action', 'void_sale')->where('status', ApprovalRequest::STATUS_PENDING)->exists())->toBeTrue();
 });
 
 it('crea moneda base y actualiza cambio de moneda comercial', function () {

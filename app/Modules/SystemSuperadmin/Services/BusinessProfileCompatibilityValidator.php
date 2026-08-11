@@ -14,6 +14,7 @@ class BusinessProfileCompatibilityValidator
         $billing = $configuration['billing'] ?? [];
         $cash = $configuration['cash'] ?? [];
         $reservations = $configuration['reservations'] ?? [];
+        $customerQrOrdering = $configuration['customer_qr_ordering'] ?? [];
 
         $errors = [];
         $warnings = [];
@@ -95,7 +96,10 @@ class BusinessProfileCompatibilityValidator
             'uses_formula_calculations' => 'formula_engine',
             'uses_construction_calculations' => 'formula_engine',
             'uses_field_level_permissions' => 'field_permissions_engine',
+            'uses_data_governance' => 'data_governance_engine',
+            'uses_operational_traceability' => 'operational_traceability_engine',
             'uses_integrations' => 'integrations_engine',
+            'uses_customer_qr_ordering' => 'customer_qr_ordering_engine',
         ];
 
         foreach ($engineRequirements as $capability => $requiredFlag) {
@@ -118,6 +122,18 @@ class BusinessProfileCompatibilityValidator
 
         if (($configuration['automations']['enabled'] ?? false) && ! $flag('automation_engine')) {
             $errors[] = 'Automatizaciones activas requieren habilitar el motor tecnico de automatizaciones.';
+        }
+
+        if (($customerQrOrdering['enabled'] ?? false) && ! $enabled('uses_customer_qr_ordering')) {
+            $errors[] = 'Pedidos por QR activos requieren habilitar la capacidad uses_customer_qr_ordering.';
+        }
+
+        if ($enabled('uses_customer_qr_ordering') && ! $module('customer_qr_ordering')) {
+            $errors[] = 'Pedidos por QR requieren activar el modulo customer_qr_ordering.';
+        }
+
+        if ($enabled('uses_customer_qr_ordering') && ! ($enabled('uses_pos') || $enabled('allows_direct_sale') || $enabled('allows_quote_to_sale'))) {
+            $errors[] = 'Pedidos por QR requieren al menos un flujo comercial: POS, venta directa o cotizacion.';
         }
 
         return [

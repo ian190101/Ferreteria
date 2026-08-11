@@ -24,6 +24,7 @@ class InventoryReservation extends AuditableModel
         'product_id',
         'product_coil_id',
         'sale_id',
+        'customer_qr_order_id',
         'consumed_sale_id',
         'user_id',
         'meters',
