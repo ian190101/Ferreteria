@@ -5,6 +5,10 @@ use App\Modules\Dashboard\Http\Controllers\DashboardController;
 use App\Support\UserHomeRoute;
 use Illuminate\Support\Facades\Route;
 
+Route::get('/health', fn () => response()->json(['status' => 'ok']))
+    ->withoutMiddleware(['web'])
+    ->name('health');
+
 Route::get('/', function () {
     return auth()->check()
         ? redirect(UserHomeRoute::pathFor(auth()->user()))
