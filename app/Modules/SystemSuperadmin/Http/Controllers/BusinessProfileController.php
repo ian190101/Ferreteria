@@ -453,6 +453,21 @@ class BusinessProfileController extends Controller
             'configuration.products.creation_context' => ['required', 'string', Rule::in(array_keys($options['productCreationContexts']))],
             'configuration.reservations' => ['nullable', 'array'],
             'configuration.reservations.*' => ['nullable'],
+            'configuration.customer_qr_ordering' => ['nullable', 'array'],
+            'configuration.customer_qr_ordering.*' => ['nullable'],
+            'configuration.ai_assistant' => ['nullable', 'array'],
+            'configuration.ai_assistant.enabled' => ['nullable', 'boolean'],
+            'configuration.ai_assistant.model_mode' => ['nullable', 'string', Rule::in(['cpu_light', 'gpu_medium', 'external_openai_compatible', 'disabled'])],
+            'configuration.ai_assistant.deployment_mode' => ['nullable', 'string', Rule::in(['same_server', 'vps', 'local'])],
+            'configuration.ai_assistant.default_channel' => ['nullable', 'string', Rule::in(['internal', 'telegram', 'whatsapp', 'meta'])],
+            'configuration.ai_assistant.fastapi' => ['nullable', 'array'],
+            'configuration.ai_assistant.fastapi.url' => ['nullable', 'url', 'max:500'],
+            'configuration.ai_assistant.fastapi.timeout_seconds' => ['nullable', 'integer', 'min:2', 'max:60'],
+            'configuration.ai_assistant.fastapi.internal_token' => ['nullable', 'string', 'max:500'],
+            'configuration.ai_assistant.channels' => ['nullable', 'array'],
+            'configuration.ai_assistant.channels.*' => ['boolean'],
+            'configuration.ai_assistant.limits' => ['nullable', 'array'],
+            'configuration.ai_assistant.security' => ['nullable', 'array'],
             'configuration.restaurant' => ['nullable', 'array'],
             'configuration.restaurant.mode' => ['nullable', 'string', Rule::in(array_keys($options['restaurantModes']))],
             'configuration.restaurant.*' => ['nullable'],
@@ -614,6 +629,7 @@ class BusinessProfileController extends Controller
         $data['configuration']['capabilities']['uses_recipes'] = (bool) ($data['configuration']['modules']['recipes'] ?? false);
         $data['configuration']['capabilities']['uses_rentals'] = (bool) ($data['configuration']['modules']['rentals'] ?? false);
         $data['configuration']['capabilities']['uses_production'] = (bool) ($data['configuration']['modules']['production'] ?? false);
+        $data['configuration']['capabilities']['uses_ai_assistant'] = (bool) ($data['configuration']['modules']['ai_assistant'] ?? false);
         $data['configuration']['capabilities']['requires_cash_session'] = (bool) ($data['configuration']['cash']['required_to_sell'] ?? false);
         $data['configuration']['capabilities']['requires_customer'] = ($data['configuration']['sales']['customer_mode'] ?? 'required') === 'required';
         $data['configuration']['capabilities']['allows_quote_to_sale'] = (bool) ($data['configuration']['modules']['quotes'] ?? false);

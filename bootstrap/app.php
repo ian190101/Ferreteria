@@ -22,6 +22,7 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
         web: [
             __DIR__.'/../routes/web.php',
+            __DIR__.'/../app/Modules/AiAssistant/routes/web.php',
             __DIR__.'/../app/Modules/Alerts/routes/web.php',
             __DIR__.'/../app/Modules/Banks/routes/web.php',
             __DIR__.'/../app/Modules/Billing/routes/web.php',
@@ -73,6 +74,11 @@ return Application::configure(basePath: dirname(__DIR__))
             HandleInertiaRequests::class,
             EnsurePasswordWasChanged::class,
             AddLinkHeadersForPreloadedAssets::class,
+        ]);
+
+        $middleware->validateCsrfTokens(except: [
+            'ai-assistant/webhooks/*',
+            'api/ai-assistant/v1/*',
         ]);
 
         $middleware->alias([

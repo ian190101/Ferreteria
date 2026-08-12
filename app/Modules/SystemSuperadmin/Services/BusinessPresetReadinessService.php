@@ -23,6 +23,14 @@ class BusinessPresetReadinessService
         'uses_operational_traceability' => 'operational_traceability_engine',
         'uses_integrations' => 'integrations_engine',
         'uses_advanced_multibranch' => 'advanced_multibranch_engine',
+        'uses_ai_assistant' => 'ai_assistant_engine',
+        'uses_ai_internal_chat' => 'ai_assistant_engine',
+        'uses_ai_customer_bot' => 'ai_assistant_engine',
+        'uses_ai_owner_analytics' => 'ai_assistant_engine',
+        'uses_ai_voice' => 'ai_assistant_engine',
+        'uses_ai_exports' => 'ai_assistant_engine',
+        'uses_ai_order_capture' => 'ai_assistant_engine',
+        'uses_ai_external_api' => 'ai_assistant_engine',
     ];
 
     public function __construct(

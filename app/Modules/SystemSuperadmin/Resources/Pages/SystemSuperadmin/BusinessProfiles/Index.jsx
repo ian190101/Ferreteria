@@ -2570,6 +2570,7 @@ function moduleLabel(key) {
         recipes: 'Recetas',
         combos: 'Combos',
         rentals: 'Alquileres',
+        ai_assistant: 'Chatbot IA',
     }[key] ?? key;
 }
 
@@ -2608,6 +2609,7 @@ function moduleToggleHelp(key) {
         recipes: 'Desactivar este modulo evita descontar insumos por recetas.',
         combos: 'Desactivar este modulo oculta combos o paquetes configurables.',
         rentals: 'Desactivar este modulo bloquea alquileres, garantias, penalidades y devoluciones de recursos.',
+        ai_assistant: 'Desactivar este modulo oculta el chat interno, canales externos y API del asistente IA.',
     }[key] ?? 'Desactivar esta opcion la oculta del perfil de negocio y bloquea sus acciones relacionadas cuando corresponda.';
 }
 

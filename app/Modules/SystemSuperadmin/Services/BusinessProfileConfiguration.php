@@ -54,6 +54,7 @@ class BusinessProfileConfiguration
                 'combos' => false,
                 'rentals' => false,
                 'customer_qr_ordering' => false,
+                'ai_assistant' => false,
             ],
             'submodules' => [
                 'sales_discounts' => true,
@@ -128,6 +129,14 @@ class BusinessProfileConfiguration
                 'uses_memberships' => false,
                 'uses_courses' => false,
                 'uses_customer_qr_ordering' => false,
+                'uses_ai_assistant' => false,
+                'uses_ai_internal_chat' => false,
+                'uses_ai_customer_bot' => false,
+                'uses_ai_owner_analytics' => false,
+                'uses_ai_voice' => false,
+                'uses_ai_exports' => false,
+                'uses_ai_order_capture' => false,
+                'uses_ai_external_api' => false,
             ],
             'feature_flags' => [
                 'business_profile_v2_core' => true,
@@ -150,6 +159,7 @@ class BusinessProfileConfiguration
                 'advanced_multibranch_engine' => false,
                 'integrations_engine' => false,
                 'customer_qr_ordering_engine' => false,
+                'ai_assistant_engine' => false,
             ],
             'entities' => [
                 'defaults_locked' => true,
@@ -305,6 +315,34 @@ class BusinessProfileConfiguration
                 'cache_menu_minutes' => 5,
                 'auto_accept_orders' => false,
                 'create_sale_directly' => false,
+            ],
+            'ai_assistant' => [
+                'enabled' => false,
+                'model_mode' => 'cpu_light',
+                'deployment_mode' => 'same_server',
+                'default_channel' => 'internal',
+                'fastapi' => [
+                    'url' => null,
+                    'timeout_seconds' => 12,
+                    'internal_token' => null,
+                ],
+                'channels' => [
+                    'internal' => true,
+                    'telegram' => false,
+                    'whatsapp' => false,
+                    'meta' => false,
+                ],
+                'limits' => [
+                    'max_message_length' => 2000,
+                    'max_audio_mb' => 12,
+                    'max_tool_calls_per_message' => 3,
+                ],
+                'security' => [
+                    'require_confirmation_for_actions' => true,
+                    'block_free_sql' => true,
+                    'respect_field_permissions' => true,
+                    'external_api_disabled_by_default' => true,
+                ],
             ],
             'restaurant' => [
                 'mode' => 'disabled',

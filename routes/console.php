@@ -303,6 +303,168 @@ Artisan::command('production:readiness-check', function (SystemHealthService $he
     return $failed ? Command::FAILURE : Command::SUCCESS;
 })->purpose('Ejecuta checklist tecnico final de produccion.');
 
+Artisan::command('production:staging-gate {--strict : Falla tambien con advertencias para bloquear salida a produccion.}', function (SystemHealthService $health, ProductionUpdateService $updates) {
+    $strict = (bool) $this->option('strict');
+    $checks = [];
+    $add = function (string $status, string $name, string $message, mixed $details = null) use (&$checks): void {
+        $checks[] = compact('status', 'name', 'message', 'details');
+    };
+
+    $environment = app()->environment();
+    $isDeployEnvironment = in_array($environment, ['staging', 'production'], true);
+    $add(
+        $isDeployEnvironment ? 'ok' : 'warning',
+        'Entorno de despliegue',
+        $isDeployEnvironment
+            ? "APP_ENV={$environment} es valido para validar staging/produccion."
+            : "APP_ENV={$environment}. Para cierre real usa staging o production.",
+    );
+
+    $connection = config('database.default');
+    $driver = (string) config("database.connections.{$connection}.driver");
+    $isMysqlLike = in_array($driver, ['mysql', 'mariadb'], true);
+    $add(
+        $isMysqlLike ? 'ok' : 'warning',
+        'Motor de base de datos',
+        $isMysqlLike
+            ? "Driver {$driver} compatible con demo completa y flujo productivo."
+            : "Driver {$driver}. La demo completa y la validacion final deben correr en MySQL/MariaDB/TiDB.",
+    );
+
+    $hasZip = class_exists(\ZipArchive::class);
+    $add(
+        $hasZip ? 'ok' : 'warning',
+        'Extension ZipArchive',
+        $hasZip
+            ? 'ZipArchive disponible para importar/exportar XLSX.'
+            : 'ZipArchive no esta disponible; las pruebas XLSX quedan incompletas en este entorno.',
+    );
+
+    try {
+        foreach ($health->check()['checks'] as $check) {
+            $add($check['status'], $check['name'], $check['message'], $check['details'] ?? null);
+        }
+    } catch (\Throwable $exception) {
+        $add('error', 'Salud del sistema', 'No se pudo ejecutar health check. Verifica que la base este migrada.', $exception->getMessage());
+    }
+
+    try {
+        $pendingMigrations = $updates->pendingMigrations();
+        $add(
+            $pendingMigrations === [] ? 'ok' : 'error',
+            'Migraciones',
+            $pendingMigrations === []
+                ? 'No hay migraciones pendientes.'
+                : 'Hay migraciones pendientes: '.implode(', ', $pendingMigrations),
+        );
+    } catch (\Throwable $exception) {
+        $add('error', 'Migraciones', 'No se pudo leer la tabla de migraciones. Ejecuta php artisan migrate --force antes del gate.', $exception->getMessage());
+    }
+
+    $criticalRoutes = [
+        'login',
+        'dashboard',
+        'sales.index',
+        'sales.create',
+        'purchases.index',
+        'inventory.stock.index',
+        'cash-flow.index',
+        'settings.system.index',
+        'system-superadmin.business-profiles.index',
+        'system-superadmin.transversal-config.index',
+        'customer-qr-ordering.show',
+        'customer-qr-orders.index',
+    ];
+    $missingRoutes = collect($criticalRoutes)
+        ->reject(fn (string $route): bool => \Illuminate\Support\Facades\Route::has($route))
+        ->values()
+        ->all();
+    $add(
+        $missingRoutes === [] ? 'ok' : 'error',
+        'Rutas criticas',
+        $missingRoutes === []
+            ? 'Todas las rutas criticas existen.'
+            : 'Rutas criticas faltantes: '.implode(', ', $missingRoutes),
+    );
+
+    try {
+        $profile = ActiveBusinessProfile::payload();
+        $schemaVersion = (int) ($profile['schemaVersion'] ?? data_get($profile, 'configuration.schema_version', 0));
+        $add(
+            $schemaVersion === 2 ? 'ok' : 'error',
+            'Perfil de negocio 2.0',
+            $schemaVersion === 2
+                ? 'El perfil activo/default usa esquema 2.0.'
+                : 'El perfil activo/default no esta normalizado a esquema 2.0.',
+        );
+    } catch (\Throwable $exception) {
+        $add('error', 'Perfil de negocio 2.0', 'No se pudo leer el perfil activo/default. Verifica conexion y migraciones.', $exception->getMessage());
+    }
+
+    try {
+        $transversalReadiness = app(\App\Modules\SystemSuperadmin\Services\BusinessTransversalReadinessService::class)->evaluate();
+        $add(
+            (int) data_get($transversalReadiness, 'overall.blocked', 0) === 0 ? 'ok' : 'error',
+            'Readiness transversal',
+            (int) data_get($transversalReadiness, 'overall.blocked', 0) === 0
+                ? 'No hay motores transversales bloqueados.'
+                : 'Hay motores transversales bloqueados y no debe aplicarse el perfil.',
+        );
+    } catch (\Throwable $exception) {
+        $add('error', 'Readiness transversal', 'No se pudo evaluar readiness transversal.', $exception->getMessage());
+    }
+
+    try {
+        $presetReadiness = collect(app(\App\Modules\SystemSuperadmin\Services\BusinessPresetReadinessService::class)->all());
+        $blockedPresets = $presetReadiness->where('ready', false)->pluck('name')->values()->all();
+        $add(
+            $blockedPresets === [] ? 'ok' : 'error',
+            'Presets oficiales',
+            $blockedPresets === []
+                ? 'Todos los presets oficiales pasan readiness.'
+                : 'Presets bloqueados: '.implode(', ', $blockedPresets),
+        );
+    } catch (\Throwable $exception) {
+        $add('error', 'Presets oficiales', 'No se pudo evaluar readiness de presets oficiales.', $exception->getMessage());
+    }
+
+    $errors = collect($checks)->where('status', 'error')->count();
+    $warnings = collect($checks)->where('status', 'warning')->count();
+
+    $this->info('Gate de staging/produccion Multinegocio 2.0');
+    $this->line('Modo: '.($strict ? 'strict' : 'normal'));
+    $this->newLine();
+
+    foreach ($checks as $check) {
+        $label = match ($check['status']) {
+            'ok' => 'OK',
+            'warning' => 'ADVERTENCIA',
+            default => 'ERROR',
+        };
+        $this->line("[{$label}] {$check['name']}: {$check['message']}");
+    }
+
+    $this->newLine();
+    $this->line("Resultado: {$errors} errores, {$warnings} advertencias.");
+    $this->line('Nota: SIAT, impresoras, lectores barcode y QR fisico deben validarse en navegador/dispositivo real.');
+
+    try {
+        app(ProductionLogService::class)->record('maintenance', $errors > 0 ? 'error' : ($warnings > 0 ? 'warning' : 'info'), 'staging_gate_completed', 'Gate de staging/produccion ejecutado.', [
+            'strict' => $strict,
+            'errors' => $errors,
+            'warnings' => $warnings,
+            'environment' => $environment,
+            'db_driver' => $driver,
+        ]);
+    } catch (\Throwable) {
+        // El gate debe seguir funcionando incluso antes de tener logs productivos migrados.
+    }
+
+    return $errors > 0 || ($strict && $warnings > 0)
+        ? Command::FAILURE
+        : Command::SUCCESS;
+})->purpose('Valida staging/produccion antes de liberar Multinegocio 2.0.');
+
 Artisan::command('performance:warm-operational-cache', function () {
     try {
         ActiveBusinessProfile::payload();

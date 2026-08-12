@@ -2,6 +2,8 @@
 
 Usa este checklist por cada cliente/instalacion. No marques un punto como cerrado si no fue probado en el hosting real.
 
+Antes de aplicar este checklist en produccion, cerrar staging con `docs/staging_multinegocio_2.md`.
+
 ## 1. Entorno
 
 - `APP_ENV=production`.
@@ -18,6 +20,7 @@ Comando:
 
 ```bash
 php artisan production:readiness-check
+php artisan production:staging-gate --strict
 ```
 
 ## 2. Instalacion inicial

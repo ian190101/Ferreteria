@@ -21,6 +21,7 @@ use App\Modules\SystemSuperadmin\Models\OperationalTrace;
 use App\Modules\SystemSuperadmin\Models\ReservableResource;
 use App\Modules\SystemSuperadmin\Models\WorkflowDefinition;
 use App\Modules\SystemSuperadmin\Models\WorkflowTransition;
+use App\Modules\AiAssistant\Models\AiAssistantChannel;
 
 class BusinessTransversalReadinessService
 {
@@ -159,6 +160,14 @@ class BusinessTransversalReadinessService
             'flag' => 'customer_qr_ordering_engine',
             'section' => 'customer-qr-channels',
             'model' => CustomerQrChannel::class,
+        ],
+        'ai_assistant' => [
+            'label' => 'Chatbot IA',
+            'capability' => 'uses_ai_assistant',
+            'flag' => 'ai_assistant_engine',
+            'section' => 'ai-assistant',
+            'model' => AiAssistantChannel::class,
+            'definitions_required' => false,
         ],
     ];
 

@@ -100,6 +100,9 @@ class AppServiceProvider extends ServiceProvider
 
             return Limit::perMinute(8)->by($token.'|'.$request->ip());
         });
+
+        RateLimiter::for('ai-assistant-webhook', fn (Request $request) => Limit::perMinute(30)->by($request->ip()));
+        RateLimiter::for('ai-assistant-external', fn (Request $request) => Limit::perMinute(60)->by($request->bearerToken() ?: $request->ip()));
     }
 
     private function registerDomainEvents(): void

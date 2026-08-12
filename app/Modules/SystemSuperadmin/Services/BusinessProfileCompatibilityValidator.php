@@ -100,6 +100,14 @@ class BusinessProfileCompatibilityValidator
             'uses_operational_traceability' => 'operational_traceability_engine',
             'uses_integrations' => 'integrations_engine',
             'uses_customer_qr_ordering' => 'customer_qr_ordering_engine',
+            'uses_ai_assistant' => 'ai_assistant_engine',
+            'uses_ai_internal_chat' => 'ai_assistant_engine',
+            'uses_ai_customer_bot' => 'ai_assistant_engine',
+            'uses_ai_owner_analytics' => 'ai_assistant_engine',
+            'uses_ai_voice' => 'ai_assistant_engine',
+            'uses_ai_exports' => 'ai_assistant_engine',
+            'uses_ai_order_capture' => 'ai_assistant_engine',
+            'uses_ai_external_api' => 'ai_assistant_engine',
         ];
 
         foreach ($engineRequirements as $capability => $requiredFlag) {
@@ -126,6 +134,14 @@ class BusinessProfileCompatibilityValidator
 
         if (($customerQrOrdering['enabled'] ?? false) && ! $enabled('uses_customer_qr_ordering')) {
             $errors[] = 'Pedidos por QR activos requieren habilitar la capacidad uses_customer_qr_ordering.';
+        }
+
+        if (($configuration['ai_assistant']['enabled'] ?? false) && ! $enabled('uses_ai_assistant')) {
+            $errors[] = 'Chatbot IA activo requiere habilitar la capacidad uses_ai_assistant.';
+        }
+
+        if ($enabled('uses_ai_assistant') && ! $module('ai_assistant')) {
+            $errors[] = 'Chatbot IA requiere activar el modulo ai_assistant.';
         }
 
         if ($enabled('uses_customer_qr_ordering') && ! $module('customer_qr_ordering')) {

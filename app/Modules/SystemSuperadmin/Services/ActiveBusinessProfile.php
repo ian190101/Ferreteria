@@ -56,6 +56,7 @@ class ActiveBusinessProfile
                 'products' => $configuration['products'] ?? [],
                 'reservations' => $configuration['reservations'] ?? [],
                 'customer_qr_ordering' => $configuration['customer_qr_ordering'] ?? [],
+                'ai_assistant' => $configuration['ai_assistant'] ?? [],
                 'restaurant' => $configuration['restaurant'] ?? [],
                 'services' => $configuration['services'] ?? [],
                 'rentals' => $configuration['rentals'] ?? [],

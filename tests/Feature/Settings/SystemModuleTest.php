@@ -10,6 +10,7 @@ use App\Modules\Settings\Models\ImportBatch;
 use App\Modules\Settings\Models\SystemSetting;
 use App\Support\SystemRoles;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Storage;
 use Inertia\Testing\AssertableInertia as Assert;
 use Spatie\Permission\Models\Permission;
@@ -243,6 +244,26 @@ it('solo sistemasuperadmin gestiona licencia interna', function () {
         ->assertRedirect(route('settings.system.index'));
 
     expect(ApplicationLicense::query()->where('license_key', 'MRB-TEST-123')->exists())->toBeTrue();
+});
+
+it('ejecuta gate de staging sin mutar datos y reporta advertencias del entorno local', function () {
+    $exitCode = Artisan::call('production:staging-gate');
+    $output = Artisan::output();
+
+    expect($exitCode)->toBe(0)
+        ->and($output)->toContain('Gate de staging/produccion Multinegocio 2.0')
+        ->and($output)->toContain('Rutas criticas')
+        ->and($output)->toContain('Presets oficiales')
+        ->and($output)->toContain('advertencias');
+});
+
+it('bloquea gate de staging en modo strict cuando el entorno no es productivo completo', function () {
+    $exitCode = Artisan::call('production:staging-gate', ['--strict' => true]);
+    $output = Artisan::output();
+
+    expect($exitCode)->toBe(1)
+        ->and($output)->toContain('Modo: strict')
+        ->and($output)->toContain('ADVERTENCIA');
 });
 
 function fakeXlsxUpload(array $rows): UploadedFile

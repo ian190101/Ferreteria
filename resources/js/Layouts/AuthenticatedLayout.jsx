@@ -306,6 +306,7 @@ function buildNavigation(permissions, isSystemSuperadmin = false, modules = {}, 
             items: [
                 item(canShowSystemMaster, 'Sistema maestro', 'Configuracion de negocio', route('system-superadmin.business-profiles.index'), route().current('system-superadmin.business-profiles.*'), 'configuracion'),
                 item(canShowSystemMaster, 'Sistema maestro', 'Configuracion transversal', route('system-superadmin.transversal-config.index'), route().current('system-superadmin.transversal-config.*'), 'configuracion'),
+                item(canShowSystemMaster, 'Sistema maestro', 'Chatbot IA', route('ai-assistant.settings.index'), route().current('ai-assistant.settings.*'), 'configuracion'),
             ].filter(Boolean),
         },
         {
@@ -314,6 +315,7 @@ function buildNavigation(permissions, isSystemSuperadmin = false, modules = {}, 
                 item(can('dashboard.view'), 'Operacion', 'Panel', route('dashboard'), route().current('dashboard'), 'dashboard'),
                 item(moduleEnabled('alerts') && can('alerts.view'), 'Operacion', 'Alertas', route('alerts.index'), route().current('alerts.*'), 'alertas'),
                 item(moduleEnabled('reports') && can('reports.view'), 'Operacion', 'Reportes', route('reports.index'), route().current('reports.*'), 'reportes'),
+                item(moduleEnabled('ai_assistant') && capabilityEnabled('uses_ai_assistant') && can('ai-assistant.view'), 'Operacion', 'Chatbot IA', route('ai-assistant.index'), route().current('ai-assistant.index'), 'reportes'),
             ].filter(Boolean),
         },
         {
