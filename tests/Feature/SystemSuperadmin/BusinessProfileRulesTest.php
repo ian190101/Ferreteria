@@ -16,6 +16,7 @@ use App\Modules\Exports\Services\ExportDatasetService;
 use App\Modules\SystemSuperadmin\Services\ActiveBusinessProfile;
 use App\Modules\SystemSuperadmin\Services\BusinessProfileCompatibilityValidator;
 use App\Modules\SystemSuperadmin\Services\BusinessProfileConfiguration;
+use App\Modules\SystemSuperadmin\Services\BusinessProfileDraftHistoryService;
 use App\Modules\SystemSuperadmin\Services\BusinessProfileSandboxService;
 use Database\Seeders\BusinessProfilePresetSeeder;
 use Illuminate\Support\Facades\DB;
@@ -379,6 +380,105 @@ it('permite usar un borrador como perfil temporal sin aplicarlo a produccion', f
         ->delete(route('system-superadmin.business-profiles.draft-preview.stop'))
         ->assertRedirect()
         ->assertSessionMissing('business_profile_preview_draft_id');
+});
+
+it('crea un snapshot automatico del perfil activo dentro de borradores', function () {
+    $user = businessProfileUser(systemSuperadmin: true);
+    $active = activeBusinessProfile([
+        'identity' => [
+            'commercial_name' => 'Perfil activo visible',
+        ],
+    ]);
+
+    $this->actingAs($user)
+        ->get(route('system-superadmin.business-profiles.index'))
+        ->assertOk();
+
+    $snapshot = BusinessProfileDraft::query()
+        ->where('source_profile_id', $active->id)
+        ->where('status', BusinessProfileDraftHistoryService::STATUS_ACTIVE_SNAPSHOT)
+        ->firstOrFail();
+
+    expect($snapshot->name)->toContain('Perfil activo actual')
+        ->and($snapshot->configuration['identity']['commercial_name'])->toBe('Perfil activo visible');
+});
+
+it('guarda el perfil activo anterior como historial automatico al aplicar un borrador', function () {
+    $user = businessProfileUser(systemSuperadmin: true);
+    $active = activeBusinessProfile([
+        'identity' => [
+            'commercial_name' => 'Ferreteria anterior',
+        ],
+    ]);
+    ProductUnit::query()->create(['name' => 'Unidad', 'symbol' => 'u', 'kind' => 'count', 'is_active' => true]);
+    Currency::query()->create([
+        'name' => 'Bolivianos',
+        'code' => 'BOB',
+        'symbol' => 'Bs',
+        'exchange_rate_to_bob' => 1,
+        'is_base' => true,
+        'is_active' => true,
+    ]);
+    Product::query()->create([
+        'name' => 'Producto base historial',
+        'sku' => 'HIST-BASE',
+        'barcode' => 'HIST-BASE-BAR',
+        'inventory_tracking_mode' => Product::TRACKING_GLOBAL,
+        'base_unit' => 'unidad',
+        'sale_price' => 10,
+        'minimum_stock_meters' => 0,
+        'is_active' => true,
+    ]);
+
+    app(BusinessProfileDraftHistoryService::class)->ensureActiveSnapshot($active, $user->id);
+
+    $configuration = BusinessProfileConfiguration::normalized([]);
+    $configuration['identity']['commercial_name'] = 'Ferreteria nueva';
+
+    $draft = BusinessProfileDraft::query()->create([
+        'name' => 'Borrador ferreteria nuevo',
+        'business_type' => 'hardware_store',
+        'configuration' => $configuration,
+        'source_profile_id' => $active->id,
+        'created_by' => $user->id,
+        'updated_by' => $user->id,
+    ]);
+
+    $this->actingAs($user)
+        ->from(route('system-superadmin.business-profiles.index'))
+        ->post(route('system-superadmin.business-profiles.drafts.apply', $draft))
+        ->assertRedirect(route('system-superadmin.business-profiles.index'))
+        ->assertSessionHas('success');
+
+    $history = BusinessProfileDraft::query()
+        ->where('source_profile_id', $active->id)
+        ->where('status', BusinessProfileDraftHistoryService::STATUS_HISTORY_SNAPSHOT)
+        ->firstOrFail();
+
+    expect($history->configuration['identity']['commercial_name'])->toBe('Ferreteria anterior')
+        ->and($draft->refresh()->status)->toBe('applied');
+});
+
+it('protege los snapshots automaticos contra edicion y eliminacion directa', function () {
+    $user = businessProfileUser(systemSuperadmin: true);
+    $active = activeBusinessProfile([]);
+    $snapshot = app(BusinessProfileDraftHistoryService::class)->ensureActiveSnapshot($active, $user->id);
+
+    $payload = [
+        'name' => 'Intento editar historial',
+        'business_type' => 'hardware_store',
+        'configuration' => BusinessProfileConfiguration::defaults(),
+    ];
+
+    $this->actingAs($user)
+        ->put(route('system-superadmin.business-profiles.drafts.update', $snapshot), $payload)
+        ->assertStatus(422);
+
+    $this->actingAs($user)
+        ->delete(route('system-superadmin.business-profiles.drafts.destroy', $snapshot))
+        ->assertStatus(422);
+
+    expect(BusinessProfileDraft::query()->whereKey($snapshot->id)->exists())->toBeTrue();
 });
 
 it('bloquea aplicar un borrador si el checklist de activacion tiene pendientes criticos', function () {

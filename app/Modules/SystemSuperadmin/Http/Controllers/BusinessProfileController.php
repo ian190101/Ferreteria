@@ -13,6 +13,7 @@ use App\Modules\SystemSuperadmin\Services\BusinessCapabilityCatalog;
 use App\Modules\SystemSuperadmin\Services\BusinessProfileCompatibilityValidator;
 use App\Modules\SystemSuperadmin\Services\BusinessProfileConfiguration;
 use App\Modules\SystemSuperadmin\Services\BusinessProfileDiffService;
+use App\Modules\SystemSuperadmin\Services\BusinessProfileDraftHistoryService;
 use App\Modules\SystemSuperadmin\Services\BusinessProfileMigrationMapper;
 use App\Modules\SystemSuperadmin\Services\BusinessProfileSandboxService;
 use App\Modules\SystemSuperadmin\Services\BusinessPresetReadinessService;
@@ -34,6 +35,10 @@ class BusinessProfileController extends Controller
             ->latest('applied_at')
             ->first();
         $activeProfile?->setAttribute('configuration', BusinessProfileConfiguration::normalized($activeProfile->configuration ?? []));
+
+        if ($activeProfile) {
+            app(BusinessProfileDraftHistoryService::class)->ensureActiveSnapshot($activeProfile, $request->user()->id);
+        }
 
         $drafts = BusinessProfileDraft::query()
             ->with(['creator:id,name', 'updater:id,name'])
@@ -200,6 +205,12 @@ class BusinessProfileController extends Controller
 
     public function update(Request $request, BusinessProfileDraft $draft): RedirectResponse
     {
+        abort_if(
+            in_array($draft->status, BusinessProfileDraftHistoryService::protectedStatuses(), true),
+            422,
+            'Este registro pertenece al historial automatico. Guarda una copia nueva para editarlo.'
+        );
+
         $data = $this->validatedPayload($request);
 
         $draft->update([
@@ -228,6 +239,12 @@ class BusinessProfileController extends Controller
 
     public function apply(Request $request, BusinessProfileDraft $draft): RedirectResponse
     {
+        abort_if(
+            $draft->status === BusinessProfileDraftHistoryService::STATUS_ACTIVE_SNAPSHOT,
+            422,
+            'Este borrador ya representa el perfil activo actual. Usa otro borrador o una copia historica para aplicar cambios.'
+        );
+
         $this->validateDraftBeforeApply($draft);
 
         DB::transaction(function () use ($request, $draft) {
@@ -238,6 +255,8 @@ class BusinessProfileController extends Controller
                 ->first();
 
             if ($activeProfile) {
+                app(BusinessProfileDraftHistoryService::class)->archiveActiveSnapshot($activeProfile, $request->user()->id);
+
                 BusinessProfileVersion::query()->create([
                     'business_profile_id' => $activeProfile->id,
                     'version_number' => $this->nextVersionNumber(),
@@ -274,9 +293,17 @@ class BusinessProfileController extends Controller
     public function restore(Request $request, BusinessProfileVersion $version): RedirectResponse
     {
         DB::transaction(function () use ($request, $version) {
-            BusinessProfile::query()
+            $activeProfile = BusinessProfile::query()
                 ->where('status', 'active')
-                ->update(['status' => 'archived']);
+                ->lockForUpdate()
+                ->latest('applied_at')
+                ->first();
+
+            if ($activeProfile) {
+                app(BusinessProfileDraftHistoryService::class)->archiveActiveSnapshot($activeProfile, $request->user()->id);
+
+                $activeProfile->update(['status' => 'archived']);
+            }
 
             BusinessProfile::query()->create([
                 'name' => $version->name,
@@ -296,6 +323,11 @@ class BusinessProfileController extends Controller
     public function destroy(BusinessProfileDraft $draft): RedirectResponse
     {
         abort_if($draft->status === 'applied', 422, 'No se puede eliminar un borrador ya aplicado.');
+        abort_if(
+            in_array($draft->status, BusinessProfileDraftHistoryService::protectedStatuses(), true),
+            422,
+            'No se puede eliminar un registro del historial automatico de perfiles.'
+        );
 
         $draft->delete();
 

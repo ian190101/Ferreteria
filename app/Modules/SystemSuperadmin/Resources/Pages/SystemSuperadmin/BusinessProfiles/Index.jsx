@@ -24,10 +24,18 @@ const configSteps = [
     ['modules', 'Modulos'],
     ['summary', 'Resumen final'],
 ];
+const protectedDraftStatuses = ['active_snapshot', 'history_snapshot'];
+const draftStatusLabels = {
+    draft: 'Borrador editable',
+    applied: 'Borrador aplicado',
+    active_snapshot: 'Perfil activo guardado',
+    history_snapshot: 'Historial automatico',
+};
 
 export default function Index({ activeProfile, drafts, versions, presets = [], presetReadiness = {}, options, defaultConfiguration, sandboxSession = null, capabilitiesCatalog = {}, capabilitiesMatrix = {}, activePreflight = null, draftPreflights = {}, profilePreview = null }) {
     const [selectedDraftId, setSelectedDraftId] = useState(drafts[0]?.id ?? null);
     const selectedDraft = drafts.find((draft) => draft.id === selectedDraftId) ?? null;
+    const selectedDraftIsProtected = selectedDraft ? protectedDraftStatuses.includes(selectedDraft.status) : false;
     const selectedDraftPreflight = selectedDraft ? draftPreflights?.[selectedDraft.id] ?? null : activePreflight;
     const baseConfiguration = selectedDraft?.configuration ?? activeProfile?.configuration ?? defaultConfiguration;
     const form = useForm({
@@ -92,7 +100,7 @@ export default function Index({ activeProfile, drafts, versions, presets = [], p
     const saveDraft = (event) => {
         event.preventDefault();
 
-        if (selectedDraft) {
+        if (selectedDraft && !selectedDraftIsProtected) {
             form.put(route('system-superadmin.business-profiles.drafts.update', selectedDraft.id), { preserveScroll: true });
             return;
         }
@@ -642,7 +650,7 @@ export default function Index({ activeProfile, drafts, versions, presets = [], p
 
                                 <div className="flex flex-wrap gap-3">
                                     <button type="submit" disabled={form.processing} className="rounded-full bg-brand-primary px-5 py-2.5 text-sm font-semibold text-white shadow-sm shadow-brand-primary/25 disabled:opacity-60">
-                                        {selectedDraft ? 'Actualizar borrador' : 'Guardar borrador'}
+                                        {selectedDraftIsProtected ? 'Guardar copia como borrador' : selectedDraft ? 'Actualizar borrador' : 'Guardar borrador'}
                                     </button>
                                     <button type="button" onClick={savePreset} disabled={form.processing} className="rounded-full border border-brand-primary px-5 py-2.5 text-sm font-semibold text-brand-primary disabled:opacity-60">
                                         Guardar como preset
@@ -688,10 +696,19 @@ export default function Index({ activeProfile, drafts, versions, presets = [], p
                         <Card title="Borradores">
                             <div className="space-y-2">
                                 {drafts.length === 0 ? <p className="text-sm text-slate-500">No hay borradores.</p> : null}
-                                {drafts.map((draft) => (
+                                {drafts.map((draft) => {
+                                    const isProtectedDraft = protectedDraftStatuses.includes(draft.status);
+                                    const isActiveSnapshot = draft.status === 'active_snapshot';
+
+                                    return (
                                     <div key={draft.id} className={`rounded-2xl border p-3 ${selectedDraftId === draft.id ? 'border-brand-primary bg-brand-primary/5' : 'border-slate-200 dark:border-slate-800'}`}>
                                         <button type="button" onClick={() => loadDraft(draft)} className="text-left text-sm font-semibold text-slate-900 hover:text-brand-primary dark:text-white">{draft.name}</button>
-                                        <p className="text-xs text-slate-500">{options.businessTypes[draft.business_type] ?? draft.business_type} - {draft.status}</p>
+                                        <p className="text-xs text-slate-500">{options.businessTypes[draft.business_type] ?? draft.business_type} - {draftStatusLabels[draft.status] ?? draft.status}</p>
+                                        {isProtectedDraft ? (
+                                            <p className="mt-1 rounded-xl bg-sky-50 px-3 py-2 text-xs leading-5 text-sky-800 dark:bg-sky-500/10 dark:text-sky-100">
+                                                {isActiveSnapshot ? 'Copia automatica del perfil activo actual. Puedes usarla como borrador temporal o base para crear una copia editable.' : 'Copia automatica de un perfil anterior. Puedes usarla para revisar o restaurar ese comportamiento.'}
+                                            </p>
+                                        ) : null}
                                         <DraftPreflightBadge preflight={draftPreflights?.[draft.id]} />
                                         <div className="mt-3 flex flex-wrap gap-2">
                                             <button type="button" onClick={() => router.post(route('system-superadmin.business-profiles.drafts.use-preview', draft.id), {}, { preserveScroll: true })} className={`rounded-full px-3 py-1.5 text-xs font-semibold ${profilePreview?.draft_id === draft.id ? 'bg-brand-primary text-white' : 'border border-brand-primary text-brand-primary'}`} title="Hace que tu sesion use este borrador fuera de la demo sin aplicarlo a produccion.">
@@ -700,24 +717,25 @@ export default function Index({ activeProfile, drafts, versions, presets = [], p
                                             <button type="button" onClick={() => previewDraft(draft)} className="rounded-full border border-brand-primary px-3 py-1.5 text-xs font-semibold text-brand-primary" title="Carga este borrador en el editor y abre la demo rapida sin tocar produccion.">
                                                 Usar en demo
                                             </button>
-                                            {draft.status !== 'applied' ? (
+                                            {draft.status !== 'applied' && !isActiveSnapshot ? (
                                                 <button type="button" onClick={() => router.post(route('system-superadmin.business-profiles.drafts.apply', draft.id), {}, { preserveScroll: true })} className="rounded-full bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white" title="Aplica la ultima version guardada de este borrador.">
                                                     Aplicar
                                                 </button>
                                             ) : null}
-                                            {draft.status !== 'applied' ? (
+                                            {draft.status !== 'applied' && !isProtectedDraft ? (
                                                 <button type="button" onClick={() => router.delete(route('system-superadmin.business-profiles.drafts.destroy', draft.id), { preserveScroll: true })} className="rounded-full border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-600">
                                                     Descartar
                                                 </button>
                                             ) : null}
                                         </div>
-                                        {selectedDraftId === draft.id && draft.status !== 'applied' ? (
+                                        {selectedDraftId === draft.id && draft.status !== 'applied' && !isProtectedDraft ? (
                                             <p className="mt-2 text-xs text-amber-600 dark:text-amber-300">
                                                 Si cambiaste algo en pantalla, primero presiona Actualizar borrador antes de aplicar.
                                             </p>
                                         ) : null}
                                     </div>
-                                ))}
+                                    );
+                                })}
                             </div>
                         </Card>
                     </aside>
