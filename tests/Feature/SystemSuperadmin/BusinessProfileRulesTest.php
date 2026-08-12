@@ -344,6 +344,43 @@ it('permite guardar borradores para demo aunque aun no sean aplicables a producc
         ->assertSessionHasErrors('configuration');
 });
 
+it('permite usar un borrador como perfil temporal sin aplicarlo a produccion', function () {
+    $user = businessProfileUser(systemSuperadmin: true);
+    $active = activeBusinessProfile([]);
+    $configuration = BusinessProfileConfiguration::normalized([
+        'identity' => [
+            'commercial_name' => 'Restaurante temporal',
+        ],
+        'modules' => [
+            'restaurant_tables' => true,
+            'kitchen_orders' => true,
+        ],
+    ]);
+
+    $draft = BusinessProfileDraft::query()->create([
+        'name' => 'Borrador restaurante temporal',
+        'business_type' => 'restaurant',
+        'configuration' => $configuration,
+        'source_profile_id' => $active->id,
+        'created_by' => $user->id,
+        'updated_by' => $user->id,
+    ]);
+
+    $this->actingAs($user)
+        ->post(route('system-superadmin.business-profiles.drafts.use-preview', $draft))
+        ->assertRedirect()
+        ->assertSessionHas('business_profile_preview_draft_id', $draft->id);
+
+    expect(BusinessProfile::query()->where('status', 'active')->latest('applied_at')->first()?->id)->toBe($active->id)
+        ->and(BusinessProfileDraft::query()->find($draft->id)?->status)->not->toBe('applied')
+        ->and(ActiveBusinessProfile::draftPayload($draft)['commercialName'])->toBe('Restaurante temporal');
+
+    $this->actingAs($user)
+        ->delete(route('system-superadmin.business-profiles.draft-preview.stop'))
+        ->assertRedirect()
+        ->assertSessionMissing('business_profile_preview_draft_id');
+});
+
 it('bloquea aplicar un borrador si el checklist de activacion tiene pendientes criticos', function () {
     $user = businessProfileUser(systemSuperadmin: true);
     $active = activeBusinessProfile([]);

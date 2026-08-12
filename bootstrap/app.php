@@ -4,6 +4,7 @@ use App\Http\Middleware\EnsureBusinessFeatureEnabled;
 use App\Http\Middleware\EnsureBusinessCapabilityEnabled;
 use App\Http\Middleware\EnsurePasswordWasChanged;
 use App\Http\Middleware\EnsureSystemSuperadmin;
+use App\Http\Middleware\BusinessProfilePreviewContext;
 use App\Http\Middleware\ForceHttpsForProxy;
 use App\Http\Middleware\HandleInertiaRequests;
 use App\Http\Middleware\SandboxContext;
@@ -70,6 +71,7 @@ return Application::configure(basePath: dirname(__DIR__))
 
         $middleware->web(append: [
             SecurityHeaders::class,
+            BusinessProfilePreviewContext::class,
             SandboxContext::class,
             HandleInertiaRequests::class,
             EnsurePasswordWasChanged::class,

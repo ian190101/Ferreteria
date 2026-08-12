@@ -130,6 +130,14 @@ export default function AuthenticatedLayout({ header, children, businessNamePrev
                         </div>
                     </div>
                 ) : null}
+                {!sandboxMode?.active && businessProfile?.preview?.active ? (
+                    <div className="sticky top-0 z-50 flex flex-wrap items-center justify-between gap-3 border-b border-sky-300 bg-sky-100 px-4 py-2 text-sm font-semibold text-sky-950 shadow-sm lg:px-8">
+                        <span>Usando borrador temporal: {businessProfile.preview.name}. Solo afecta tu sesion de sistemasuperadmin.</span>
+                        <Link href={route('system-superadmin.business-profiles.draft-preview.stop')} method="delete" as="button" className="rounded-full bg-white px-3 py-1 text-xs text-sky-900 shadow-sm">
+                            Volver al perfil activo
+                        </Link>
+                    </div>
+                ) : null}
                 <header className="sticky top-0 z-30 border-b border-white/60 bg-slate-50/78 backdrop-blur-2xl dark:border-white/10 dark:bg-slate-950/72">
                     <div className="flex min-h-16 flex-wrap items-center justify-between gap-2 px-3 py-2 sm:flex-nowrap sm:gap-4 sm:px-6 sm:py-0 lg:px-8">
                         <div className="flex min-w-0 flex-1 items-center gap-3">

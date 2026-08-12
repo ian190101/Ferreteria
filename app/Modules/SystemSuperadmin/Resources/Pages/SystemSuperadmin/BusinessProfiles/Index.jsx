@@ -25,7 +25,7 @@ const configSteps = [
     ['summary', 'Resumen final'],
 ];
 
-export default function Index({ activeProfile, drafts, versions, presets = [], presetReadiness = {}, options, defaultConfiguration, sandboxSession = null, capabilitiesCatalog = {}, capabilitiesMatrix = {}, activePreflight = null, draftPreflights = {} }) {
+export default function Index({ activeProfile, drafts, versions, presets = [], presetReadiness = {}, options, defaultConfiguration, sandboxSession = null, capabilitiesCatalog = {}, capabilitiesMatrix = {}, activePreflight = null, draftPreflights = {}, profilePreview = null }) {
     const [selectedDraftId, setSelectedDraftId] = useState(drafts[0]?.id ?? null);
     const selectedDraft = drafts.find((draft) => draft.id === selectedDraftId) ?? null;
     const selectedDraftPreflight = selectedDraft ? draftPreflights?.[selectedDraft.id] ?? null : activePreflight;
@@ -655,6 +655,15 @@ export default function Index({ activeProfile, drafts, versions, presets = [], p
                             <p className="text-lg font-semibold text-slate-950 dark:text-white">{activeProfile?.name ?? 'Sin perfil activo'}</p>
                             <p className="text-sm text-slate-500 dark:text-slate-400">{options.businessTypes[activeProfile?.business_type] ?? activeProfile?.business_type}</p>
                             <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">Aplicado: {activeProfile?.applied_at ? new Date(activeProfile.applied_at).toLocaleString('es-BO') : '-'}</p>
+                            {profilePreview?.active ? (
+                                <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-100">
+                                    <p className="font-semibold">Usando borrador temporal</p>
+                                    <p className="mt-1">{profilePreview.name}</p>
+                                    <button type="button" onClick={() => router.delete(route('system-superadmin.business-profiles.draft-preview.stop'), { preserveScroll: true })} className="mt-3 rounded-full bg-white px-3 py-1.5 text-xs font-semibold text-amber-800 dark:bg-white/10 dark:text-amber-100">
+                                        Volver al perfil activo
+                                    </button>
+                                </div>
+                            ) : null}
                             {activeProfile ? (
                                 <button type="button" onClick={previewActiveProfile} className="mt-3 rounded-full border border-brand-primary px-3 py-1.5 text-xs font-semibold text-brand-primary">
                                     Usar activo en demo
@@ -671,6 +680,9 @@ export default function Index({ activeProfile, drafts, versions, presets = [], p
                                         <p className="text-xs text-slate-500">{options.businessTypes[draft.business_type] ?? draft.business_type} - {draft.status}</p>
                                         <DraftPreflightBadge preflight={draftPreflights?.[draft.id]} />
                                         <div className="mt-3 flex flex-wrap gap-2">
+                                            <button type="button" onClick={() => router.post(route('system-superadmin.business-profiles.drafts.use-preview', draft.id), {}, { preserveScroll: true })} className={`rounded-full px-3 py-1.5 text-xs font-semibold ${profilePreview?.draft_id === draft.id ? 'bg-brand-primary text-white' : 'border border-brand-primary text-brand-primary'}`} title="Hace que tu sesion use este borrador fuera de la demo sin aplicarlo a produccion.">
+                                                {profilePreview?.draft_id === draft.id ? 'Borrador en uso' : 'Usar borrador'}
+                                            </button>
                                             <button type="button" onClick={() => previewDraft(draft)} className="rounded-full border border-brand-primary px-3 py-1.5 text-xs font-semibold text-brand-primary" title="Carga este borrador en el editor y abre la demo rapida sin tocar produccion.">
                                                 Usar en demo
                                             </button>

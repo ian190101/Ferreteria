@@ -42,8 +42,10 @@ Route::middleware(['auth', 'verified', 'system_superadmin'])
         Route::get('/', [BusinessProfileController::class, 'index'])->name('index');
         Route::post('/drafts', [BusinessProfileController::class, 'store'])->name('drafts.store');
         Route::put('/drafts/{draft}', [BusinessProfileController::class, 'update'])->name('drafts.update');
+        Route::post('/drafts/{draft}/use-preview', [BusinessProfileController::class, 'useDraftPreview'])->name('drafts.use-preview');
         Route::post('/drafts/{draft}/apply', [BusinessProfileController::class, 'apply'])->name('drafts.apply');
         Route::delete('/drafts/{draft}', [BusinessProfileController::class, 'destroy'])->name('drafts.destroy');
+        Route::delete('/draft-preview', [BusinessProfileController::class, 'stopDraftPreview'])->name('draft-preview.stop');
         Route::post('/presets', [BusinessProfileController::class, 'storePreset'])->name('presets.store');
         Route::post('/presets/{preset}/draft', [BusinessProfileController::class, 'presetToDraft'])->name('presets.draft');
         Route::delete('/presets/{preset}', [BusinessProfileController::class, 'destroyPreset'])->name('presets.destroy');

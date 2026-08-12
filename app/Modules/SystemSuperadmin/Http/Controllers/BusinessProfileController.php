@@ -83,6 +83,7 @@ class BusinessProfileController extends Controller
             'defaultConfiguration' => BusinessProfileConfiguration::defaults(),
             'capabilitiesCatalog' => BusinessCapabilityCatalog::all(),
             'capabilitiesMatrix' => BusinessCapabilityCatalog::matrix(),
+            'profilePreview' => $this->profilePreview($request),
             'sandboxSession' => [
                 'id' => $sandboxSession->id,
                 'name' => $sandboxSession->name,
@@ -209,6 +210,20 @@ class BusinessProfileController extends Controller
         ]);
 
         return back()->with('success', 'Borrador actualizado correctamente. La operacion real no fue afectada.');
+    }
+
+    public function useDraftPreview(Request $request, BusinessProfileDraft $draft): RedirectResponse
+    {
+        $request->session()->put('business_profile_preview_draft_id', $draft->id);
+
+        return back()->with('success', 'El sistema ahora usa este borrador solo en tu sesion. Produccion no fue afectada.');
+    }
+
+    public function stopDraftPreview(Request $request): RedirectResponse
+    {
+        $request->session()->forget('business_profile_preview_draft_id');
+
+        return back()->with('success', 'Volviste a usar el perfil activo de produccion.');
     }
 
     public function apply(Request $request, BusinessProfileDraft $draft): RedirectResponse
@@ -649,6 +664,24 @@ class BusinessProfileController extends Controller
         $data['configuration']['compatibility']['last_checked_at'] = now()->toIso8601String();
 
         return $data;
+    }
+
+    private function profilePreview(Request $request): ?array
+    {
+        $draft = app()->bound('business_profile_preview_draft')
+            ? app('business_profile_preview_draft')
+            : null;
+
+        if (! $draft) {
+            return null;
+        }
+
+        return [
+            'active' => true,
+            'draft_id' => $draft->id,
+            'name' => $draft->name,
+            'business_type' => $draft->business_type,
+        ];
     }
 
     private function nextVersionNumber(): int
