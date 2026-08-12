@@ -104,6 +104,15 @@ it('mantiene bloqueado el chatbot IA por defecto si el perfil no lo activa', fun
         ->assertNotFound();
 });
 
+it('permite a sistemasuperadmin probar el chat IA operativo aunque el perfil no lo active', function () {
+    $user = aiAssistantUser([], true);
+
+    $this->actingAs($user)
+        ->get(route('ai-assistant.index'))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page->component('AiAssistant/Index', false));
+});
+
 it('muestra chat interno y responde usando herramientas seguras del ERP', function () {
     Http::fake([
         'https://ai.test/chat' => Http::response(['answer' => null], 200),

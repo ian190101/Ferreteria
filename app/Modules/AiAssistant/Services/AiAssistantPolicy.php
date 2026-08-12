@@ -4,6 +4,7 @@ namespace App\Modules\AiAssistant\Services;
 
 use App\Models\User;
 use App\Modules\SystemSuperadmin\Services\ActiveBusinessProfile;
+use App\Support\SystemRoles;
 
 class AiAssistantPolicy
 {
@@ -34,6 +35,10 @@ class AiAssistantPolicy
 
     public function ensureInternalChat(User $user): void
     {
+        if ($user->hasRole(SystemRoles::SYSTEM_SUPERADMIN)) {
+            return;
+        }
+
         abort_unless($this->internalChatEnabled(), 404);
         abort_unless($user->can('ai-assistant.view') && $user->can('ai-assistant.chat'), 403);
     }

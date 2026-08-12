@@ -296,8 +296,8 @@ function Icon({ path }) {
 function buildNavigation(permissions, isSystemSuperadmin = false, modules = {}, capabilities = {}, sandboxActive = false) {
     const can = (permission) => permissions.includes(permission);
     const effectiveSystemSuperadmin = isSystemSuperadmin && !sandboxActive;
-    const moduleEnabled = (module) => modules[module] === true;
-    const capabilityEnabled = (capability) => capabilities[capability] === true;
+    const moduleEnabled = (module) => effectiveSystemSuperadmin || modules[module] === true;
+    const capabilityEnabled = (capability) => effectiveSystemSuperadmin || capabilities[capability] === true;
     const canShowSystemMaster = effectiveSystemSuperadmin;
     const item = (condition, section, label, href, active, icon) => condition ? { section, label, href, active, icon } : null;
 
