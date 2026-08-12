@@ -4,6 +4,7 @@ namespace App\Modules\AiAssistant\Http\Controllers;
 
 use App\Http\Controllers\Controller;
 use App\Modules\AiAssistant\Models\AiAssistantApiClient;
+use App\Modules\AiAssistant\Models\AiAssistantApiLog;
 use App\Modules\AiAssistant\Models\AiAssistantChannel;
 use App\Modules\AiAssistant\Services\AiAssistantFastApiClient;
 use App\Modules\AiAssistant\Services\AiAssistantKnowledgeIndexService;
@@ -39,6 +40,11 @@ class AiAssistantSettingsController extends Controller
                 ->with(['branch:id,name', 'user:id,name'])
                 ->latest()
                 ->get(['id', 'branch_id', 'user_id', 'name', 'scopes', 'status', 'rate_limit_per_minute', 'last_used_at', 'created_at']),
+            'apiLogs' => AiAssistantApiLog::query()
+                ->with('client:id,name')
+                ->latest()
+                ->limit(40)
+                ->get(['id', 'ai_assistant_api_client_id', 'endpoint', 'scope', 'status', 'http_status', 'created_at']),
             'providers' => [
                 AiAssistantChannel::PROVIDER_INTERNAL => 'Interfaz ERP',
                 AiAssistantChannel::PROVIDER_TELEGRAM => 'Telegram',
@@ -104,6 +110,15 @@ class AiAssistantSettingsController extends Controller
         return redirect()
             ->route('ai-assistant.settings.index')
             ->with('success', 'Cliente API creado. Token: '.$token.' Guardalo ahora porque no se volvera a mostrar.');
+    }
+
+    public function revokeApiClient(AiAssistantApiClient $client): RedirectResponse
+    {
+        $client->update(['status' => 'revoked']);
+
+        return redirect()
+            ->route('ai-assistant.settings.index')
+            ->with('success', 'Cliente API revocado correctamente.');
     }
 
     public function health(AiAssistantFastApiClient $client): RedirectResponse

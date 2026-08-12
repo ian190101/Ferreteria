@@ -102,7 +102,18 @@ class AppServiceProvider extends ServiceProvider
         });
 
         RateLimiter::for('ai-assistant-webhook', fn (Request $request) => Limit::perMinute(30)->by($request->ip()));
-        RateLimiter::for('ai-assistant-external', fn (Request $request) => Limit::perMinute(60)->by($request->bearerToken() ?: $request->ip()));
+        RateLimiter::for('ai-assistant-external', function (Request $request) {
+            $token = (string) $request->bearerToken();
+            $client = $token !== ''
+                ? \App\Modules\AiAssistant\Models\AiAssistantApiClient::query()
+                    ->where('token_hash', hash('sha256', $token))
+                    ->where('status', 'active')
+                    ->first()
+                : null;
+
+            return Limit::perMinute((int) ($client?->rate_limit_per_minute ?? 60))
+                ->by($client?->id ? 'client:'.$client->id : 'ip:'.$request->ip());
+        });
     }
 
     private function registerDomainEvents(): void

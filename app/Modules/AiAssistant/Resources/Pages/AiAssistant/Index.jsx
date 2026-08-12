@@ -1,8 +1,8 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import ModuleHeader from '../../../../Shared/Resources/Components/ModuleHeader';
-import { Head, useForm } from '@inertiajs/react';
+import { Head, router, useForm } from '@inertiajs/react';
 
-export default function Index({ conversations = [], voiceEnabled = false, limits = {} }) {
+export default function Index({ conversations = [], pendingActions = [], voiceEnabled = false, limits = {} }) {
     const form = useForm({
         conversation_id: conversations[0]?.id ?? '',
         message: '',
@@ -58,6 +58,24 @@ export default function Index({ conversations = [], voiceEnabled = false, limits
 
                     <div className="rounded-lg border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
                         <div className="min-h-[420px] space-y-3 border-b border-slate-200 p-5 dark:border-slate-800">
+                            {pendingActions.length > 0 && (
+                                <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-100">
+                                    <p className="font-semibold">Acciones pendientes de confirmacion</p>
+                                    <div className="mt-3 space-y-2">
+                                        {pendingActions.map((action) => (
+                                            <div key={action.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md bg-white/70 p-2 dark:bg-slate-900/60">
+                                                <span>{action.tool} - {action.status}</span>
+                                                <div className="flex gap-2">
+                                                    {action.status === 'pending_confirmation' && (
+                                                        <button type="button" onClick={() => router.post(route('ai-assistant.actions.confirm', action.id))} className="rounded-md bg-brand-primary px-3 py-1 text-xs font-semibold text-white">Confirmar</button>
+                                                    )}
+                                                    <button type="button" onClick={() => router.post(route('ai-assistant.actions.cancel', action.id))} className="rounded-md border border-amber-300 px-3 py-1 text-xs font-semibold text-amber-900 dark:text-amber-100">Cancelar</button>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
                             {messages.length === 0 ? (
                                 <div className="rounded-lg border border-dashed border-slate-300 p-6 text-sm text-slate-500 dark:border-slate-700">
                                     Escribe una pregunta como: cuanto vendi este mes, que stock tengo o busca producto calamina.
@@ -74,6 +92,14 @@ export default function Index({ conversations = [], voiceEnabled = false, limits
                                             {message.role === 'assistant' ? 'Bot' : 'Usuario'}
                                         </div>
                                         <p className="whitespace-pre-wrap">{message.content}</p>
+                                        {message.metadata?.tool_result?.path && (
+                                            <a
+                                                href={route('ai-assistant.files.download', message.id)}
+                                                className="mt-3 inline-flex rounded-md border border-current px-3 py-1 text-xs font-semibold"
+                                            >
+                                                Descargar archivo generado
+                                            </a>
+                                        )}
                                     </div>
                                 </div>
                             ))}

@@ -231,7 +231,16 @@ export default function Index({ activeProfile, drafts, versions, presets = [], p
                                     title="Identidad y alcance del negocio"
                                     description="Define el rubro real y que piezas estructurales existen. Estos datos ayudan a que los presets, la demo y las reglas backend se comporten segun el tipo de negocio."
                                 >
-                                    <FormField label="Nombre comercial" name="commercial_name" value={form.data.configuration.identity?.commercial_name ?? ''} onChange={(event) => setConfig('identity', 'commercial_name', event.target.value)} />
+                                    <FormField
+                                        label="Nombre comercial visible"
+                                        name="commercial_name"
+                                        value={form.data.configuration.identity?.commercial_name ?? ''}
+                                        onChange={(event) => setConfig('identity', 'commercial_name', event.target.value)}
+                                        error={form.errors['configuration.identity.commercial_name']}
+                                        helpTitle="Nombre comercial"
+                                        helpTooltip="Este nombre se mostrara en el menu lateral y en las areas visibles del sistema para identificar al negocio. No cambia el tipo de negocio, el NIT, SIAT ni los datos fiscales."
+                                        helpText="Ejemplo: Fabrica de Calaminas Aroma, Ferreteria Central o Restaurante La Esquina. Si lo dejas vacio, el sistema mantiene el nombre por defecto."
+                                    />
                                     <FormField label="Rubro especifico" name="specific_industry" value={form.data.configuration.identity?.specific_industry ?? ''} onChange={(event) => setConfig('identity', 'specific_industry', event.target.value)} helpTooltip="Ejemplo: ferreteria industrial, restaurante parrillero, taller de motos, alquiler de equipos." />
                                     <SelectField label="Contabilidad base" name="accounting_mode" value={form.data.configuration.finance?.accounting_mode ?? 'cash_and_banks'} onChange={(event) => setConfig('finance', 'accounting_mode', event.target.value)} helpTooltip="Define si el negocio solo usara caja/bancos o tambien cuentas por cobrar, pagar y centros de costo.">
                                         {Object.entries(options.accountingModes ?? {}).map(([value, label]) => <option key={value} value={value}>{label}</option>)}

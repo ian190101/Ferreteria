@@ -11,6 +11,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Storage;
 
 class AiAssistantWebhookController extends Controller
 {
@@ -20,6 +21,8 @@ class AiAssistantWebhookController extends Controller
         $this->ensureWebhookSecret($request, $channel);
 
         $payload = $request->all();
+        $voiceFileId = (string) data_get($payload, 'message.voice.file_id', '');
+        $audioPath = $voiceFileId !== '' ? $this->downloadTelegramVoice($channel, $voiceFileId) : null;
         $message = data_get($payload, 'message.text')
             ?? data_get($payload, 'edited_message.text')
             ?? data_get($payload, 'message.caption')
@@ -27,7 +30,7 @@ class AiAssistantWebhookController extends Controller
         $externalRef = (string) (data_get($payload, 'message.from.id') ?? data_get($payload, 'edited_message.from.id') ?? data_get($payload, 'message.chat.id') ?? 'telegram-unknown');
         $user = $this->operatingUser($channel);
 
-        $result = $chat->sendExternal($user, $channel, $externalRef, (string) $message, filled(data_get($payload, 'message.voice')) ? 'audio' : 'text');
+        $result = $chat->sendExternal($user, $channel, $externalRef, (string) $message, $audioPath !== null ? 'audio' : 'text', $audioPath);
         $this->sendTelegramReply($channel, (string) data_get($payload, 'message.chat.id'), $result['answer']);
 
         return response()->json([
@@ -131,6 +134,36 @@ class AiAssistantWebhookController extends Controller
             ]);
         } catch (ConnectionException) {
             // El webhook ya quedo registrado; no se debe romper por una falla temporal de Telegram.
+        }
+    }
+
+    private function downloadTelegramVoice(AiAssistantChannel $channel, string $fileId): ?string
+    {
+        $token = (string) data_get($this->credentials($channel), 'bot_token', '');
+        if ($token === '') {
+            return null;
+        }
+
+        try {
+            $fileResponse = Http::timeout(5)->get("https://api.telegram.org/bot{$token}/getFile", [
+                'file_id' => $fileId,
+            ]);
+            $filePath = (string) data_get($fileResponse->json(), 'result.file_path', '');
+            if ($filePath === '') {
+                return null;
+            }
+
+            $download = Http::timeout(10)->get("https://api.telegram.org/file/bot{$token}/{$filePath}");
+            if (! $download->successful()) {
+                return null;
+            }
+
+            $localPath = 'ai-assistant/audio/telegram-'.sha1($fileId.now()->timestamp).'.oga';
+            Storage::disk('local')->put($localPath, $download->body());
+
+            return $localPath;
+        } catch (ConnectionException) {
+            return null;
         }
     }
 

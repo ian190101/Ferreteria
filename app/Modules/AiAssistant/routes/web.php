@@ -12,6 +12,9 @@ Route::middleware(['auth', 'verified', 'business_feature:ai_assistant', 'busines
     ->group(function () {
         Route::get('/', [AiAssistantController::class, 'index'])->name('index');
         Route::post('/send', [AiAssistantController::class, 'send'])->middleware('permission:ai-assistant.chat')->name('send');
+        Route::get('/files/{message}', [AiAssistantController::class, 'download'])->middleware('permission:ai-assistant.chat')->name('files.download');
+        Route::post('/actions/{toolRun}/confirm', [AiAssistantController::class, 'confirm'])->middleware('permission:ai-assistant.actions.approve')->name('actions.confirm');
+        Route::post('/actions/{toolRun}/cancel', [AiAssistantController::class, 'cancel'])->middleware('permission:ai-assistant.chat')->name('actions.cancel');
     });
 
 Route::middleware(['auth', 'verified', 'system_superadmin'])
@@ -21,6 +24,7 @@ Route::middleware(['auth', 'verified', 'system_superadmin'])
         Route::get('/', [AiAssistantSettingsController::class, 'index'])->name('index');
         Route::post('/channels', [AiAssistantSettingsController::class, 'storeChannel'])->middleware('permission:ai-assistant.credentials.manage')->name('channels.store');
         Route::post('/api-clients', [AiAssistantSettingsController::class, 'storeApiClient'])->middleware('permission:ai-assistant.external-api.manage')->name('api-clients.store');
+        Route::patch('/api-clients/{client}/revoke', [AiAssistantSettingsController::class, 'revokeApiClient'])->middleware('permission:ai-assistant.external-api.manage')->name('api-clients.revoke');
         Route::post('/health', [AiAssistantSettingsController::class, 'health'])->middleware('permission:ai-assistant.manage')->name('health');
         Route::post('/knowledge/index', [AiAssistantSettingsController::class, 'indexKnowledge'])->middleware('permission:ai-assistant.manage')->name('knowledge.index');
     });

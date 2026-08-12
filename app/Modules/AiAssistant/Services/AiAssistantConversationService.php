@@ -14,6 +14,7 @@ class AiAssistantConversationService
     public function __construct(
         private readonly AiAssistantFastApiClient $fastApi,
         private readonly AiAssistantToolRegistry $tools,
+        private readonly AiAssistantPromptGuard $promptGuard,
     ) {}
 
     public function sendInternal(User $user, string $message, ?AiAssistantConversation $conversation = null, string $messageType = 'text', ?string $audioPath = null): array
@@ -64,6 +65,34 @@ class AiAssistantConversationService
             'audio_path' => $audioPath,
         ]);
 
+        if ($blocked = $this->promptGuard->inspect($message)) {
+            $assistantMessage = AiAssistantMessage::query()->create([
+                'ai_assistant_conversation_id' => $conversation->id,
+                'role' => AiAssistantMessage::ROLE_ASSISTANT,
+                'message_type' => 'text',
+                'content' => $blocked['message'],
+                'metadata' => [
+                    'intent' => 'blocked',
+                    'tool_status' => 'blocked',
+                    'security' => $blocked,
+                ],
+            ]);
+
+            $conversation->update([
+                'last_intent' => 'blocked',
+                'last_message_at' => now(),
+            ]);
+
+            return [
+                'conversation' => $conversation->fresh(['messages' => fn ($query) => $query->latest()->limit(20)]),
+                'message' => $assistantMessage,
+                'answer' => $blocked['message'],
+                'intent' => 'blocked',
+                'tool_result' => $blocked,
+                'fastapi' => ['ok' => false, 'blocked' => true],
+            ];
+        }
+
         if ($messageType === 'audio' && $audioPath !== null) {
             $transcription = $this->fastApi->transcribe($audioPath);
             if (($transcription['ok'] ?? false) && filled($transcription['text'] ?? null)) {
@@ -92,10 +121,12 @@ class AiAssistantConversationService
                 ]);
 
                 $toolResult = $this->tools->run($user, $intent, ['message' => $message]);
-                $toolStatus = 'completed';
+                $toolStatus = ($toolResult['status'] ?? null) === 'requires_confirmation'
+                    ? 'pending_confirmation'
+                    : 'completed';
 
                 $toolRun->update([
-                    'status' => 'completed',
+                    'status' => $toolStatus,
                     'output' => $toolResult,
                     'finished_at' => now(),
                 ]);
@@ -146,6 +177,10 @@ class AiAssistantConversationService
     {
         if (($aiResponse['ok'] ?? false) && filled($aiResponse['answer'] ?? null)) {
             return (string) $aiResponse['answer'];
+        }
+
+        if ($toolStatus === 'pending_confirmation' && $toolResult !== null) {
+            return (string) ($toolResult['message'] ?? 'La accion quedo pendiente de confirmacion por un usuario autorizado.');
         }
 
         if ($toolStatus !== 'completed' || $toolResult === null) {

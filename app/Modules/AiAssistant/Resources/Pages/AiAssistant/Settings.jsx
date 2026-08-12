@@ -2,9 +2,9 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import FormField from '../../../../Shared/Resources/Components/FormField';
 import ModuleHeader from '../../../../Shared/Resources/Components/ModuleHeader';
 import SelectField from '../../../../Shared/Resources/Components/SelectField';
-import { Head, useForm } from '@inertiajs/react';
+import { Head, router, useForm } from '@inertiajs/react';
 
-export default function Settings({ channels = [], apiClients = [], providers = {}, scopes = [], modelModes = [] }) {
+export default function Settings({ channels = [], apiClients = [], apiLogs = [], providers = {}, scopes = [], modelModes = [] }) {
     const channelForm = useForm({
         provider: 'telegram',
         name: '',
@@ -100,7 +100,11 @@ export default function Settings({ channels = [], apiClients = [], providers = {
 
                 <div className="mt-6 grid gap-6 xl:grid-cols-2">
                     <Listing title="Canales configurados" rows={channels} />
-                    <Listing title="Clientes API" rows={apiClients} />
+                    <ApiClients rows={apiClients} />
+                </div>
+
+                <div className="mt-6">
+                    <ApiLogs rows={apiLogs} />
                 </div>
             </section>
         </AuthenticatedLayout>
@@ -141,6 +145,70 @@ function Listing({ title, rows }) {
                         <div className="text-xs text-slate-400">{Array.isArray(row.scopes) ? row.scopes.join(', ') : (row.allowed_scopes ?? []).join(', ')}</div>
                     </div>
                 ))}
+            </div>
+        </div>
+    );
+}
+
+function ApiClients({ rows }) {
+    return (
+        <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+            <h3 className="text-lg font-semibold">Clientes API</h3>
+            <div className="mt-4 space-y-3">
+                {rows.length === 0 ? <p className="text-sm text-slate-500">Sin registros.</p> : rows.map((row) => (
+                    <div key={row.id} className="rounded-md border border-slate-100 p-3 text-sm dark:border-slate-800">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div>
+                                <div className="font-semibold">{row.name}</div>
+                                <div className="text-slate-500">api - {row.status}</div>
+                                <div className="text-xs text-slate-400">{(row.scopes ?? []).join(', ')}</div>
+                            </div>
+                            {row.status === 'active' && (
+                                <button
+                                    type="button"
+                                    onClick={() => router.patch(route('ai-assistant.settings.api-clients.revoke', row.id))}
+                                    className="rounded-md border border-rose-300 px-3 py-1 text-xs font-semibold text-rose-700"
+                                >
+                                    Revocar
+                                </button>
+                            )}
+                        </div>
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
+}
+
+function ApiLogs({ rows }) {
+    return (
+        <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+            <h3 className="text-lg font-semibold">Logs API recientes</h3>
+            <div className="mt-4 overflow-x-auto">
+                <table className="min-w-full text-left text-sm">
+                    <thead className="text-xs uppercase tracking-[0.16em] text-slate-500">
+                        <tr>
+                            <th className="px-3 py-2">Cliente</th>
+                            <th className="px-3 py-2">Endpoint</th>
+                            <th className="px-3 py-2">Scope</th>
+                            <th className="px-3 py-2">Estado</th>
+                            <th className="px-3 py-2">Fecha</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {rows.length === 0 ? (
+                            <tr><td className="px-3 py-4 text-slate-500" colSpan="5">Sin logs.</td></tr>
+                        ) : rows.map((row) => (
+                            <tr key={row.id} className="border-t border-slate-100 dark:border-slate-800">
+                                <td className="px-3 py-2">{row.client?.name ?? 'Sin cliente'}</td>
+                                <td className="px-3 py-2">{row.endpoint}</td>
+                                <td className="px-3 py-2">{row.scope ?? '-'}</td>
+                                <td className="px-3 py-2">{row.status} {row.http_status}</td>
+                                <td className="px-3 py-2">{row.created_at}</td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
             </div>
         </div>
     );

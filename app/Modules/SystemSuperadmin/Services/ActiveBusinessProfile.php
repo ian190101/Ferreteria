@@ -22,6 +22,7 @@ class ActiveBusinessProfile
             return [
                 'id' => $profile?->id,
                 'name' => $profile?->name ?? 'Ferreteria con cotizacion y nota de venta',
+                'commercialName' => $configuration['identity']['commercial_name'] ?: ($profile?->name ?? 'Fabrica de Calaminas'),
                 'businessType' => $profile?->business_type ?? 'hardware_store',
                 'status' => $profile?->status ?? 'active',
                 'configuration' => $configuration,
@@ -80,8 +81,10 @@ class ActiveBusinessProfile
         return [
             'id' => $payload['id'] ?? null,
             'name' => $payload['name'] ?? 'Ferreteria con cotizacion y nota de venta',
+            'commercialName' => $payload['commercialName'] ?? ($payload['identity']['commercial_name'] ?? 'Fabrica de Calaminas'),
             'businessType' => $payload['businessType'] ?? 'hardware_store',
             'status' => $payload['status'] ?? 'active',
+            'identity' => $payload['identity'] ?? [],
             'modules' => $payload['modules'] ?? [],
             'capabilities' => $payload['capabilities'] ?? [],
             'featureFlags' => $payload['feature_flags'] ?? [],

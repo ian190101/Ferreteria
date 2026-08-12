@@ -369,10 +369,16 @@ it('aplica un borrador cuando pasa compatibilidad y checklist sin cambiar defaul
         ->assertRedirect(route('system-superadmin.business-profiles.index'))
         ->assertSessionHas('success');
 
-    $applied = BusinessProfile::query()->where('status', 'active')->latest('applied_at')->firstOrFail();
+    $applied = BusinessProfile::query()
+        ->where('status', 'active')
+        ->orderByDesc('applied_at')
+        ->orderByDesc('id')
+        ->firstOrFail();
 
     expect($draft->refresh()->status)->toBe('applied')
         ->and($applied->name)->toBe('Borrador ferreteria valido')
+        ->and($applied->configuration['identity']['commercial_name'])->toBe('Ferreteria QA')
+        ->and(ActiveBusinessProfile::navigationPayload()['commercialName'])->toBe('Ferreteria QA')
         ->and($applied->configuration['sales']['workflow'])->toBe('quotation_to_sale_note')
         ->and($applied->configuration['feature_flags']['dynamic_entities_engine'])->toBeFalse()
         ->and($applied->configuration['capabilities']['uses_dynamic_entities'])->toBeFalse();
