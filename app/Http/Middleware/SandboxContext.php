@@ -2,7 +2,6 @@
 
 namespace App\Http\Middleware;
 
-use App\Modules\SystemSuperadmin\Models\BusinessProfileSandboxSession;
 use App\Modules\SystemSuperadmin\Services\BusinessProfileSandboxService;
 use Closure;
 use Illuminate\Http\Request;
@@ -22,13 +21,8 @@ class SandboxContext
             return $next($request);
         }
 
-        $session = BusinessProfileSandboxSession::query()
-            ->whereKey($sandboxId)
-            ->where('status', 'active')
-            ->where(function ($query) {
-                $query->whereNull('expires_at')->orWhere('expires_at', '>', now());
-            })
-            ->first();
+        $sandboxService = app(BusinessProfileSandboxService::class);
+        $session = $sandboxService->activeSessionById($sandboxId, (int) $request->user()->id);
 
         if (! $session) {
             $request->session()->forget('business_full_sandbox_id');
@@ -36,7 +30,7 @@ class SandboxContext
             return $next($request);
         }
 
-        app(BusinessProfileSandboxService::class)->activateConnection($session);
+        $sandboxService->activateConnection($session);
         app()->instance('business_full_sandbox', $session);
 
         if ($this->isSystemMasterRoute($request)) {

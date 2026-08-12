@@ -18,6 +18,8 @@ use Illuminate\Support\Str;
 
 class BusinessProfileSandboxService
 {
+    private const SESSION_TTL_HOURS = 8;
+
     public function sessionFor(int $userId): BusinessProfileSandboxSession
     {
         $session = BusinessProfileSandboxSession::query()
@@ -30,7 +32,7 @@ class BusinessProfileSandboxService
             ->first();
 
         if ($session) {
-            return $session;
+            return $this->touch($session);
         }
 
         return BusinessProfileSandboxSession::query()->create([
@@ -38,9 +40,37 @@ class BusinessProfileSandboxService
             'name' => 'Demo sandbox',
             'payload' => $this->snapshot(),
             'status' => 'active',
-            'expires_at' => now()->addHours(8),
+            'expires_at' => now()->addHours(self::SESSION_TTL_HOURS),
             'last_activity_at' => now(),
         ]);
+    }
+
+    public function activeSessionById(mixed $sandboxId, int $userId): ?BusinessProfileSandboxSession
+    {
+        if (! filled($sandboxId)) {
+            return null;
+        }
+
+        $session = BusinessProfileSandboxSession::query()
+            ->whereKey($sandboxId)
+            ->where('user_id', $userId)
+            ->where('status', 'active')
+            ->where(function ($query) {
+                $query->whereNull('expires_at')->orWhere('expires_at', '>', now());
+            })
+            ->first();
+
+        return $session ? $this->touch($session) : null;
+    }
+
+    public function touch(BusinessProfileSandboxSession $session): BusinessProfileSandboxSession
+    {
+        $session->update([
+            'expires_at' => now()->addHours(self::SESSION_TTL_HOURS),
+            'last_activity_at' => now(),
+        ]);
+
+        return $session->refresh();
     }
 
     public function replacePayload(BusinessProfileSandboxSession $session, array $payload): BusinessProfileSandboxSession
@@ -50,6 +80,7 @@ class BusinessProfileSandboxService
 
         $session->update([
             'payload' => $payload,
+            'expires_at' => now()->addHours(self::SESSION_TTL_HOURS),
             'last_activity_at' => now(),
         ]);
 
@@ -60,6 +91,7 @@ class BusinessProfileSandboxService
     {
         $session->update([
             'payload' => $this->snapshot(),
+            'expires_at' => now()->addHours(self::SESSION_TTL_HOURS),
             'last_activity_at' => now(),
         ]);
 
@@ -93,6 +125,7 @@ class BusinessProfileSandboxService
 
         $session->update([
             'database_name' => $targetDatabase,
+            'expires_at' => now()->addHours(self::SESSION_TTL_HOURS),
             'last_activity_at' => now(),
         ]);
 

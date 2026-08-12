@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Modules\SystemSuperadmin\Services\BusinessProfileSandboxService;
 use App\Support\SystemRoles;
 use Closure;
 use Illuminate\Http\Request;
@@ -24,7 +25,18 @@ class EnsureSystemSuperadmin
 
     private function isBlockedInsideFullSandbox(Request $request): bool
     {
-        if (! $request->session()->has('business_full_sandbox_id')) {
+        $sandboxId = $request->session()->get('business_full_sandbox_id');
+
+        if (! $sandboxId) {
+            return false;
+        }
+
+        $session = app(BusinessProfileSandboxService::class)
+            ->activeSessionById($sandboxId, (int) $request->user()->id);
+
+        if (! $session) {
+            $request->session()->forget('business_full_sandbox_id');
+
             return false;
         }
 

@@ -473,6 +473,41 @@ it('bloquea el configurador maestro dentro de la demo completa para evitar demos
         ->assertSessionHas('warning', 'El configurador maestro no esta disponible dentro de la demo completa. Sal de la demo para cambiar la configuracion del negocio.');
 });
 
+it('limpia una demo completa expirada y permite volver al configurador maestro', function () {
+    $user = businessProfileUser(systemSuperadmin: true);
+    $expiredSession = BusinessProfileSandboxSession::query()->create([
+        'user_id' => $user->id,
+        'name' => 'Demo completa vencida QA',
+        'payload' => [],
+        'status' => 'active',
+        'expires_at' => now()->subMinute(),
+        'last_activity_at' => now()->subHours(9),
+    ]);
+
+    $this->actingAs($user)
+        ->withSession(['business_full_sandbox_id' => $expiredSession->id])
+        ->get(route('system-superadmin.business-profiles.index'))
+        ->assertOk()
+        ->assertSessionMissing('business_full_sandbox_id');
+});
+
+it('renueva la vigencia de una demo sandbox activa por actividad', function () {
+    $user = businessProfileUser(systemSuperadmin: true);
+    $session = BusinessProfileSandboxSession::query()->create([
+        'user_id' => $user->id,
+        'name' => 'Demo completa activa QA',
+        'payload' => [],
+        'status' => 'active',
+        'expires_at' => now()->addMinutes(10),
+        'last_activity_at' => now()->subHour(),
+    ]);
+
+    $resolved = app(BusinessProfileSandboxService::class)->activeSessionById($session->id, $user->id);
+
+    expect($resolved)->not->toBeNull()
+        ->and($resolved->expires_at->greaterThan(now()->addHours(7)))->toBeTrue();
+});
+
 it('permite crear y visualizar cotizaciones y notas de venta dentro de la demo completa sin generar 404', function () {
     if (DB::getDriverName() !== 'mysql') {
         $this->markTestSkipped('La demo completa requiere MySQL o MariaDB.');
