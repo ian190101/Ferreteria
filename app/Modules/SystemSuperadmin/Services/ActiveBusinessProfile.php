@@ -77,14 +77,15 @@ class ActiveBusinessProfile
     public static function navigationPayload(): array
     {
         $payload = self::payload();
+        $configuration = $payload['configuration'] ?? [];
 
         return [
             'id' => $payload['id'] ?? null,
             'name' => $payload['name'] ?? 'Ferreteria con cotizacion y nota de venta',
-            'commercialName' => $payload['commercialName'] ?? ($payload['identity']['commercial_name'] ?? 'Fabrica de Calaminas'),
+            'commercialName' => $payload['commercialName'] ?? ($configuration['identity']['commercial_name'] ?? 'Fabrica de Calaminas'),
             'businessType' => $payload['businessType'] ?? 'hardware_store',
             'status' => $payload['status'] ?? 'active',
-            'identity' => $payload['identity'] ?? [],
+            'identity' => $configuration['identity'] ?? [],
             'modules' => $payload['modules'] ?? [],
             'capabilities' => $payload['capabilities'] ?? [],
             'featureFlags' => $payload['feature_flags'] ?? [],

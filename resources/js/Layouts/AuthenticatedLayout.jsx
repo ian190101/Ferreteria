@@ -24,7 +24,7 @@ const iconPaths = {
     informacion: 'M11 10h2v7h-2v-7Zm0-3h2v2h-2V7Zm1-5a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm0 18a8 8 0 1 1 0-16 8 8 0 0 1 0 16Z',
 };
 
-export default function AuthenticatedLayout({ header, children }) {
+export default function AuthenticatedLayout({ header, children, businessNamePreview = null }) {
     const { auth, branding, businessProfile, sandboxMode } = usePage().props;
     const user = auth.user;
     const permissions = auth.permissions;
@@ -99,14 +99,14 @@ export default function AuthenticatedLayout({ header, children }) {
     return (
         <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,rgb(var(--color-primary)/0.10),transparent_34rem),linear-gradient(180deg,#f8fafc,#eef2f7)] text-slate-900 dark:bg-[radial-gradient(circle_at_top_left,rgb(var(--color-primary)/0.22),transparent_32rem),linear-gradient(180deg,#020617,#0f172a)] dark:text-slate-100">
             <aside className="app-surface fixed inset-y-0 left-0 z-40 hidden w-72 border-r border-white/60 bg-white/80 shadow-[0_20px_60px_rgb(15_23_42/0.08)] backdrop-blur-2xl dark:border-white/10 dark:bg-slate-950/80 lg:flex lg:flex-col">
-                <SidebarContent navigation={navigation} user={user} branding={branding} businessProfile={businessProfile} sandboxActive={Boolean(sandboxMode?.active)} />
+                <SidebarContent navigation={navigation} user={user} branding={branding} businessProfile={businessProfile} businessNamePreview={businessNamePreview} sandboxActive={Boolean(sandboxMode?.active)} />
             </aside>
 
             {sidebarOpen ? (
                 <div className="fixed inset-0 z-50 lg:hidden">
                     <button aria-label="Cerrar menu" className="absolute inset-0 bg-slate-950/50" type="button" onClick={() => setSidebarOpen(false)} />
                     <aside className="app-surface relative flex h-full w-[min(20rem,86vw)] flex-col border-r border-white/60 bg-white/90 shadow-xl backdrop-blur-2xl dark:border-white/10 dark:bg-slate-950/90">
-                        <SidebarContent navigation={navigation} user={user} branding={branding} businessProfile={businessProfile} sandboxActive={Boolean(sandboxMode?.active)} onNavigate={() => setSidebarOpen(false)} />
+                        <SidebarContent navigation={navigation} user={user} branding={branding} businessProfile={businessProfile} businessNamePreview={businessNamePreview} sandboxActive={Boolean(sandboxMode?.active)} onNavigate={() => setSidebarOpen(false)} />
                     </aside>
                 </div>
             ) : null}
@@ -181,9 +181,12 @@ export default function AuthenticatedLayout({ header, children }) {
     );
 }
 
-function SidebarContent({ navigation, user, branding, businessProfile = {}, sandboxActive = false, onNavigate }) {
+function SidebarContent({ navigation, user, branding, businessProfile = {}, businessNamePreview = null, sandboxActive = false, onNavigate }) {
     const navRef = useRef(null);
-    const displayBusinessName = businessProfile?.commercialName || businessProfile?.identity?.commercial_name || 'Fabrica de Calaminas';
+    const displayBusinessName = String(businessNamePreview ?? '').trim()
+        || businessProfile?.commercialName
+        || businessProfile?.identity?.commercial_name
+        || 'Fabrica de Calaminas';
 
     useEffect(() => {
         const nav = navRef.current;

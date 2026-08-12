@@ -133,7 +133,10 @@ export default function Index({ activeProfile, drafts, versions, presets = [], p
     };
 
     return (
-        <AuthenticatedLayout header={<h2 className="text-xl font-semibold leading-tight text-slate-800 dark:text-slate-200">Configuracion empresarial</h2>}>
+        <AuthenticatedLayout
+            businessNamePreview={form.data.configuration.identity?.commercial_name}
+            header={<h2 className="text-xl font-semibold leading-tight text-slate-800 dark:text-slate-200">Configuracion empresarial</h2>}
+        >
             <Head title="Configuracion empresarial" />
 
             <section className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
@@ -239,7 +242,7 @@ export default function Index({ activeProfile, drafts, versions, presets = [], p
                                         error={form.errors['configuration.identity.commercial_name']}
                                         helpTitle="Nombre comercial"
                                         helpTooltip="Este nombre se mostrara en el menu lateral y en las areas visibles del sistema para identificar al negocio. No cambia el tipo de negocio, el NIT, SIAT ni los datos fiscales."
-                                        helpText="Ejemplo: Fabrica de Calaminas Aroma, Ferreteria Central o Restaurante La Esquina. Si lo dejas vacio, el sistema mantiene el nombre por defecto."
+                                        helpText="Ejemplo: Fabrica de Calaminas Aroma, Ferreteria Central o Restaurante La Esquina. El menu lateral muestra la vista previa al escribir; el cambio queda fijo en todo el sistema al guardar y aplicar el perfil."
                                     />
                                     <FormField label="Rubro especifico" name="specific_industry" value={form.data.configuration.identity?.specific_industry ?? ''} onChange={(event) => setConfig('identity', 'specific_industry', event.target.value)} helpTooltip="Ejemplo: ferreteria industrial, restaurante parrillero, taller de motos, alquiler de equipos." />
                                     <SelectField label="Contabilidad base" name="accounting_mode" value={form.data.configuration.finance?.accounting_mode ?? 'cash_and_banks'} onChange={(event) => setConfig('finance', 'accounting_mode', event.target.value)} helpTooltip="Define si el negocio solo usara caja/bancos o tambien cuentas por cobrar, pagar y centros de costo.">
