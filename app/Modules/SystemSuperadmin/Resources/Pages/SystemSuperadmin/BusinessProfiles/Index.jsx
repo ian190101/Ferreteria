@@ -277,13 +277,17 @@ export default function Index({ activeProfile, drafts, versions, presets = [], p
                                     <SelectField label="Contabilidad base" name="accounting_mode" value={form.data.configuration.finance?.accounting_mode ?? 'cash_and_banks'} onChange={(event) => setConfig('finance', 'accounting_mode', event.target.value)} helpTooltip="Define si el negocio solo usara caja/bancos o tambien cuentas por cobrar, pagar y centros de costo.">
                                         {Object.entries(options.accountingModes ?? {}).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
                                     </SelectField>
-                                    <Toggle label="Usa imagenes en productos" checked={form.data.configuration.identity?.uses_product_images ?? false} onChange={(value) => {
-                                        setConfig('identity', 'uses_product_images', value);
-                                        setConfig('products', 'images_enabled', value);
+                                    <Toggle label="Usa imagenes en productos" checked={form.data.configuration.identity?.uses_product_images ?? form.data.configuration.products?.images_enabled ?? false} onChange={(value) => {
+                                        setConfigPatch({
+                                            identity: { uses_product_images: value },
+                                            products: { images_enabled: value },
+                                        });
                                     }} helpTooltip="Activa imagen principal para catalogos visuales, restaurantes, ropa, tiendas y POS con botones." />
-                                    <Toggle label="Usa variantes" checked={form.data.configuration.identity?.uses_product_variants ?? false} onChange={(value) => {
-                                        setConfig('identity', 'uses_product_variants', value);
-                                        setConfig('products', 'variants_enabled', value);
+                                    <Toggle label="Usa variantes" checked={form.data.configuration.identity?.uses_product_variants ?? form.data.configuration.products?.variants_enabled ?? false} onChange={(value) => {
+                                        setConfigPatch({
+                                            identity: { uses_product_variants: value },
+                                            products: { variants_enabled: value },
+                                        });
                                     }} helpTooltip="Permite manejar talla, color, sabor, presentacion, marca o modelo como variantes comerciales." />
                                     <Toggle label="Usa sucursales" checked={form.data.configuration.identity?.uses_branches ?? true} onChange={(value) => setConfig('identity', 'uses_branches', value)} />
                                     <Toggle label="Usa puntos POS" checked={form.data.configuration.identity?.uses_pos_points ?? true} onChange={(value) => setConfig('identity', 'uses_pos_points', value)} />
@@ -543,9 +547,19 @@ export default function Index({ activeProfile, drafts, versions, presets = [], p
                                         {Object.entries(options.productCreationContexts).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
                                     </SelectField>
                                     <Toggle label="Barcode obligatorio en productos" checked={form.data.configuration.products.barcode_required} onChange={(value) => setConfig('products', 'barcode_required', value)} />
-                                    <Toggle label="Imagen principal en producto" checked={form.data.configuration.products.images_enabled ?? false} onChange={(value) => setConfig('products', 'images_enabled', value)} />
+                                    <Toggle label="Imagen principal en producto" checked={form.data.configuration.products.images_enabled ?? false} onChange={(value) => {
+                                        setConfigPatch({
+                                            identity: { uses_product_images: value },
+                                            products: { images_enabled: value },
+                                        });
+                                    }} />
                                     <Toggle label="Galeria de imagenes" checked={form.data.configuration.products.gallery_enabled ?? false} onChange={(value) => setConfig('products', 'gallery_enabled', value)} />
-                                    <Toggle label="Variantes de producto" checked={form.data.configuration.products.variants_enabled ?? false} onChange={(value) => setConfig('products', 'variants_enabled', value)} />
+                                    <Toggle label="Variantes de producto" checked={form.data.configuration.products.variants_enabled ?? false} onChange={(value) => {
+                                        setConfigPatch({
+                                            identity: { uses_product_variants: value },
+                                            products: { variants_enabled: value },
+                                        });
+                                    }} />
                                     <Toggle label="Campos personalizados en producto" checked={form.data.configuration.products.custom_fields_enabled ?? false} onChange={(value) => setConfig('products', 'custom_fields_enabled', value)} />
                                     <Toggle label="Impresion de etiquetas barcode" checked={form.data.configuration.products.barcode_labels} onChange={(value) => {
                                         setConfig('products', 'barcode_labels', value);
