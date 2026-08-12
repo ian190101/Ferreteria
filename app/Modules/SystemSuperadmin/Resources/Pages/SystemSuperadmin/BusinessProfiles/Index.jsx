@@ -112,6 +112,35 @@ export default function Index({ activeProfile, drafts, versions, presets = [], p
         });
     };
 
+    const previewDraft = (draft) => {
+        loadDraft(draft);
+        setMode('demo');
+    };
+
+    const previewActiveProfile = () => {
+        if (!activeProfile) {
+            return;
+        }
+
+        setSelectedDraftId(null);
+        form.setData({
+            name: activeProfile.name,
+            business_type: activeProfile.business_type,
+            configuration: activeProfile.configuration ?? defaultConfiguration,
+        });
+        setMode('demo');
+    };
+
+    const previewVersion = (version) => {
+        setSelectedDraftId(null);
+        form.setData({
+            name: version.name,
+            business_type: version.business_type,
+            configuration: version.configuration ?? defaultConfiguration,
+        });
+        setMode('demo');
+    };
+
     const newDraft = () => {
         setSelectedDraftId(null);
         form.setData({
@@ -558,6 +587,23 @@ export default function Index({ activeProfile, drafts, versions, presets = [], p
                                             disableText={`Desactivar modulo de ${moduleLabel(key)}`}
                                         />
                                     ))}
+                                    <div className="md:col-span-2 xl:col-span-3">
+                                        <h4 className="text-sm font-semibold text-slate-950 dark:text-white">Submodulos</h4>
+                                        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                                            Ajustan funciones internas sin apagar el modulo principal. Son utiles para demos rapidas por rubro.
+                                        </p>
+                                    </div>
+                                    {Object.keys(form.data.configuration.submodules ?? {}).map((key) => (
+                                        <Toggle
+                                            key={key}
+                                            label={`Submodulo de ${moduleLabel(key)}`}
+                                            checked={form.data.configuration.submodules?.[key] ?? false}
+                                            onChange={(value) => setConfig('submodules', key, value)}
+                                            helpTooltip={moduleToggleHelp(key)}
+                                            enableText={`Activar submodulo de ${moduleLabel(key)}`}
+                                            disableText={`Desactivar submodulo de ${moduleLabel(key)}`}
+                                        />
+                                    ))}
                                     {Object.keys(form.data.configuration.ux).map((key) => (
                                         <Toggle
                                             key={key}
@@ -599,7 +645,7 @@ export default function Index({ activeProfile, drafts, versions, presets = [], p
                         {mode === 'history' ? (
                             <div className="space-y-6">
                                 <PresetPanel presets={presets} presetReadiness={presetReadiness} />
-                                <HistoryPanel versions={versions} activeConfiguration={activeProfile?.configuration ?? defaultConfiguration} options={options} />
+                                <HistoryPanel versions={versions} activeConfiguration={activeProfile?.configuration ?? defaultConfiguration} options={options} onPreviewVersion={previewVersion} />
                             </div>
                         ) : null}
                     </div>
@@ -609,6 +655,11 @@ export default function Index({ activeProfile, drafts, versions, presets = [], p
                             <p className="text-lg font-semibold text-slate-950 dark:text-white">{activeProfile?.name ?? 'Sin perfil activo'}</p>
                             <p className="text-sm text-slate-500 dark:text-slate-400">{options.businessTypes[activeProfile?.business_type] ?? activeProfile?.business_type}</p>
                             <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">Aplicado: {activeProfile?.applied_at ? new Date(activeProfile.applied_at).toLocaleString('es-BO') : '-'}</p>
+                            {activeProfile ? (
+                                <button type="button" onClick={previewActiveProfile} className="mt-3 rounded-full border border-brand-primary px-3 py-1.5 text-xs font-semibold text-brand-primary">
+                                    Usar activo en demo
+                                </button>
+                            ) : null}
                         </Card>
 
                         <Card title="Borradores">
@@ -620,6 +671,9 @@ export default function Index({ activeProfile, drafts, versions, presets = [], p
                                         <p className="text-xs text-slate-500">{options.businessTypes[draft.business_type] ?? draft.business_type} - {draft.status}</p>
                                         <DraftPreflightBadge preflight={draftPreflights?.[draft.id]} />
                                         <div className="mt-3 flex flex-wrap gap-2">
+                                            <button type="button" onClick={() => previewDraft(draft)} className="rounded-full border border-brand-primary px-3 py-1.5 text-xs font-semibold text-brand-primary" title="Carga este borrador en el editor y abre la demo rapida sin tocar produccion.">
+                                                Usar en demo
+                                            </button>
                                             {draft.status !== 'applied' ? (
                                                 <button type="button" onClick={() => router.post(route('system-superadmin.business-profiles.drafts.apply', draft.id), {}, { preserveScroll: true })} className="rounded-full bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white" title="Aplica la ultima version guardada de este borrador.">
                                                     Aplicar
@@ -1840,7 +1894,7 @@ function ComparisonPanel({ rows }) {
     );
 }
 
-function HistoryPanel({ versions, activeConfiguration, options }) {
+function HistoryPanel({ versions, activeConfiguration, options, onPreviewVersion }) {
     return (
         <div className="space-y-3">
             {versions.length === 0 ? <p className="text-sm text-slate-500">Todavia no hay versiones anteriores.</p> : null}
@@ -1855,9 +1909,14 @@ function HistoryPanel({ versions, activeConfiguration, options }) {
                         <p className="text-xs text-slate-500">Aplicado por {version.applied_by?.name ?? 'Sistema'} - {version.applied_at ? new Date(version.applied_at).toLocaleString('es-BO') : '-'}</p>
                         <p className="mt-1 text-xs font-semibold text-amber-600 dark:text-amber-300">{diffRows.length} diferencias contra el perfil activo actual</p>
                     </div>
-                    <button type="button" onClick={() => router.post(route('system-superadmin.business-profiles.versions.restore', version.id), {}, { preserveScroll: true })} className="rounded-full border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:border-brand-primary hover:text-brand-primary dark:border-slate-700 dark:text-slate-200">
-                        Restaurar
-                    </button>
+                    <div className="flex flex-wrap gap-2">
+                        <button type="button" onClick={() => onPreviewVersion(version)} className="rounded-full border border-brand-primary px-4 py-2 text-sm font-semibold text-brand-primary">
+                            Probar en demo
+                        </button>
+                        <button type="button" onClick={() => router.post(route('system-superadmin.business-profiles.versions.restore', version.id), {}, { preserveScroll: true })} className="rounded-full border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:border-brand-primary hover:text-brand-primary dark:border-slate-700 dark:text-slate-200">
+                            Restaurar
+                        </button>
+                    </div>
                     </div>
                     {diffRows.length > 0 ? (
                         <div className="mt-3 grid gap-2 md:grid-cols-2">

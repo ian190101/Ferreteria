@@ -643,13 +643,8 @@ class BusinessProfileController extends Controller
         $data['configuration']['capabilities']['allows_direct_sale'] = in_array($data['configuration']['sales']['workflow'] ?? '', ['direct_sale', 'pos', 'optional_quotation', 'restaurant_counter'], true);
 
         $compatibility = app(BusinessProfileCompatibilityValidator::class)->validate($data['business_type'], $data['configuration']);
-
-        if (! $compatibility['valid']) {
-            throw ValidationException::withMessages([
-                'configuration' => $compatibility['errors'],
-            ]);
-        }
-
+        $data['configuration']['compatibility']['valid'] = $compatibility['valid'];
+        $data['configuration']['compatibility']['last_errors'] = $compatibility['errors'];
         $data['configuration']['compatibility']['last_warnings'] = $compatibility['warnings'];
         $data['configuration']['compatibility']['last_checked_at'] = now()->toIso8601String();
 

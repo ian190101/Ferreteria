@@ -304,6 +304,46 @@ it('revalida compatibilidad backend antes de aplicar un borrador', function () {
         ->and(BusinessProfile::query()->where('status', 'active')->latest('applied_at')->first()?->id)->toBe($active->id);
 });
 
+it('permite guardar borradores para demo aunque aun no sean aplicables a produccion', function () {
+    $user = businessProfileUser(systemSuperadmin: true);
+    $configuration = BusinessProfileConfiguration::normalized([
+        'modules' => [
+            'billing' => true,
+            'cash' => true,
+        ],
+        'sales' => [
+            'customer_mode' => 'hidden',
+        ],
+        'billing' => [
+            'enabled' => true,
+            'invoice_flow' => 'direct_invoice',
+        ],
+    ]);
+
+    $this->actingAs($user)
+        ->from(route('system-superadmin.business-profiles.index'))
+        ->post(route('system-superadmin.business-profiles.drafts.store'), [
+            'name' => 'Borrador demo restaurante',
+            'business_type' => 'restaurant',
+            'configuration' => $configuration,
+        ])
+        ->assertRedirect(route('system-superadmin.business-profiles.index'))
+        ->assertSessionHas('success');
+
+    $draft = BusinessProfileDraft::query()
+        ->where('name', 'Borrador demo restaurante')
+        ->firstOrFail();
+
+    expect($draft->configuration['compatibility']['valid'])->toBeFalse()
+        ->and($draft->configuration['compatibility']['last_errors'])->not->toBeEmpty();
+
+    $this->actingAs($user)
+        ->from(route('system-superadmin.business-profiles.index'))
+        ->post(route('system-superadmin.business-profiles.drafts.apply', $draft))
+        ->assertRedirect(route('system-superadmin.business-profiles.index'))
+        ->assertSessionHasErrors('configuration');
+});
+
 it('bloquea aplicar un borrador si el checklist de activacion tiene pendientes criticos', function () {
     $user = businessProfileUser(systemSuperadmin: true);
     $active = activeBusinessProfile([]);
