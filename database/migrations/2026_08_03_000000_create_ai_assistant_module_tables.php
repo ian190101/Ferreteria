@@ -38,7 +38,7 @@ return new class extends Migration
                 $table->json('allowed_scopes')->nullable();
                 $table->timestamp('last_verified_at')->nullable();
                 $table->timestamps();
-                $table->unique(['provider', 'name']);
+                $table->unique(['provider', 'name'], 'ai_channels_provider_name_unique');
             });
         }
 
@@ -69,7 +69,7 @@ return new class extends Migration
                 $table->string('audio_path')->nullable();
                 $table->json('metadata')->nullable();
                 $table->timestamps();
-                $table->index(['ai_assistant_conversation_id', 'created_at']);
+                $table->index(['ai_assistant_conversation_id', 'created_at'], 'ai_messages_conversation_created_idx');
             });
         }
 
@@ -115,7 +115,7 @@ return new class extends Migration
                 $table->json('metadata')->nullable();
                 $table->timestamp('indexed_at')->nullable();
                 $table->timestamps();
-                $table->unique(['source_type', 'source_key']);
+                $table->unique(['source_type', 'source_key'], 'ai_knowledge_source_key_unique');
             });
         }
 

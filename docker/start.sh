@@ -5,9 +5,18 @@ export PORT="${PORT:-10000}"
 
 envsubst '${PORT}' < /etc/nginx/templates/default.conf.template > /etc/nginx/http.d/default.conf
 
-mkdir -p storage/framework/cache storage/framework/sessions storage/framework/views storage/logs bootstrap/cache
+mkdir -p \
+    storage/app/public \
+    storage/framework/cache/data \
+    storage/framework/sessions \
+    storage/framework/views \
+    storage/logs \
+    bootstrap/cache
 chown -R www-data:www-data storage bootstrap/cache
-php artisan storage:link || true
+
+if [ ! -e public/storage ]; then
+    php artisan storage:link || true
+fi
 
 if [ "${RUN_STARTUP_MIGRATIONS:-true}" = "true" ]; then
     php artisan migrate --force
