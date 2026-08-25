@@ -10,6 +10,7 @@ Esta configuracion es para instalar una instancia unica del ERP/POS en la PC cen
 - `scheduler-ferreteria`: ejecuta `php artisan schedule:run` cada minuto para backups y tareas programadas.
 - `mysql_data`: conserva la base de datos aunque se reinicien los contenedores.
 - `app_storage`: conserva archivos, adjuntos, logs, sesiones y backups del sistema.
+- `CACHE_STORE=database`: recomendado para servidor local con app, cola y scheduler porque evita errores de cache por carpetas borradas en volumenes Docker/Windows.
 
 ## Preparacion inicial
 
@@ -140,3 +141,19 @@ El contenedor ejecuta migraciones con `RUN_STARTUP_MIGRATIONS=true`.
 - `SYSTEM_SUPERADMIN_PASSWORD`
 
 No subir `.env.docker.local` a GitHub.
+
+## Ajuste recomendado si hay errores 500 al filtrar
+
+Si aparece un error 500 en el panel o reportes despues de limpiar cache, confirma que el archivo `.env.docker.local` use:
+
+```env
+CACHE_STORE=database
+QUEUE_CONNECTION=database
+```
+
+Luego ejecuta:
+
+```powershell
+docker compose -f docker-compose.local.yml --env-file .env.docker.local exec app-ferreteria php artisan optimize:clear
+docker compose -f docker-compose.local.yml --env-file .env.docker.local restart app-ferreteria queue-ferreteria scheduler-ferreteria
+```
