@@ -740,7 +740,7 @@ it('permite capacidades avanzadas cuando su feature flag tecnico esta habilitado
         ->and($result['errors'])->toBe([]);
 });
 
-it('permite a sistemasuperadmin guardar y aplicar un perfil directamente a produccion', function () {
+it('permite a sistemasuperadmin guardar y aplicar un perfil directamente a produccion', function (string $serviceMode) {
     $user = businessProfileUser(systemSuperadmin: true);
     $active = activeBusinessProfile([]);
 
@@ -748,6 +748,7 @@ it('permite a sistemasuperadmin guardar y aplicar un perfil directamente a produ
         'name' => 'Ferreteria Industrial Guardada',
         'business_type' => 'hardware_store',
         'configuration' => BusinessProfileConfiguration::normalized([
+            'services' => ['mode' => $serviceMode],
             'identity' => [
                 'commercial_name' => 'Ferreteria Industrial Guardada',
             ],
@@ -775,9 +776,11 @@ it('permite a sistemasuperadmin guardar y aplicar un perfil directamente a produ
 
     $newActive = BusinessProfile::query()->where('status', 'active')->latest('applied_at')->firstOrFail();
     expect($newActive->name)->toBe('Ferreteria Industrial Guardada')
+        ->and(data_get($newActive->configuration, 'identity.commercial_name'))->toBe('Ferreteria Industrial Guardada')
+        ->and(data_get($newActive->configuration, 'services.mode'))->toBe($serviceMode)
         ->and($newActive->id)->not->toBe($active->id)
         ->and($active->refresh()->status)->toBe('archived');
-});
+})->with(['servicios desactivados' => 'disabled', 'servicios mixtos' => 'mixed']);
 
 it('permite a sistemasuperadmin actualizar directamente el perfil activo', function () {
     $user = businessProfileUser(systemSuperadmin: true);

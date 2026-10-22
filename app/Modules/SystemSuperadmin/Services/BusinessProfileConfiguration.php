@@ -829,6 +829,7 @@ class BusinessProfileConfiguration
             ],
             'serviceModes' => [
                 'disabled' => 'No usa servicios',
+                'mixed' => 'Servicios mixtos',
                 'quick' => 'Servicios rapidos',
                 'technical' => 'Servicios tecnicos',
                 'professional' => 'Servicios profesionales',

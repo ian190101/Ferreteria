@@ -5,6 +5,24 @@ use App\Modules\SystemSuperadmin\Services\BusinessProfileCompatibilityValidator;
 use App\Modules\SystemSuperadmin\Services\BusinessProfileConfiguration;
 use App\Modules\SystemSuperadmin\Services\BusinessProfileDiffService;
 use App\Modules\SystemSuperadmin\Services\BusinessProfileMigrationMapper;
+use App\Modules\SystemSuperadmin\Services\BusinessProfilePresetFactory;
+use Illuminate\Translation\ArrayLoader;
+use Illuminate\Translation\Translator;
+use Illuminate\Validation\Factory;
+use Illuminate\Validation\Rule;
+
+it('acepta los modos de servicios de todos los presets oficiales y rechaza valores desconocidos', function () {
+    $validator = new Factory(new Translator(new ArrayLoader, 'es'));
+    $rules = ['configuration.services.mode' => [
+        'nullable', 'string', Rule::in(array_keys(BusinessProfileConfiguration::options()['serviceModes'])),
+    ]];
+
+    foreach ((new BusinessProfilePresetFactory)->officialPresets() as $preset) {
+        expect($validator->make($preset, $rules)->passes())->toBeTrue($preset['name']);
+    }
+
+    expect($validator->make(['configuration' => ['services' => ['mode' => 'desconocido']]], $rules)->fails())->toBeTrue();
+});
 
 it('define un catalogo formal de capacidades reutilizables', function () {
     expect(BusinessCapabilityCatalog::keys())
