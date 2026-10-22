@@ -8,6 +8,7 @@ use App\Support\AuthSessionCache;
 use App\Support\DecimalPrecision;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
+use Inertia\Inertia;
 use Inertia\Middleware;
 
 class HandleInertiaRequests extends Middleware
@@ -41,6 +42,7 @@ class HandleInertiaRequests extends Middleware
             'businessProfile' => ActiveBusinessProfile::navigationPayload(),
             'decimalPrecision' => DecimalPrecision::config(),
             'sandboxMode' => $this->sandboxMode($request),
+            'systemError' => Inertia::always(fn () => $request->hasSession() ? $request->session()->get('system_error') : null),
         ];
     }
 

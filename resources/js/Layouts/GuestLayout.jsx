@@ -1,4 +1,5 @@
 import ApplicationLogo from '@/Components/ApplicationLogo';
+import SystemErrorFeedback from '@/Components/SystemErrorFeedback';
 import { assetUrl } from '@/Utils/assets';
 import { applyBranding } from '@/Utils/branding';
 import { Link, usePage } from '@inertiajs/react';
@@ -13,6 +14,7 @@ export default function GuestLayout({ children }) {
 
     return (
         <div className="flex min-h-screen flex-col items-center bg-gray-100 pt-6 sm:justify-center sm:pt-0 dark:bg-gray-900">
+            <SystemErrorFeedback />
             <div>
                 <Link href="/">
                     <GuestLogo logoPath={branding?.logoPath} />

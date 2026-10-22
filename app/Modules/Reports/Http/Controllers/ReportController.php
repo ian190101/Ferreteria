@@ -243,6 +243,7 @@ class ReportController extends Controller
         return Purchase::query()
             ->when(true, fn ($query) => BranchAccess::apply($query, request()->user()))
             ->when($branchId, fn ($query) => $query->where('branch_id', $branchId))
+            ->whereNotIn('status', ['void', 'voided'])
             ->whereDate('purchase_date', '>=', $from->toDateString())
             ->whereDate('purchase_date', '<=', $to->toDateString());
     }

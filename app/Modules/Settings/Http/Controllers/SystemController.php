@@ -3,6 +3,7 @@
 namespace App\Modules\Settings\Http\Controllers;
 
 use App\Http\Controllers\Controller;
+use App\Jobs\RestoreMaintenanceBackupJob;
 use App\Modules\Branches\Models\Branch;
 use App\Modules\Settings\Models\ApplicationLicense;
 use App\Modules\Settings\Models\ImportBatch;
@@ -16,10 +17,14 @@ use App\Modules\Settings\Services\MaintenanceBackupService;
 use App\Modules\Settings\Services\ProductionAlertService;
 use App\Modules\Settings\Services\ProductionLogService;
 use App\Modules\Settings\Services\ProductionUpdateService;
+use App\Modules\Settings\Services\RecoveryJournal;
 use App\Modules\Settings\Services\SystemHealthService;
+use App\Support\BranchAccess;
 use App\Support\SystemRoles;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -35,6 +40,7 @@ class SystemController extends Controller
                 ->latest()
                 ->paginate(10)
                 ->withQueryString(),
+            'recoveryRuns' => ($this->isSystemSuperadmin(request()) || request()->user()?->can('production.rollback.manage')) ? app(RecoveryJournal::class)->recent() : [],
             'logs' => MaintenanceLog::query()
                 ->with('user:id,name')
                 ->latest()
@@ -116,7 +122,7 @@ class SystemController extends Controller
             ->with($result['ok'] ? 'success' : 'warning', $result['message']);
     }
 
-    public function restoreBackup(Request $request, MaintenanceBackup $backup, ProductionUpdateService $updates): RedirectResponse
+    public function restoreBackup(Request $request, MaintenanceBackup $backup): RedirectResponse
     {
         abort_unless($this->isSystemSuperadmin($request) || $request->user()?->can('production.rollback.manage'), 403);
 
@@ -124,11 +130,28 @@ class SystemController extends Controller
             'confirmation' => ['required', 'in:RESTAURAR'],
         ]);
 
-        $result = $updates->rollbackToBackup($backup);
+        $journal = app(RecoveryJournal::class);
+        $run = $journal->create((int) $request->user()->id, (int) $backup->id, DB::connection()->getDatabaseName());
+        try {
+            RestoreMaintenanceBackupJob::dispatch($run['id']);
+        } catch (\Throwable $exception) {
+            if ($journal->read($run['id'])['status'] === 'pending') {
+                $journal->update($run['id'], ['status' => 'failed', 'message' => 'No se pudo enviar la restauración al trabajador.']);
+            }
+            throw $exception;
+        }
+        $result = $journal->read($run['id']);
 
         return redirect()
             ->route('settings.system.index')
-            ->with($result['ok'] ? 'success' : 'warning', $result['message']);
+            ->with($result['status'] === 'failed' ? 'warning' : 'success', $result['message']);
+    }
+
+    public function recoveryRuns(Request $request, RecoveryJournal $journal): JsonResponse
+    {
+        abort_unless($this->isSystemSuperadmin($request) || $request->user()?->can('production.rollback.manage'), 403);
+
+        return response()->json(['runs' => $journal->recent()]);
     }
 
     public function updateProductionSettings(Request $request): RedirectResponse
@@ -200,7 +223,7 @@ class SystemController extends Controller
             'file' => ['required', 'file', 'mimes:csv,txt,xlsx,pdf', 'max:10240'],
         ]);
 
-        abort_unless(in_array((int) $validated['branch_id'], app(\App\Support\BranchAccess::class)->idsFor($request->user()), true), 403);
+        abort_unless(in_array((int) $validated['branch_id'], app(BranchAccess::class)->idsFor($request->user()), true), 403);
 
         $batch = $imports->import($validated['file'], $validated['module'], (int) $validated['branch_id'], $request->user()?->id);
 

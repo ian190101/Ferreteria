@@ -33,6 +33,8 @@ it('genera un preview de migracion 2 sin escribir ni modificar el perfil activo 
         'applied_at' => now(),
     ]);
     $profilesBeforePreview = BusinessProfile::query()->count();
+    // MySQL normaliza el orden de las claves JSON; se compara el estado realmente persistido.
+    $persistedConfiguration = $profile->fresh()->configuration;
 
     $preview = app(BusinessProfileMigrationAuditService::class)
         ->previewToVersionTwo('hardware_store', $legacyConfiguration);
@@ -49,7 +51,7 @@ it('genera un preview de migracion 2 sin escribir ni modificar el perfil activo 
         ->and($preview['requires_regression_tests'])->toBeTrue()
         ->and(collect($preview['anti_rupture'])->where('status', 'blocked'))->toBeEmpty()
         ->and(BusinessProfile::query()->count())->toBe($profilesBeforePreview)
-        ->and($profile->refresh()->configuration)->toBe($legacyConfiguration);
+        ->and($profile->refresh()->configuration)->toBe($persistedConfiguration);
 });
 
 it('documenta el mapeo entre configuracion legacy y capacidades 2.0', function () {

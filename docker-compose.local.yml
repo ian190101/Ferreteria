@@ -5,7 +5,12 @@ x-app-base: &app-base
     context: .
     dockerfile: Dockerfile
   env_file:
-    - .env.docker.local
+    - ${APP_ENV_FILE:-.env.docker.local}
+  environment:
+    DB_QUEUE_RETRY_AFTER: ${DB_QUEUE_RETRY_AFTER:-180}
+    RESTORE_DB_DATABASE: ${DB_DATABASE:-inventario}_restore_verification
+    RESTORE_DB_USERNAME: calmina_restore
+    RESTORE_DB_PASSWORD: ${RESTORE_DB_PASSWORD:?Define RESTORE_DB_PASSWORD}
   restart: unless-stopped
   volumes:
     - app_storage:/var/www/html/storage
@@ -19,17 +24,18 @@ services:
   app-ferreteria:
     <<: *app-base
     ports:
-      - "${LOCAL_HTTP_PORT:-80}:10000"
+      - "${LOCAL_HTTP_BIND:-127.0.0.1}:${LOCAL_HTTP_PORT:-80}:10000"
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:10000/health || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5
-      start_period: 90s
+      start_period: ${APP_HEALTH_START_PERIOD:-1800s}
 
   queue-ferreteria:
     <<: *app-base
     user: www-data
+    stop_grace_period: 180s
     command: ["php", "artisan", "queue:work", "--sleep=3", "--tries=3", "--timeout=120"]
     depends_on:
       app-ferreteria:
@@ -37,7 +43,7 @@ services:
       db-ferreteria:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "php artisan queue:monitor default --max=200 >/dev/null 2>&1 || exit 0"]
+      test: ["CMD-SHELL", "php artisan queue:monitor default --max=200 >/dev/null 2>&1 || exit 1"]
       interval: 60s
       timeout: 15s
       retries: 3
@@ -47,6 +53,17 @@ services:
     <<: *app-base
     user: www-data
     command: ["sh", "-lc", "while true; do php artisan schedule:run --no-interaction; sleep 60; done"]
+    depends_on:
+      app-ferreteria:
+        condition: service_healthy
+      db-ferreteria:
+        condition: service_healthy
+
+  maintenance-ferreteria:
+    <<: *app-base
+    user: www-data
+    stop_grace_period: 1900s
+    command: ["php", "artisan", "queue:work", "maintenance", "--queue=maintenance", "--sleep=2", "--tries=1", "--timeout=1800"]
     depends_on:
       app-ferreteria:
         condition: service_healthy
@@ -66,8 +83,10 @@ services:
       MYSQL_USER: ${DB_USERNAME:-ferreteria}
       MYSQL_PASSWORD: ${DB_PASSWORD:?Define DB_PASSWORD en .env.docker.local}
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Define MYSQL_ROOT_PASSWORD en .env.docker.local}
+      RESTORE_DB_PASSWORD: ${RESTORE_DB_PASSWORD:?Define RESTORE_DB_PASSWORD}
     volumes:
       - mysql_data:/var/lib/mysql
+      - ./docker/init-maintenance.sh:/docker-entrypoint-initdb.d/20-maintenance.sh:ro
     healthcheck:
       test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$${MYSQL_ROOT_PASSWORD} --silent"]
       interval: 10s

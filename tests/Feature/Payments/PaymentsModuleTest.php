@@ -110,6 +110,78 @@ it('mantiene el codigo en el catalogo base de metodos de pago', function () {
         ->and($method->code)->toBe('cash');
 });
 
+function requireCashForPaymentTests(): void
+{
+    $profile = BusinessProfile::query()->where('status', 'active')->firstOrFail();
+    $configuration = $profile->configuration;
+    $configuration['cash']['required_to_sell'] = true;
+    $profile->update(['configuration' => $configuration]);
+    SystemCacheInvalidator::bumpOperational();
+}
+
+it('muestra el cobro del superadministrador sin apertura en pagos y caja sin asignarlo a una apertura posterior', function (string $methodCode) {
+    $user = paymentsUser(['payments.view', 'payments.manage', 'cash.view', 'cash.manage']);
+    $user->assignRole(Role::firstOrCreate(['name' => \App\Support\SystemRoles::SYSTEM_SUPERADMIN, 'guard_name' => 'web']));
+    requireCashForPaymentTests();
+    $sale = paymentSale($user);
+    $method = PaymentMethod::query()->create(['name' => $methodCode, 'code' => $methodCode, 'is_active' => true]);
+    $this->freezeTime();
+
+    $this->actingAs($user)->post(route('payments.store'), [
+        'sale_id' => $sale->id, 'payment_method_id' => $method->id, 'amount' => 40,
+    ])->assertRedirect()->assertSessionHasNoErrors()
+        ->assertSessionHas('success', fn ($message) => str_contains($message, 'sin caja abierta'));
+
+    $payment = SalePayment::query()->where('sale_id', $sale->id)->sole();
+    expect($payment->cash_context_recorded)->toBeTrue()
+        ->and($payment->cash_register_session_id)->toBeNull()
+        ->and((float) $sale->fresh()->balance_due)->toBe(60.0);
+
+    // Incluso una apertura en el mismo segundo debe conservar el cobro fuera del arqueo.
+    $session = \App\Modules\Cash\Models\CashRegisterSession::query()->create([
+        'branch_id' => $user->branch_id, 'opened_by' => $user->id, 'opened_at' => now(),
+        'opening_amount' => 0, 'expected_cash_amount' => 0, 'status' => 'open',
+    ]);
+    $summary = app(\App\Modules\Finance\Services\FinancialLedgerService::class)->cashSessionSummary($session, attachBankTransactions: true);
+    expect($summary['cash_income'])->toBe(0.0)->and($summary['bank_income'])->toBe(0.0);
+    if ($methodCode !== 'cash') {
+        expect((float) BankAccount::query()->where('branch_id', $user->branch_id)->sole()->current_balance)->toBe(40.0)
+            ->and(\App\Modules\Banks\Models\BankTransaction::query()->sole()->cash_register_session_id)->toBeNull();
+    }
+
+    $this->get(route('payments.index'))->assertOk()->assertInertia(fn (Assert $page) => $page
+        ->has('payments.data', 1)->where('payments.data.0.id', $payment->id)
+        ->where('payments.data.0.collection_cash_session_id', null));
+    $this->get(route('cash.index'))->assertOk()->assertInertia(fn (Assert $page) => $page
+        ->has('collections.data', 1)->where('collections.data.0.id', $payment->id)
+        ->where('collections.data.0.collection_cash_session_id', null));
+})->with(['cash', 'qr', 'transfer']);
+
+it('exige apertura al usuario normal y asocia su cobro a su propia caja', function () {
+    $user = paymentsUser(['payments.view', 'payments.manage', 'cash.view']);
+    requireCashForPaymentTests();
+    $sale = paymentSale($user);
+    $method = PaymentMethod::query()->create(['name' => 'Efectivo', 'code' => 'cash', 'is_active' => true]);
+    $payload = ['sale_id' => $sale->id, 'payment_method_id' => $method->id, 'amount' => 40];
+    $this->actingAs($user)->post(route('payments.store'), $payload)->assertSessionHasErrors('sale_id');
+    expect(SalePayment::query()->count())->toBe(0);
+
+    $session = \App\Modules\Cash\Models\CashRegisterSession::query()->create([
+        'branch_id' => $user->branch_id, 'opened_by' => $user->id, 'opened_at' => now()->subMinute(),
+        'opening_amount' => 0, 'expected_cash_amount' => 0, 'status' => 'open',
+    ]);
+    $this->post(route('payments.store'), $payload)->assertRedirect()->assertSessionHasNoErrors();
+    $payment = SalePayment::query()->withCashContext()->sole();
+    expect((int) $payment->cash_register_session_id)->toBe($session->id)
+        ->and((int) $payment->collection_cash_session_id)->toBe($session->id)
+        ->and(app(\App\Modules\Finance\Services\FinancialLedgerService::class)->cashSessionSummary($session)['cash_income'])->toBe(40.0);
+
+    $this->patch(route('payments.void', $payment->id), ['reason' => 'Corrección de cobro de prueba'])
+        ->assertRedirect()->assertSessionHasNoErrors();
+    $this->get(route('cash.index'))->assertInertia(fn (Assert $page) => $page->has('collections.data', 0));
+    expect(app(\App\Modules\Finance\Services\FinancialLedgerService::class)->cashSessionSummary($session)['cash_income'])->toBe(0.0);
+});
+
 function paymentPurchase(User $user, float $balance = 100): Purchase
 {
     $supplier = Supplier::query()->create([
@@ -315,9 +387,17 @@ it('bloquea pago de compra mayor al saldo pendiente', function () {
         ->assertSessionHasErrors('amount');
 });
 
-it('anula pago de compra y restaura saldo por pagar', function () {
-    $user = paymentsUser(['payments.view', 'payments.manage']);
+it('anula pago de compra y anula la compra asociada', function () {
+    $user = paymentsUser(['payments.view', 'payments.manage', 'purchases.manage']);
     $purchase = paymentPurchase($user, 100);
+    $product = \App\Modules\Inventory\Models\Product::query()->create([
+        'name' => 'Producto a anular', 'sku' => 'PAGO-VOID', 'barcode' => 'PAGO-VOID',
+        'inventory_tracking_mode' => 'global', 'is_active' => true,
+    ]);
+    $purchase->items()->create(['product_id' => $product->id, 'meters' => 10, 'unit_cost' => 10]);
+    \App\Modules\Inventory\Models\ProductBranchStock::query()->create([
+        'branch_id' => $user->branch_id, 'product_id' => $product->id, 'available_meters' => 10, 'reserved_meters' => 0,
+    ]);
     $method = PaymentMethod::query()->create([
         'name' => 'Efectivo proveedor',
         'code' => 'cash-provider-void',
@@ -348,8 +428,9 @@ it('anula pago de compra y restaura saldo por pagar', function () {
     $voidedPayment = PurchasePayment::withTrashed()->findOrFail($payment->id);
 
     expect((float) $purchase->paid_amount)->toBe(0.0)
-        ->and((float) $purchase->balance_due)->toBe(100.0)
-        ->and($purchase->payment_status)->toBe('unpaid')
+        ->and((float) $purchase->balance_due)->toBe(0.0)
+        ->and($purchase->payment_status)->toBe('voided')
+        ->and($purchase->status)->toBe('voided')
         ->and($voidedPayment->trashed())->toBeTrue()
         ->and($voidedPayment->notes)->toContain('Registro duplicado');
 });

@@ -4,7 +4,9 @@ import FormField from '../../../../../Shared/Resources/Components/FormField';
 import ModuleHeader from '../../../../../Shared/Resources/Components/ModuleHeader';
 import Pagination from '../../../../../Shared/Resources/Components/Pagination';
 import SelectField from '../../../../../Shared/Resources/Components/SelectField';
-import { Head, router, useForm } from '@inertiajs/react';
+import { Head, Link, router, useForm } from '@inertiajs/react';
+import { useEffect, useState } from 'react';
+import axios from 'axios';
 
 export default function Index({
     backups,
@@ -17,7 +19,27 @@ export default function Index({
     health = { checks: [] },
     updateStatus = {},
     isSystemSuperadmin = false,
+    recoveryRuns = [],
 }) {
+    const [recoveries, setRecoveries] = useState(recoveryRuns);
+    useEffect(() => setRecoveries(recoveryRuns), [recoveryRuns]);
+    const hasRecovery = recoveries.some((entry) => ['pending', 'running'].includes(entry.status));
+    useEffect(() => {
+        if (!hasRecovery) return undefined;
+        const controller = new AbortController();
+        let querying = false;
+        const timer = setInterval(async () => {
+            if (querying) return;
+            querying = true;
+            try {
+                const { data } = await axios.get(route('settings.system.recovery-runs'), { signal: controller.signal });
+                setRecoveries(data.runs);
+                if (!data.runs.some((entry) => ['pending', 'running'].includes(entry.status))) router.reload({ only: ['backups', 'recoveryRuns', 'logs'], preserveScroll: true });
+            } catch { /* La base puede estar siendo sustituida; la consulta se reintenta después. */ }
+            finally { querying = false; }
+        }, 4000);
+        return () => { clearInterval(timer); controller.abort(); };
+    }, [hasRecovery]);
     const backupForm = useForm({ format: 'json' });
     const productionForm = useForm({
         backup_frequency: productionSettings.backup_frequency ?? 'daily',
@@ -177,6 +199,7 @@ export default function Index({
 
                 <div className="mt-6 grid gap-6 xl:grid-cols-2">
                     <Panel title="Backups y rollback" help="Genera, descarga, verifica y restaura backups SQL. Antes de actualizar se crea un backup SQL de seguridad.">
+                        {recoveries.length ? <section aria-live="polite" aria-label="Progreso de restauraciones" className="mb-4 space-y-2 rounded border p-3">{recoveries.map((entry) => <div key={entry.id}><p className="font-semibold">{entry.status === 'completed' ? 'Restauración completada' : entry.status === 'failed' ? 'Restauración sin completar' : entry.status === 'pending' ? 'Restauración en cola' : 'Restaurando respaldo'}</p><p className="text-sm">{entry.message}</p><p className="text-sm">{({ queued: 'Pendiente de inicio', validating: 'Validando solicitud', verifying_recovery: 'Ensayando recuperación en base temporal', restoring: 'Sustituyendo datos', verifying_source: 'Comparando datos restaurados', finalizing: 'Finalizando', finished: 'Terminada', cancelled_by_restore: 'Cancelada tras otra restauración' })[entry.stage] ?? 'Revisión requerida'}</p></div>)}</section> : null}
                         <form onSubmit={submitBackup} className="mb-5 grid gap-3 sm:grid-cols-[1fr_auto]">
                             <SelectField label="Formato" name="format" value={backupForm.data.format} onChange={(event) => backupForm.setData('format', event.target.value)} error={backupForm.errors.format}>
                                 <option value="json">JSON operativo</option>
@@ -302,29 +325,65 @@ export default function Index({
                 </div>
 
                 {isSystemSuperadmin ? (
-                    <Panel className="mt-6" title="Licencia de instalacion" help="Control interno por cliente: dominio, NIT, soporte vigente, modo de activacion y modulos incluidos. No se muestra al cliente normal.">
-                        <form onSubmit={submitLicense} className="grid gap-4 md:grid-cols-3">
-                            <FormField label="Cliente titular" name="holder_name" value={licenseForm.data.holder_name} onChange={(event) => licenseForm.setData('holder_name', event.target.value)} error={licenseForm.errors.holder_name} required />
-                            <FormField label="NIT" name="nit" value={licenseForm.data.nit} onChange={(event) => licenseForm.setData('nit', event.target.value)} error={licenseForm.errors.nit} />
-                            <FormField label="Dominio" name="domain" value={licenseForm.data.domain} onChange={(event) => licenseForm.setData('domain', event.target.value)} error={licenseForm.errors.domain} />
-                            <FormField label="Clave licencia" name="license_key" value={licenseForm.data.license_key} onChange={(event) => licenseForm.setData('license_key', event.target.value)} error={licenseForm.errors.license_key} />
-                            <FormField label="Soporte hasta" name="support_until" type="date" value={licenseForm.data.support_until} onChange={(event) => licenseForm.setData('support_until', event.target.value)} error={licenseForm.errors.support_until} />
-                            <SelectField label="Estado" name="status" value={licenseForm.data.status} onChange={(event) => licenseForm.setData('status', event.target.value)} error={licenseForm.errors.status}>
-                                <option value="active">Activa</option>
-                                <option value="suspended">Suspendida</option>
-                                <option value="expired">Vencida</option>
-                            </SelectField>
-                            <div className="md:col-span-3"><PrimarySubmit processing={licenseForm.processing}>Guardar licencia</PrimarySubmit></div>
-                        </form>
-                        <div className="mt-4 grid gap-3 md:grid-cols-2">
-                            {licenses.map((license) => (
-                                <div key={license.id} className="rounded-md border border-slate-200 p-3 text-sm dark:border-slate-800">
-                                    <p className="font-semibold text-slate-900 dark:text-white">{license.holder_name}</p>
-                                    <p className="text-slate-600 dark:text-slate-400">NIT {license.nit ?? '-'} - {license.domain ?? 'Sin dominio'} - {statusLabel(license.status)}</p>
+                    <>
+                        <Panel className="mt-6" title="Licencia de instalacion" help="Control interno por cliente: dominio, NIT, soporte vigente, modo de activacion y modulos incluidos. No se muestra al cliente normal.">
+                            <form onSubmit={submitLicense} className="grid gap-4 md:grid-cols-3">
+                                <FormField label="Cliente titular" name="holder_name" value={licenseForm.data.holder_name} onChange={(event) => licenseForm.setData('holder_name', event.target.value)} error={licenseForm.errors.holder_name} required />
+                                <FormField label="NIT" name="nit" value={licenseForm.data.nit} onChange={(event) => licenseForm.setData('nit', event.target.value)} error={licenseForm.errors.nit} />
+                                <FormField label="Dominio" name="domain" value={licenseForm.data.domain} onChange={(event) => licenseForm.setData('domain', event.target.value)} error={licenseForm.errors.domain} />
+                                <FormField label="Clave licencia" name="license_key" value={licenseForm.data.license_key} onChange={(event) => licenseForm.setData('license_key', event.target.value)} error={licenseForm.errors.license_key} />
+                                <FormField label="Soporte hasta" name="support_until" type="date" value={licenseForm.data.support_until} onChange={(event) => licenseForm.setData('support_until', event.target.value)} error={licenseForm.errors.support_until} />
+                                <SelectField label="Estado" name="status" value={licenseForm.data.status} onChange={(event) => licenseForm.setData('status', event.target.value)} error={licenseForm.errors.status}>
+                                    <option value="active">Activa</option>
+                                    <option value="suspended">Suspendida</option>
+                                    <option value="expired">Vencida</option>
+                                </SelectField>
+                                <div className="md:col-span-3"><PrimarySubmit processing={licenseForm.processing}>Guardar licencia</PrimarySubmit></div>
+                            </form>
+                            <div className="mt-4 grid gap-3 md:grid-cols-2">
+                                {licenses.map((license) => (
+                                    <div key={license.id} className="rounded-md border border-slate-200 p-3 text-sm dark:border-slate-800">
+                                        <p className="font-semibold text-slate-900 dark:text-white">{license.holder_name}</p>
+                                        <p className="text-slate-600 dark:text-slate-400">NIT {license.nit ?? '-'} - {license.domain ?? 'Sin dominio'} - {statusLabel(license.status)}</p>
+                                    </div>
+                                ))}
+                            </div>
+                        </Panel>
+
+                        <Panel className="mt-6 border-rose-300 dark:border-rose-900/50" title="Limpieza y Purga de Base de Datos" help="Herramienta avanzada para superadministradores. Permite eliminar definitivamente registros físicos de la base de datos (Hard Delete sin softdelete) por módulo, por tabla o de forma global.">
+                            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                                <div>
+                                    <p className="font-semibold text-slate-900 dark:text-white">Mantenimiento y Purga Permanente (Hard Delete)</p>
+                                    <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
+                                        Elimina de forma física e irrecuperable ventas, compras, kardex, stock, gastos, o tablas completas con confirmación de seguridad y soporte de copia previa.
+                                    </p>
                                 </div>
-                            ))}
-                        </div>
-                    </Panel>
+                                <Link
+                                    href={route('system-superadmin.database-purge.index')}
+                                    className="inline-flex shrink-0 items-center gap-2 rounded-md bg-rose-600 px-4 py-2.5 text-sm font-bold text-white shadow-sm hover:bg-rose-700 focus:outline-none focus:ring-2 focus:ring-rose-500"
+                                >
+                                    <span>🗑️</span> Abrir panel de purga de BD
+                                </Link>
+                            </div>
+                        </Panel>
+
+                        <Panel className="mt-6 border-sky-300 dark:border-sky-900/50" title="Control de Versiones y Repositorio Git" help="Módulo para superadministradores que compara la versión del sistema con GitHub, muestra la rama, el commit activo y permite hacer commit, pull o restablecer a la versión previa.">
+                            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                                <div>
+                                    <p className="font-semibold text-slate-900 dark:text-white">Estado del Repositorio y Sincronización GitHub</p>
+                                    <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
+                                        Supervisa la rama, el commit actual y su estado con GitHub. Realiza commits locales o push, actualiza con pull o restablece a la versión anterior.
+                                    </p>
+                                </div>
+                                <Link
+                                    href={route('system-superadmin.git-versioning.index')}
+                                    className="inline-flex shrink-0 items-center gap-2 rounded-md bg-sky-600 px-4 py-2.5 text-sm font-bold text-white shadow-sm hover:bg-sky-700 focus:outline-none focus:ring-2 focus:ring-sky-500"
+                                >
+                                    <span>🌿</span> Control de Versiones Git
+                                </Link>
+                            </div>
+                        </Panel>
+                    </>
                 ) : null}
             </section>
         </AuthenticatedLayout>

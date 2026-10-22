@@ -50,7 +50,7 @@ class SaleReturnController extends Controller
                 });
             })
             ->latest('returned_at')
-            ->paginate($request->integer('per_page', 15))
+            ->paginate(max(1, min(100, $request->integer('per_page', 15))))
             ->withQueryString();
 
         $sales = Sale::query()
@@ -133,6 +133,10 @@ class SaleReturnController extends Controller
                 ]);
 
                 $this->restoreInventory($sale, $saleReturn, $saleItem, $saleReturnItem, $request->user()->id, $quantities);
+                $returnedByItem[$saleItem->id] = round(
+                    (float) ($returnedByItem[$saleItem->id] ?? 0) + $meters,
+                    3
+                );
                 $totalAmount += $total;
             }
 

@@ -198,6 +198,9 @@ class PurchaseOrderController extends Controller
     private function createReceipt(PurchaseOrder $order, array $payload, User $user, InventoryQuantityService $quantities): Purchase
     {
         $order = PurchaseOrder::query()->with('items.product')->lockForUpdate()->findOrFail($order->id);
+        if (! in_array($order->status, [PurchaseOrder::STATUS_APPROVED, PurchaseOrder::STATUS_PARTIAL_RECEIVED], true)) {
+            throw ValidationException::withMessages(['order' => 'La orden ya no admite recepciones.']);
+        }
         $payloadItems = collect($payload['items'] ?? [])
             ->filter(fn (array $item) => (float) ($item['meters'] ?? 0) > 0)
             ->values();
@@ -205,6 +208,7 @@ class PurchaseOrderController extends Controller
         $orderItems = PurchaseOrderItem::query()
             ->whereIn('id', $payloadItems->pluck('purchase_order_item_id'))
             ->with('product')
+            ->orderBy('id')
             ->lockForUpdate()
             ->get()
             ->keyBy('id');
@@ -240,7 +244,7 @@ class PurchaseOrderController extends Controller
             ->map(fn ($rows) => round((float) $rows->sum('meters'), 3));
 
         $totalAmount = $normalizedItems->sum('line_total');
-        $receiptNumber = 'REC-'.$order->order_number.'-'.now()->format('YmdHis');
+        $receiptNumber = 'REC-'.mb_substr($order->order_number, 0, 45).'-'.now()->format('YmdHis').'-'.\Illuminate\Support\Str::lower((string) \Illuminate\Support\Str::ulid());
 
         $purchase = Purchase::query()->create([
             'branch_id' => $order->branch_id,

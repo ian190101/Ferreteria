@@ -43,7 +43,6 @@ export default function Form({ branches = [], suppliers = [], units = [], catego
     const { data, setData, post, processing, errors, transform } = useForm({
         branch_id: branches[0]?.id ?? '',
         supplier_id: '',
-        document_number: '',
         purchase_date: new Date().toISOString().slice(0, 10),
         status: 'received',
         items: [newDefaultItem(categories, units, branches)],
@@ -262,7 +261,7 @@ export default function Form({ branches = [], suppliers = [], units = [], catego
                     ) : null}
 
                     <div className="grid gap-5 rounded-lg border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:grid-cols-4">
-                        <FormField label="Documento" name="document_number" value={data.document_number} onChange={(event) => setData('document_number', event.target.value)} error={errors.document_number} required />
+                        <FormField label="Documento" name="document_number" value="Se asigna automáticamente al guardar" disabled helpText="Número correlativo automático por sucursal." />
                         <SelectField label="Sucursal" name="branch_id" value={data.branch_id} onChange={(event) => setData('branch_id', event.target.value)} error={errors.branch_id} helpTitle="Sucursal de ingreso" helpTooltip="Todo stock que ingrese por esta compra quedara disponible en esta sucursal, salvo que la compra quede como borrador." helpText="La sucursal seleccionada recibira el stock cuando la compra quede como recibida.">
                             {branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
                         </SelectField>

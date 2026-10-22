@@ -4,13 +4,23 @@ namespace App\Modules\Inventory\Models;
 
 use App\Models\User;
 use App\Modules\Branches\Models\Branch;
+use App\Modules\Shared\Models\AuditableModel;
 use Illuminate\Database\Eloquent\Casts\Attribute;
-use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
 
-class InventoryMovement extends Model
+class InventoryMovement extends AuditableModel
 {
+    protected static function booted(): void
+    {
+        static::updating(static function (self $movement): void {
+            throw new \LogicException('El kardex es inmutable; registra un movimiento compensatorio.');
+        });
+        static::deleting(static function (self $movement): void {
+            throw new \LogicException('No se puede eliminar un movimiento de kardex.');
+        });
+    }
+
     public $timestamps = false;
 
     protected $fillable = [

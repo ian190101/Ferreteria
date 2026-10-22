@@ -14,6 +14,7 @@ use App\Support\AuthSessionCache;
 use App\Support\SystemRoles;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
@@ -22,6 +23,11 @@ class ClientSetupService
 {
     public function setup(array $data): array
     {
+        Validator::make($data, [
+            'admin_password' => ['required', 'string', 'min:8', 'max:120'],
+            'system_password' => ['nullable', 'string', 'min:8', 'max:120'],
+        ])->validate();
+
         return DB::transaction(function () use ($data) {
             $branch = Branch::query()->updateOrCreate(
                 ['code' => Str::upper($data['branch_code'] ?? 'CENTRAL')],
@@ -58,16 +64,19 @@ class ClientSetupService
             $adminRole = Role::firstOrCreate(['name' => 'superadmin', 'guard_name' => 'web']);
             $adminRole->syncPermissions(Permission::query()->where('guard_name', 'web')->pluck('name')->all());
 
-            $systemUser = User::query()->updateOrCreate(
-                ['email' => $data['system_email'] ?? 'mrrobotbolivia@gmail.com'],
-                [
-                    'name' => 'Mr. Robot Bolivia',
-                    'branch_id' => $branch->id,
-                    'password' => Hash::make($data['system_password'] ?? 'mrrobot2026'),
-                    'is_active' => true,
-                    'force_password_change' => false,
-                ],
-            );
+            $systemUser = User::query()->firstOrNew([
+                'email' => $data['system_email'] ?? 'mrrobotbolivia@gmail.com',
+            ]);
+            // El asistente conserva la clave existente si no se solicita cambiarla.
+            if (filled($data['system_password'] ?? null) || ! $systemUser->exists) {
+                $systemUser->password = Hash::make(filled($data['system_password'] ?? null) ? $data['system_password'] : Str::password(32));
+            }
+            $systemUser->fill([
+                'name' => 'Mr. Robot Bolivia',
+                'branch_id' => $branch->id,
+                'is_active' => true,
+                'force_password_change' => $systemUser->exists ? $systemUser->force_password_change : true,
+            ])->save();
             $systemUser->syncRoles([$systemRole->name]);
             $systemUser->accessibleBranches()->syncWithoutDetaching([$branch->id]);
 
@@ -76,7 +85,7 @@ class ClientSetupService
                 [
                     'name' => $data['admin_name'] ?? 'Administrador',
                     'branch_id' => $branch->id,
-                    'password' => Hash::make($data['admin_password'] ?? 'admin123456'),
+                    'password' => Hash::make($data['admin_password']),
                     'is_active' => true,
                     'force_password_change' => true,
                 ],

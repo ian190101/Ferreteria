@@ -14,24 +14,27 @@ use App\Modules\Inventory\Services\InventoryQuantityService;
 use App\Modules\Inventory\Services\ProductWorkflowPolicy;
 use App\Modules\Inventory\Support\ProductCodeGenerator;
 use App\Modules\Purchases\Http\Requests\StorePurchaseRequest;
+use App\Modules\Purchases\Http\Requests\VoidPurchaseRequest;
 use App\Modules\Purchases\Models\Purchase;
+use App\Modules\Purchases\Services\PurchaseNumberService;
+use App\Modules\Purchases\Services\PurchaseService;
+use App\Modules\Purchases\Services\PurchaseVoidAuthorization;
 use App\Modules\Purchases\Services\PurchaseWorkflowPolicy;
 use App\Modules\Sales\Services\SalesDocumentPolicy;
 use App\Support\BranchAccess;
 use App\Support\UiCatalogCache;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Str;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 
 class PurchaseController extends Controller
 {
-    public function __construct(private readonly InventoryQuantityService $quantities)
-    {
-    }
+    public function __construct(private readonly InventoryQuantityService $quantities) {}
 
     public function index(Request $request): Response
     {
@@ -50,6 +53,7 @@ class PurchaseController extends Controller
                 'status',
             ])
             ->with(['branch:id,name', 'supplier:id,name', 'user:id,name'])
+            ->withExists('payments')
             ->when(true, fn ($query) => BranchAccess::apply($query, $request->user()))
             ->when($request->string('search')->isNotEmpty(), function ($query) use ($request) {
                 $search = $request->string('search')->toString();
@@ -59,6 +63,12 @@ class PurchaseController extends Controller
             ->latest('purchase_date')
             ->paginate($request->integer('per_page', 15))
             ->withQueryString();
+
+        $purchases->through(function (Purchase $purchase) use ($request): Purchase {
+            $purchase->setAttribute('can_void', app(PurchaseVoidAuthorization::class)->allows($request->user(), $purchase));
+
+            return $purchase;
+        });
 
         return Inertia::render('Purchases/Index', [
             'purchases' => $purchases,
@@ -131,7 +141,7 @@ class PurchaseController extends Controller
                 $item['display_unit_label'] = $item['display_unit_label'] ?? $product->unit?->symbol ?? $product->base_unit ?? 'unidad';
                 $item['item_attributes'] = $this->purchaseItemAttributes($product, $item['item_attributes'] ?? []);
                 $item['calculation_mode'] = $item['calculation_mode'] ?? 'direct';
-                $item['description'] = $item['description'] ?: $product->name;
+                $item['description'] = ($item['description'] ?? null) ?: $product->name;
                 $item['line_total'] = round($meters * (float) $item['unit_cost'], 2);
 
                 return $item;
@@ -141,7 +151,7 @@ class PurchaseController extends Controller
                 'branch_id' => $request->integer('branch_id'),
                 'supplier_id' => $request->input('supplier_id'),
                 'user_id' => $request->user()->id,
-                'document_number' => $request->string('document_number')->toString(),
+                'document_number' => app(PurchaseNumberService::class)->next($branchId),
                 'purchase_date' => now()->toDateString(),
                 'total_amount' => $items->sum('line_total'),
                 'paid_amount' => 0,
@@ -217,8 +227,38 @@ class PurchaseController extends Controller
     {
         abort_unless(BranchAccess::canAccess(request()->user(), (int) $purchase->branch_id), 403);
 
+        $purchase->setAttribute('can_void', app(PurchaseVoidAuthorization::class)->allows(request()->user(), $purchase));
+
         return Inertia::render('Purchases/Show', [
             'purchase' => $purchase->load(['branch:id,name', 'supplier:id,name', 'user:id,name', 'items.product:id,name,sku,inventory_tracking_mode', 'items.coil:id,barcode,lot_number,available_meters']),
+        ]);
+    }
+
+    public function void(VoidPurchaseRequest $request, Purchase $purchase, PurchaseService $purchaseService): RedirectResponse
+    {
+        abort_unless(BranchAccess::canAccess($request->user(), (int) $purchase->branch_id), 403);
+
+        $voidReason = 'Anulado por '.$request->user()->name.': '.$request->string('reason')->toString();
+
+        $purchaseService->voidPurchase($purchase, (int) $request->user()->id, $voidReason);
+
+        return redirect()->back()->with('success', 'Compra anulada correctamente.');
+    }
+
+    public function voidPreview(Request $request, Purchase $purchase): JsonResponse
+    {
+        app(PurchaseVoidAuthorization::class)->authorize($request->user(), $purchase);
+        $purchase->load(['payments.method:id,name', 'items.product:id,name', 'items.coil:id,barcode']);
+
+        return response()->json([
+            'document_number' => $purchase->document_number,
+            'branch_id' => $purchase->branch_id,
+            'payments' => $purchase->payments->map(fn ($payment) => [
+                'id' => $payment->id, 'amount' => $payment->amount, 'method' => $payment->method?->name,
+            ]),
+            'inventory' => $purchase->status === 'received' ? $purchase->items->map(fn ($item) => [
+                'product' => $item->product?->name, 'quantity' => $item->meters, 'coil' => $item->coil?->barcode,
+            ]) : [],
         ]);
     }
 
@@ -298,11 +338,11 @@ class PurchaseController extends Controller
         $productPolicy = app(ProductWorkflowPolicy::class);
         $allowedUnits = $productPolicy->unitEquivalencesEnabled()
             ? collect($payload['allowed_units'] ?? [])
-            ->push($baseUnit)
-            ->filter()
-            ->unique()
-            ->values()
-            ->all()
+                ->push($baseUnit)
+                ->filter()
+                ->unique()
+                ->values()
+                ->all()
             : [$baseUnit];
 
         $product = Product::query()->create([

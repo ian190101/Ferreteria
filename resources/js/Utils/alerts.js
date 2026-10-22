@@ -41,6 +41,7 @@ export async function promptAction({
     cancelButtonText = 'Cancelar',
     placeholder = '',
     required = true,
+    maxLength = 1000,
 } = {}) {
     const result = await Swal.fire({
         title,
@@ -49,7 +50,7 @@ export async function promptAction({
         inputLabel,
         inputPlaceholder: placeholder,
         inputAttributes: {
-            maxlength: 1000,
+            maxlength: maxLength,
         },
         showCancelButton: true,
         confirmButtonText,
@@ -120,4 +121,48 @@ export async function chooseAction({
     }
 
     return null;
+}
+
+export async function dangerConfirmAction({
+    title = 'Confirmar eliminacion permanente',
+    html = '',
+    text = 'Esta accion eliminara definitivamente los datos seleccionados de la base de datos (NO es softdelete). No se podra recuperar.',
+    confirmButtonText = 'Si, eliminar definitivamente',
+    cancelButtonText = 'Cancelar',
+    requiredText = null,
+    icon = 'warning',
+    confirmButtonColor = null,
+} = {}) {
+    const swalOptions = {
+        title,
+        icon,
+        showCancelButton: true,
+        confirmButtonText,
+        cancelButtonText,
+        reverseButtons: true,
+        background: isDarkMode() ? '#0f172a' : '#ffffff',
+        color: isDarkMode() ? '#e2e8f0' : '#0f172a',
+        confirmButtonColor: confirmButtonColor || brandColor(),
+        cancelButtonColor: isDarkMode() ? '#475569' : '#64748b',
+    };
+
+    if (requiredText) {
+        swalOptions.html = html || `<p class="mb-3">${text}</p><p class="text-sm font-semibold text-rose-600 dark:text-rose-400">Escribe <strong>${requiredText}</strong> para confirmar:</p>`;
+        swalOptions.input = 'text';
+        swalOptions.inputPlaceholder = requiredText;
+        swalOptions.inputValidator = (value) => {
+            if ((value ?? '').trim().toUpperCase() !== requiredText.trim().toUpperCase()) {
+                return `Debes escribir exactamente "${requiredText}" para proceder.`;
+            }
+        };
+    } else {
+        if (html) {
+            swalOptions.html = html;
+        } else {
+            swalOptions.text = text;
+        }
+    }
+
+    const result = await Swal.fire(swalOptions);
+    return result.isConfirmed ? (result.value ?? true) : false;
 }

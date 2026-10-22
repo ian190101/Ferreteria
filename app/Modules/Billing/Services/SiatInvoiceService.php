@@ -32,7 +32,16 @@ class SiatInvoiceService
             ]);
         }
 
-        return DB::transaction(function () use ($sale, $userId, $temporaryWhenOffline) {
+        if (DB::transactionLevel() !== 0) {
+            throw new \LogicException('La emisión fiscal debe iniciarse fuera de otra transacción.');
+        }
+        $setting = $this->configuration->settingForBranch((int) $sale->branch_id);
+        $cufd = $this->configuration->activeCufd((int) $sale->branch_id);
+        if (! $cufd && ! $temporaryWhenOffline && $this->workflow->autoRequestCufd()) {
+            $cufd = app(SiatCodeService::class)->requestCufd((int) $sale->branch_id);
+        }
+
+        $invoice = DB::transaction(function () use ($sale, $userId, $temporaryWhenOffline, $setting, $cufd) {
             $sale = Sale::query()
                 ->with([
                     'branch:id,name,address,phone',
@@ -47,7 +56,7 @@ class SiatInvoiceService
 
             $existing = SiatInvoice::query()
                 ->where('sale_id', $sale->id)
-                ->whereIn('status', [SiatInvoice::STATUS_PENDING, SiatInvoice::STATUS_VALIDATED])
+                ->where('status', '!=', SiatInvoice::STATUS_VOIDED)
                 ->first();
 
             if ($existing) {
@@ -56,14 +65,14 @@ class SiatInvoiceService
                 ]);
             }
 
+            $setting = SiatBranchSetting::query()
+                ->whereKey($setting->id)->lockForUpdate()->firstOrFail();
+
             if ($this->workflow->requireCustomerTaxData() && blank($sale->customer_document)) {
                 throw ValidationException::withMessages([
                     'billing' => 'La configuracion fiscal exige documento/NIT del cliente antes de emitir factura.',
                 ]);
             }
-
-            $setting = $this->configuration->settingForBranch((int) $sale->branch_id);
-            $cufd = $this->configuration->activeCufd((int) $sale->branch_id);
 
             if (! $cufd && $temporaryWhenOffline) {
                 return $this->createTemporaryInvoice($sale, $setting, $userId);
@@ -75,7 +84,11 @@ class SiatInvoiceService
                 ]);
             }
 
-            $cufd ??= app(SiatCodeService::class)->requestCufd((int) $sale->branch_id);
+            if (! $cufd) {
+                throw ValidationException::withMessages([
+                    'billing' => 'No existe CUFD vigente para emitir',
+                ]);
+            }
             $setting = $this->readiness->assertReadyForInvoice((int) $sale->branch_id);
             $issuedAt = now();
             $invoiceNumber = $this->nextInvoiceNumber((int) $sale->branch_id);
@@ -135,12 +148,20 @@ class SiatInvoiceService
                 'status' => SiatInvoice::STATUS_PENDING,
             ]);
 
-            return $this->send($invoice->refresh(), $setting);
+            return $invoice->refresh();
         });
+
+        return $invoice->status === SiatInvoice::STATUS_PENDING
+            ? $this->send($invoice, $setting)
+            : $invoice;
     }
 
     public function send(SiatInvoice $invoice, ?SiatBranchSetting $setting = null): SiatInvoice
     {
+        if (DB::transactionLevel() !== 0) {
+            throw new \LogicException('La comunicación SIAT no debe mantener una transacción abierta.');
+        }
+
         $setting ??= $this->configuration->settingForBranch((int) $invoice->branch_id);
         $cuis = $this->configuration->activeCuis((int) $invoice->branch_id);
 
@@ -188,6 +209,10 @@ class SiatInvoiceService
 
     public function void(SiatInvoice $invoice, int $reasonCode, string $reason): SiatInvoice
     {
+        if (DB::transactionLevel() !== 0) {
+            throw new \LogicException('La comunicación SIAT no debe mantener una transacción abierta.');
+        }
+
         $setting = $this->configuration->settingForBranch((int) $invoice->branch_id);
         $cuis = $this->configuration->activeCuis((int) $invoice->branch_id);
 
@@ -214,12 +239,21 @@ class SiatInvoiceService
         ];
 
         $response = $this->soap->call($setting, 'ServicioFacturacionCompraVenta', 'anulacionFactura', $payload);
+        $body = $response['RespuestaServicioFacturacion'] ?? $response['RespuestaServicio'] ?? [];
+        $state = (int) ($body['codigoEstado'] ?? 0);
+        if ($state !== 905) {
+            $invoice->update(['siat_response' => $response]);
+            throw ValidationException::withMessages([
+                'billing' => 'El SIAT no confirmó la anulación. La factura conserva su estado.',
+            ]);
+        }
 
         $invoice->update([
             'status' => SiatInvoice::STATUS_VOIDED,
             'voided_at' => now(),
             'void_reason_code' => $reasonCode,
             'void_reason' => $reason,
+            'siat_state_code' => $state,
             'siat_response' => $response,
         ]);
 
@@ -290,7 +324,6 @@ class SiatInvoiceService
     {
         $last = SiatInvoice::query()
             ->where('branch_id', $branchId)
-            ->lockForUpdate()
             ->selectRaw('MAX(CAST(invoice_number AS UNSIGNED)) as max_number')
             ->value('max_number');
 

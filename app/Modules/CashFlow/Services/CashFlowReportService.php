@@ -42,6 +42,17 @@ class CashFlowReportService
 
     public function filters(Request $request): array
     {
+        $rules = [
+            'from' => ['nullable', 'date_format:Y-m-d'],
+            'to' => ['nullable', 'date_format:Y-m-d'],
+            'search' => ['nullable', 'string', 'max:200'],
+            'per_page' => ['nullable', 'integer', 'min:10', 'max:100'],
+        ];
+        if ($request->filled('from')) {
+            $rules['to'][] = 'after_or_equal:from';
+        }
+        $request->validate($rules);
+
         $smartFilter = $request->string('smart_filter')->toString();
         $from = $request->date('from')?->startOfDay();
         $to = $request->date('to')?->endOfDay();
@@ -123,6 +134,13 @@ class CashFlowReportService
         return $this->basePaymentQuery(SalePayment::query(), $request, $filters, 'paid_at')
             ->with(['branch:id,name', 'user:id,name', 'method:id,name,code', 'sale:id,receipt_number,customer_name,total,balance_due,status'])
             ->get()
+            ->tap(function (Collection $rows): void {
+                if ($rows->count() > 10000) {
+                    throw \Illuminate\Validation\ValidationException::withMessages([
+                        'from' => 'El rango supera el límite del informe interactivo. Reduce las fechas.',
+                    ]);
+                }
+            })
             ->map(fn (SalePayment $payment) => [
                 'key' => 'sale-'.$payment->id,
                 'date' => $payment->paid_at?->toIso8601String(),
@@ -149,6 +167,13 @@ class CashFlowReportService
         return $this->basePaymentQuery(PurchasePayment::query(), $request, $filters, 'paid_at')
             ->with(['branch:id,name', 'user:id,name', 'method:id,name,code', 'purchase:id,document_number,supplier_id,total_amount,balance_due'])
             ->get()
+            ->tap(function (Collection $rows): void {
+                if ($rows->count() > 10000) {
+                    throw \Illuminate\Validation\ValidationException::withMessages([
+                        'from' => 'El rango supera el límite del informe interactivo. Reduce las fechas.',
+                    ]);
+                }
+            })
             ->map(fn (PurchasePayment $payment) => [
                 'key' => 'purchase-'.$payment->id,
                 'date' => $payment->paid_at?->toIso8601String(),
@@ -177,11 +202,31 @@ class CashFlowReportService
             ->where('total', '>', 0)
             ->whereColumn('balance_due', '<', 'total')
             ->where(fn (Builder $builder) => $builder->whereNull('status')->orWhere('status', '!=', 'void'))
-            ->doesntHave('payments')
+            ->whereDoesntHave('payments', fn (Builder $payments) => $payments->withTrashed())
+            ->select('sales.*')
+            ->addSelect(['cash_flow_credits' => \App\Modules\Payments\Models\CreditNote::query()
+                ->selectRaw('COALESCE(SUM(amount), 0)')
+                ->whereColumn('sale_id', 'sales.id')])
             ->with(['branch:id,name', 'user:id,name'])
             ->get()
+            ->tap(function (Collection $rows): void {
+                if ($rows->count() > 10000) {
+                    throw \Illuminate\Validation\ValidationException::withMessages([
+                        'from' => 'El rango supera el límite del informe interactivo. Reduce las fechas.',
+                    ]);
+                }
+            })
             ->map(function (Sale $sale) {
-                $amount = max(round(((float) $sale->total - (float) $sale->balance_due) * (float) $sale->exchange_rate_to_bob, 2), 0);
+                $collected = bcsub(
+                    bcsub((string) $sale->total, (string) $sale->balance_due, 2),
+                    (string) ($sale->cash_flow_credits ?? '0'),
+                    2
+                );
+                $amount = bccomp($collected, '0', 2) > 0
+                    ? (float) \App\Modules\Finance\Support\Decimal::round(
+                        bcmul($collected, (string) $sale->exchange_rate_to_bob, 8), 2
+                    )
+                    : 0.0;
 
                 return [
                     'key' => 'legacy-sale-'.$sale->id,
@@ -212,9 +257,16 @@ class CashFlowReportService
         return $this->basePaymentQuery(Purchase::query(), $request, $filters, 'purchase_date')
             ->where('paid_amount', '>', 0)
             ->where(fn (Builder $builder) => $builder->whereNull('status')->orWhere('status', '!=', 'void'))
-            ->doesntHave('payments')
+            ->whereDoesntHave('payments', fn (Builder $payments) => $payments->withTrashed())
             ->with(['branch:id,name', 'user:id,name'])
             ->get()
+            ->tap(function (Collection $rows): void {
+                if ($rows->count() > 10000) {
+                    throw \Illuminate\Validation\ValidationException::withMessages([
+                        'from' => 'El rango supera el límite del informe interactivo. Reduce las fechas.',
+                    ]);
+                }
+            })
             ->map(fn (Purchase $purchase) => [
                 'key' => 'legacy-purchase-'.$purchase->id,
                 'date' => $purchase->purchase_date?->toIso8601String(),
@@ -242,6 +294,13 @@ class CashFlowReportService
             ->where('status', Expense::STATUS_REGISTERED)
             ->with(['branch:id,name', 'user:id,name', 'paymentMethod:id,name,code', 'category:id,name,code'])
             ->get()
+            ->tap(function (Collection $rows): void {
+                if ($rows->count() > 10000) {
+                    throw \Illuminate\Validation\ValidationException::withMessages([
+                        'from' => 'El rango supera el límite del informe interactivo. Reduce las fechas.',
+                    ]);
+                }
+            })
             ->map(fn (Expense $expense) => [
                 'key' => 'expense-'.$expense->id,
                 'date' => $expense->spent_at?->toIso8601String(),
@@ -271,6 +330,13 @@ class CashFlowReportService
             ->whereIn('type', [BankTransaction::TYPE_DEPOSIT, BankTransaction::TYPE_WITHDRAWAL])
             ->with(['branch:id,name', 'user:id,name', 'account:id,name,account_number,currency_code'])
             ->get()
+            ->tap(function (Collection $rows): void {
+                if ($rows->count() > 10000) {
+                    throw \Illuminate\Validation\ValidationException::withMessages([
+                        'from' => 'El rango supera el límite del informe interactivo. Reduce las fechas.',
+                    ]);
+                }
+            })
             ->map(function (BankTransaction $transaction) {
                 $isIncome = $transaction->type === BankTransaction::TYPE_DEPOSIT;
 
@@ -303,7 +369,8 @@ class CashFlowReportService
             ->when($filters['branch_id'], fn (Builder $builder) => $builder->where('branch_id', $filters['branch_id']))
             ->when($filters['payment_method_id'] && $dateColumn !== 'transacted_at', fn (Builder $builder) => $builder->where('payment_method_id', $filters['payment_method_id']))
             ->when($filters['from_at'], fn (Builder $builder) => $builder->where($dateColumn, '>=', Carbon::parse($filters['from_at'])->startOfDay()))
-            ->when($filters['to_at'], fn (Builder $builder) => $builder->where($dateColumn, '<=', Carbon::parse($filters['to_at'])->endOfDay()));
+            ->when($filters['to_at'], fn (Builder $builder) => $builder->where($dateColumn, '<=', Carbon::parse($filters['to_at'])->endOfDay()))
+            ->limit(10001);
     }
 
     private function applyCollectionFilters(Collection $movements, array $filters): Collection

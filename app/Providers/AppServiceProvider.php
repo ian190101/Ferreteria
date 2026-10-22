@@ -67,7 +67,7 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        $this->app->singleton(\App\Support\OperationalWriteGate::class);
     }
 
     /**
@@ -75,6 +75,29 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        Event::listen(\Illuminate\Queue\Events\JobProcessing::class, function ($event): void {
+            if (! in_array($event->job->payload()['displayName'] ?? '', [\App\Jobs\PurgeDatabaseJob::class, \App\Jobs\DeployRepositoryJob::class, \App\Jobs\RestoreMaintenanceBackupJob::class], true)) {
+                app(\App\Support\OperationalWriteGate::class)->begin();
+            }
+        });
+        foreach ([\Illuminate\Queue\Events\JobProcessed::class, \Illuminate\Queue\Events\JobExceptionOccurred::class] as $eventClass) {
+            Event::listen($eventClass, function ($event): void {
+                if (! in_array($event->job->payload()['displayName'] ?? '', [\App\Jobs\PurgeDatabaseJob::class, \App\Jobs\DeployRepositoryJob::class, \App\Jobs\RestoreMaintenanceBackupJob::class], true)) {
+                    app(\App\Support\OperationalWriteGate::class)->finish();
+                }
+            });
+        }
+        $maintenanceCommands = ['production:backup-scheduled', 'production:cleanup', 'production:invalidate-caches', 'siat:daily-maintenance', 'system:create-master-user', 'app:setup-client'];
+        Event::listen(\Illuminate\Console\Events\CommandStarting::class, function ($event) use ($maintenanceCommands): void {
+            if (in_array($event->command, $maintenanceCommands, true)) {
+                app(\App\Support\OperationalWriteGate::class)->begin();
+            }
+        });
+        Event::listen(\Illuminate\Console\Events\CommandFinished::class, function ($event) use ($maintenanceCommands): void {
+            if (in_array($event->command, $maintenanceCommands, true)) {
+                app(\App\Support\OperationalWriteGate::class)->finish();
+            }
+        });
         Gate::before(function (User $user, string $ability) {
             return AuthSessionCache::isSuperAdministrator($user) ? true : null;
         });
@@ -135,12 +158,27 @@ class AppServiceProvider extends ServiceProvider
         ])->unique()->values()->all();
 
         foreach ($models as $model) {
-            $model::saved(fn () => $this->invalidateRuntimeCaches($model));
-            $model::deleted(fn () => $this->invalidateRuntimeCaches($model));
+            $model::saved(fn ($instance) => $instance->getConnection()->afterCommit(fn () => $this->invalidateRuntimeCaches($model)));
+            $model::deleted(fn ($instance) => $instance->getConnection()->afterCommit(fn () => $this->invalidateRuntimeCaches($model)));
         }
     }
 
     private function invalidateRuntimeCaches(string $model): void
+    {
+        try {
+            $this->invalidateRuntimeCachesNow($model);
+        } catch (\Throwable $exception) {
+            // Un fallo posterior al commit no puede presentarse como una reversión del negocio.
+            try {
+                app(\App\Support\OperationalCacheOutbox::class)->schedule();
+                report($exception);
+            } catch (\Throwable) {
+                // La disponibilidad del registro tampoco debe alterar un commit confirmado.
+            }
+        }
+    }
+
+    private function invalidateRuntimeCachesNow(string $model): void
     {
         SystemCacheInvalidator::bumpOperational();
 

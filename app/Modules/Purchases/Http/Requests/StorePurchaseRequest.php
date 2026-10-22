@@ -19,6 +19,18 @@ class StorePurchaseRequest extends FormRequest
 
     protected function prepareForValidation(): void
     {
+        \Illuminate\Support\Facades\Validator::make($this->all(), [
+            'items' => ['required', 'array', 'min:1', 'max:200'],
+            'items.*' => ['required', 'array'],
+            'items.*.product_id' => ['nullable', 'integer'],
+            'items.*.calculation_mode' => ['nullable', 'in:direct,length,weight'],
+            'items.*.display_unit_label' => ['nullable', 'string', 'max:24'],
+            'items.*.display_quantity' => ['nullable', 'numeric', 'between:0,999999999999.999'],
+            'items.*.meters' => ['nullable', 'numeric', 'between:0,999999999999.999'],
+            'items.*.base_quantity' => ['nullable', 'numeric', 'between:0,999999999999.999'],
+            'items.*.length' => ['nullable', 'numeric', 'between:0,999999999999.999'],
+        ])->validate();
+
         $products = Product::query()
             ->with('unitConversions.unit:id,symbol')
             ->whereIn('id', collect($this->input('items', []))->pluck('product_id')->filter()->unique()->values())
@@ -86,10 +98,11 @@ class StorePurchaseRequest extends FormRequest
         return [
             'branch_id' => ['required', 'integer', 'exists:branches,id'],
             'supplier_id' => ['nullable', 'integer', 'exists:suppliers,id'],
-            'document_number' => ['required', 'string', 'max:80'],
+            'document_number' => ['exclude'],
             'purchase_date' => ['nullable', 'date'],
             'status' => ['required', 'in:draft,received'],
-            'items' => ['required', 'array', 'min:1'],
+            'items' => ['required', 'array', 'min:1', 'max:200'],
+            'items.*' => ['required', 'array'],
             'items.*.product_id' => ['nullable', 'integer', 'exists:products,id'],
             'items.*.new_product' => ['nullable', 'array'],
             'items.*.new_product.name' => ['nullable', 'string', 'max:255'],
@@ -181,6 +194,10 @@ class StorePurchaseRequest extends FormRequest
     public function withValidator($validator): void
     {
         $validator->after(function ($validator) {
+            if ($validator->errors()->isNotEmpty()) {
+                return;
+            }
+
             if ($message = BranchAccess::validate($this->user(), $this->integer('branch_id'))) {
                 $validator->errors()->add('branch_id', $message);
 

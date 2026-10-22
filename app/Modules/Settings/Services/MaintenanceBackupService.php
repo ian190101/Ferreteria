@@ -3,14 +3,12 @@
 namespace App\Modules\Settings\Services;
 
 use App\Models\User;
-use App\Modules\Customers\Models\Customer;
-use App\Modules\Inventory\Models\Product;
 use App\Modules\Settings\Models\MaintenanceBackup;
-use App\Modules\Settings\Models\SystemSetting;
-use Illuminate\Support\Collection;
+use App\Support\OperationalCacheOutbox;
+use App\Support\OperationalWriteGate;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Throwable;
 
@@ -19,23 +17,39 @@ class MaintenanceBackupService
     public function generate(string $format = 'json', ?User $user = null, array $metadata = []): MaintenanceBackup
     {
         $format = $format === 'sql' ? 'sql' : 'json';
-        $content = $format === 'sql' ? $this->buildSqlDump() : $this->buildJsonBackup();
-        $path = 'backups/backup-'.now()->format('Ymd-His').'.'.$format;
+        $stream = tmpfile();
+        if ($stream === false) {
+            throw ValidationException::withMessages(['backup' => 'No se pudo abrir un archivo temporal para el respaldo.']);
+        }
+        $path = 'backups/backup-'.now()->format('Ymd-His').'-'.Str::ulid().'.'.$format;
+        $partial = $path.'.partial';
+        $disk = Storage::disk('local');
+        try {
+            if (DB::transactionLevel() === 0) {
+                DB::statement('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ');
+            }
+            $details = DB::transaction(fn () => app(StreamingDatabaseBackup::class)->write(DB::connection(), $stream, $format));
+            if (! $disk->put($partial, $stream)) {
+                throw new \RuntimeException('No se pudo escribir el respaldo en el disco configurado.');
+            }
+            $attributes = [
+                'user_id' => $user?->id ?? User::query()->orderBy('id')->value('id'),
+                'disk' => 'local', 'path' => $partial, 'status' => 'created', 'size_bytes' => $details['size_bytes'],
+                'metadata' => [...$metadata, ...$details, 'format' => $format, 'database' => DB::connection()->getDatabaseName(),
+                    'generated_by' => $user ? 'user' : 'system'],
+            ];
+            if (! $this->verifyReadable(new MaintenanceBackup($attributes))['ok'] || ! $disk->move($partial, $path)) {
+                throw new \RuntimeException('El respaldo no superó la comprobación de integridad o su publicación.');
+            }
+            $attributes['path'] = $path;
 
-        Storage::disk('local')->put($path, $content);
-
-        return MaintenanceBackup::query()->create([
-            'user_id' => $user?->id ?? User::query()->orderBy('id')->value('id'),
-            'disk' => 'local',
-            'path' => $path,
-            'status' => 'created',
-            'size_bytes' => strlen($content),
-            'metadata' => array_merge([
-                'format' => $format,
-                'database' => config('database.connections.'.DB::connection()->getName().'.database'),
-                'generated_by' => $user ? 'user' : 'system',
-            ], $metadata),
-        ]);
+            return MaintenanceBackup::query()->create($attributes);
+        } catch (Throwable $exception) {
+            $disk->delete($partial);
+            throw $exception;
+        } finally {
+            fclose($stream);
+        }
     }
 
     public function prune(int $retentionDays): int
@@ -66,6 +80,27 @@ class MaintenanceBackupService
             return ['ok' => false, 'message' => 'El archivo de backup no existe en el disco configurado.'];
         }
 
+        if (($backup->metadata['format_version'] ?? null) === 2) {
+            $stream = $disk->readStream($backup->path);
+            if ($stream === false) {
+                return ['ok' => false, 'message' => 'No se pudo abrir el respaldo para verificarlo.'];
+            }
+            try {
+                $prefix = fread($stream, 64);
+                $hash = hash_init('sha256');
+                hash_update($hash, $prefix);
+                $bytes = strlen($prefix) + hash_update_stream($hash, $stream);
+                $valid = $bytes > 0 && $bytes === (int) $backup->size_bytes
+                    && hash_equals((string) ($backup->metadata['sha256'] ?? ''), hash_final($hash));
+                $valid = $valid && (($backup->metadata['format'] ?? '') === 'sql'
+                    ? str_starts_with($prefix, "-- calmina-backup-v2\n") : str_starts_with($prefix, '{'));
+
+                return ['ok' => $valid, 'message' => $valid ? 'Tamaño y SHA-256 del respaldo verificados.' : 'El respaldo está incompleto o su integridad no coincide.'];
+            } finally {
+                fclose($stream);
+            }
+        }
+
         $content = $disk->get($backup->path);
         $format = $backup->metadata['format'] ?? pathinfo($backup->path, PATHINFO_EXTENSION);
 
@@ -86,135 +121,121 @@ class MaintenanceBackupService
         ];
     }
 
-    public function restoreSql(MaintenanceBackup $backup): array
+    public function verifyRecovery(MaintenanceBackup $backup): array
     {
-        $format = $backup->metadata['format'] ?? pathinfo($backup->path, PATHINFO_EXTENSION);
-
-        if ($format !== 'sql') {
-            throw ValidationException::withMessages([
-                'backup' => 'Solo se puede restaurar automaticamente un backup SQL. Los backups JSON son para revision operativa.',
-            ]);
+        if (($backup->metadata['format'] ?? null) !== 'sql' || ($backup->metadata['format_version'] ?? null) !== 2
+            || ! $this->verifyReadable($backup)['ok']) {
+            throw ValidationException::withMessages(['backup' => 'El respaldo SQL debe superar su verificación de integridad antes del ensayo de restauración.']);
         }
-
-        $disk = Storage::disk($backup->disk);
-
-        if (! $disk->exists($backup->path)) {
-            throw ValidationException::withMessages([
-                'backup' => 'El archivo de backup no existe en el disco configurado.',
-            ]);
+        $source = DB::connection();
+        $settings = config('maintenance.restore_verification', []);
+        $expectedDatabase = $source->getDatabaseName().'_restore_verification';
+        if (($settings['database'] ?? null) !== $expectedDatabase || empty($settings['username'])
+            || strtolower((string) $settings['username']) === 'root' || $settings['username'] === $source->getConfig('username')
+            || ($backup->metadata['database'] ?? null) !== $source->getDatabaseName()) {
+            throw ValidationException::withMessages(['backup' => 'Configura RESTORE_DB_* con una base desechable llamada '.$expectedDatabase.' y un usuario exclusivo antes de purgar.']);
         }
-
-        $content = $disk->get($backup->path);
-
-        if (! str_contains($content, 'SET FOREIGN_KEY_CHECKS=0') || ! str_contains($content, 'INSERT INTO')) {
-            throw ValidationException::withMessages([
-                'backup' => 'El backup SQL no parece ser un respaldo completo generado por el sistema.',
-            ]);
+        $connection = config('database.connections.'.$source->getName());
+        $connection = array_replace($connection, array_filter($settings, fn ($value, $key) => $value !== null && (! in_array($key, ['host', 'port'], true) || $value !== ''), ARRAY_FILTER_USE_BOTH));
+        $connection['url'] = null;
+        $connection['unix_socket'] = '';
+        $connection['options'][\PDO::ATTR_PERSISTENT] = false;
+        config(['database.connections.backup_verification' => $connection]);
+        DB::purge('backup_verification');
+        $target = DB::connection('backup_verification');
+        if ($target->getDatabaseName() !== $expectedDatabase || $target->getDriverName() !== 'mysql') {
+            throw ValidationException::withMessages(['backup' => 'La conexión temporal de restauración no es segura.']);
         }
-
-        DB::connection()->getPdo()->exec($content);
-
-        $backup->update([
-            'status' => 'restored',
-            'metadata' => array_merge($backup->metadata ?? [], [
-                'restored_at' => now()->toISOString(),
-            ]),
-        ]);
-
-        return [
-            'ok' => true,
-            'message' => 'Backup SQL restaurado correctamente. Revisa el sistema antes de continuar operando.',
-        ];
-    }
-
-    private function buildJsonBackup(): string
-    {
-        $tables = $this->tableNames(DB::connection()->getDriverName());
-        $payload = [
-            'generated_at' => now()->toISOString(),
-            'database' => DB::connection()->getDatabaseName(),
-            'tables' => $tables
-                ->mapWithKeys(fn (string $table) => [$table => DB::table($table)->orderByRaw('1')->limit(5000)->get()->toArray()])
-                ->all(),
-        ];
-
-        return json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE) ?: '{}';
-    }
-
-    private function buildSqlDump(): string
-    {
-        $connection = DB::connection();
-        $driver = $connection->getDriverName();
-        $database = (string) $connection->getDatabaseName();
-        $tables = $this->tableNames($driver);
-
-        $sql = [
-            '-- Backup SQL generado por el sistema',
-            '-- Base de datos: '.$database,
-            '-- Fecha: '.now()->format('Y-m-d H:i:s'),
-            'SET FOREIGN_KEY_CHECKS=0;',
-            'SET SQL_MODE = "NO_AUTO_VALUE_ON_ZERO";',
-            '',
-        ];
-
-        foreach ($tables as $table) {
-            $quotedTable = str_replace('`', '``', $table);
-            $sql[] = '-- Tabla: '.$table;
-            $sql[] = 'DROP TABLE IF EXISTS `'.$quotedTable.'`;';
-
-            if ($driver === 'mysql') {
-                $create = $connection->selectOne('SHOW CREATE TABLE `'.$quotedTable.'`');
-                $createSql = $create->{'Create Table'} ?? array_values((array) $create)[1] ?? null;
-                if ($createSql) {
-                    $sql[] = $createSql.';';
-                }
-            }
-
-            $connection->table($table)->orderByRaw('1')->chunk(500, function ($rows) use (&$sql, $quotedTable) {
-                foreach ($rows as $row) {
-                    $data = (array) $row;
-                    $columns = collect(array_keys($data))->map(fn (string $column) => '`'.str_replace('`', '``', $column).'`')->implode(', ');
-                    $values = collect(array_values($data))->map(fn (mixed $value) => $this->sqlValue($value))->implode(', ');
-                    $sql[] = 'INSERT INTO `'.$quotedTable.'` ('.$columns.') VALUES ('.$values.');';
-                }
-            });
-            $sql[] = '';
+        $lock = 'calmina:restore:'.sha1($expectedDatabase);
+        if ((int) $target->selectOne('SELECT GET_LOCK(?, 0) AS acquired', [$lock])->acquired !== 1) {
+            throw ValidationException::withMessages(['backup' => 'Ya existe un ensayo de restauración en curso.']);
         }
-
-        $sql[] = 'SET FOREIGN_KEY_CHECKS=1;';
-        $sql[] = '';
-
-        return implode(PHP_EOL, $sql);
-    }
-
-    private function tableNames(string $driver): Collection
-    {
+        $stream = null;
         try {
-            if ($driver === 'mysql') {
-                return collect(DB::select('SHOW FULL TABLES WHERE Table_type = ?', ['BASE TABLE']))
-                    ->map(fn (object $row) => array_values((array) $row)[0])
-                    ->values();
+            $target->getSchemaBuilder()->dropAllTables();
+            $stream = Storage::disk($backup->disk)->readStream($backup->path);
+            if ($stream === false) {
+                throw new \RuntimeException('No se pudo abrir el respaldo para el ensayo.');
             }
+            $writer = app(StreamingDatabaseBackup::class);
+            $writer->restore($target, $stream);
+            $writer->verifyRestored($target, $backup->metadata['manifest']);
+            $target->getSchemaBuilder()->dropAllTables();
+            $result = ['ok' => true, 'checked_at' => now()->toIso8601String(),
+                'tables' => count($backup->metadata['manifest']),
+                'rows' => array_sum(array_column($backup->metadata['manifest'], 'rows')),
+                'message' => 'Restauración real verificada en una base temporal, sin diferencias ni nuevas referencias huérfanas.'];
+            $backup->update(['metadata' => [...$backup->metadata, 'recovery_verification' => $result]]);
 
-            return collect(Schema::getTables())
-                ->map(fn (array $table) => $table['name'] ?? $table['schema_qualified_name'] ?? null)
-                ->filter()
-                ->values();
-        } catch (Throwable) {
-            return collect();
+            return $result;
+        } catch (Throwable $exception) {
+            $backup->update(['metadata' => [...$backup->metadata, 'recovery_verification' => [
+                'ok' => false, 'checked_at' => now()->toIso8601String(), 'exception' => $exception::class,
+            ]]]);
+            try {
+                $target->getSchemaBuilder()->dropAllTables();
+            } catch (Throwable $cleanupException) {
+                report($cleanupException);
+            }
+            report($exception);
+            throw ValidationException::withMessages(['backup' => 'Falló el ensayo de restauración. El respaldo se conserva y la purga no puede continuar.']);
+        } finally {
+            if (is_resource($stream)) {
+                fclose($stream);
+            }
+            $target->selectOne('SELECT RELEASE_LOCK(?) AS released', [$lock]);
+            DB::purge('backup_verification');
         }
     }
 
-    private function sqlValue(mixed $value): string
+    public function restoreSql(MaintenanceBackup $backup, ?\Closure $progress = null): array
     {
-        if ($value === null) {
-            return 'NULL';
+        if (($backup->metadata['format_version'] ?? null) !== 2) {
+            throw ValidationException::withMessages(['backup' => 'Este respaldo histórico no tiene manifiesto verificable. Consérvalo y realiza una restauración manual ensayada.']);
         }
 
-        if (is_bool($value)) {
-            return $value ? '1' : '0';
-        }
+        return app(OperationalWriteGate::class)->exclusive(function () use ($backup, $progress): array {
+            $progress?->__invoke('verifying_recovery');
+            $this->verifyRecovery($backup);
+            $stream = Storage::disk($backup->disk)->readStream($backup->path);
+            if ($stream === false) {
+                throw ValidationException::withMessages(['backup' => 'No se pudo abrir el respaldo verificado.']);
+            }
+            try {
+                $writer = app(StreamingDatabaseBackup::class);
+                // Estos datos siguen vivos durante el progreso; no deben retroceder ni resucitar trabajos antiguos.
+                $runtimeTables = ['cache', 'cache_locks', 'jobs', 'failed_jobs', 'sessions'];
+                $existingTables = collect(DB::connection()->getSchemaBuilder()->getTables())->pluck('name')->all();
+                $preservedTables = ['maintenance_barriers', ...array_intersect($runtimeTables, $existingTables)];
+                $progress?->__invoke('restoring');
+                $writer->restore(DB::connection(), $stream, $preservedTables, $runtimeTables);
+                $progress?->__invoke('verifying_source');
+                $writer->verifyRestored(DB::connection(), $backup->metadata['manifest'], $runtimeTables);
+            } finally {
+                fclose($stream);
+            }
+            // Una restauración no debe volver a ejecutar purgas que estaban pendientes en el respaldo.
+            $progress?->__invoke('finalizing');
+            DB::table('jobs')->where('queue', 'maintenance')->delete();
+            DB::table('maintenance_purge_runs')->whereIn('status', ['pending', 'running', 'committed'])
+                ->update(['status' => 'failed', 'stage' => 'cancelled_by_restore', 'message' => 'Solicitud cancelada tras restaurar la base. Requiere una nueva vista previa.', 'updated_at' => now()]);
+            DB::table('maintenance_deployment_runs')->whereIn('status', ['pending', 'running'])
+                ->update(['status' => 'failed', 'result' => json_encode(['successful' => false, 'message' => 'Actualización cancelada tras restaurar la base. Requiere revisión del código desplegado.'], JSON_THROW_ON_ERROR), 'updated_at' => now()]);
+            $userId = User::query()->whereKey($backup->user_id)->value('id') ?? User::query()->orderBy('id')->value('id');
+            MaintenanceBackup::query()->create([
+                'user_id' => $userId, 'disk' => $backup->disk, 'path' => $backup->path, 'status' => 'restored',
+                'size_bytes' => $backup->size_bytes,
+                'metadata' => [...$backup->metadata, 'restored_at' => now()->toIso8601String()],
+            ]);
+            app(OperationalCacheOutbox::class)->schedule('recovery');
+            if (DB::table('cache_invalidation_outbox')->where('scope', 'recovery')->exists()) {
+                if (! app()->maintenanceMode()->active()) {
+                    app()->maintenanceMode()->activate(['time' => time(), 'retry' => 60, 'status' => 503]);
+                }
+                throw new \RuntimeException('Los datos se recuperaron, pero falta invalidar la caché de autorización. El servicio permanece en mantenimiento.');
+            }
 
-        return DB::connection()->getPdo()->quote((string) $value);
+            return ['ok' => true, 'message' => 'Respaldo restaurado y datos operativos verificados.', 'preserved_runtime_tables' => $runtimeTables];
+        });
     }
 }

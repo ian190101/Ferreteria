@@ -341,19 +341,24 @@ it('gestiona politicas multi-sucursal sin activarlas en ferreteria por defecto',
 
     $policy = BranchOperationPolicy::query()->where('code', 'transferencia_controlada')->first();
     $configuration = BusinessProfileConfiguration::normalized([]);
+    // El orden de las claves de un objeto JSON no forma parte de sus reglas ni de sus tipos.
+    $rules = $policy?->rules ?? [];
+    $permissions = $policy?->permissions ?? [];
+    ksort($rules);
+    ksort($permissions);
 
     expect($policy)->not->toBeNull()
         ->and($policy->branch_id)->toBe($user->branch_id)
         ->and($policy->operation)->toBe('transfer_inventory')
         ->and($policy->applies_to_modules)->toBe(['inventory', 'transfers'])
-        ->and($policy->rules)->toBe([
-            'require_user_branch_access' => true,
+        ->and($rules)->toBe([
             'allow_cross_branch' => true,
             'max_transfer_quantity' => 500,
+            'require_user_branch_access' => true,
         ])
-        ->and($policy->permissions)->toBe([
-            'manage' => 'inventory.transfers.manage',
+        ->and($permissions)->toBe([
             'approve' => 'inventory.transfers.approve',
+            'manage' => 'inventory.transfers.manage',
         ])
         ->and($configuration['capabilities']['uses_advanced_multibranch'])->toBeFalse()
         ->and($configuration['feature_flags']['advanced_multibranch_engine'])->toBeFalse()

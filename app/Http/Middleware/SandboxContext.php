@@ -59,6 +59,9 @@ class SandboxContext
         return $request->is('system-superadmin/business-profiles')
             || $request->is('system-superadmin/business-profiles/*')
             || $request->is('system-superadmin/transversal-config')
-            || $request->is('system-superadmin/transversal-config/*');
+            || $request->is('system-superadmin/transversal-config/*')
+            || $request->is('system-superadmin/database-purge', 'system-superadmin/database-purge/*')
+            || $request->is('system-superadmin/git-versioning', 'system-superadmin/git-versioning/*')
+            || $request->is('settings/system', 'settings/system/*');
     }
 }

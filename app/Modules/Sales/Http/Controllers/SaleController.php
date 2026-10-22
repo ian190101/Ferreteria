@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Modules\Billing\Services\BillingWorkflowPolicy;
 use App\Modules\Billing\Services\SiatInvoiceService;
 use App\Modules\Customers\Models\Customer;
+use App\Modules\Finance\Support\Decimal;
 use App\Modules\Inventory\Models\InventoryReservation;
 use App\Modules\Inventory\Models\Product;
 use App\Modules\Inventory\Models\ProductBranchStock;
@@ -116,6 +117,9 @@ class SaleController extends Controller
         $this->requireApprovalForRequestedDiscounts($request);
 
         $sale = DB::transaction(function () use ($request) {
+            if ($request->input('document_type') === 'sale_note') {
+                \App\Modules\Cash\Support\CashSessionGuard::lockRequiredOpenSession($request->user(), $request->integer('branch_id'));
+            }
             $currency = Currency::query()->findOrFail($request->integer('currency_id'));
             $customer = $request->filled('customer_id')
                 ? Customer::query()->findOrFail($request->integer('customer_id'))
@@ -134,7 +138,10 @@ class SaleController extends Controller
                 ->get(['id', 'product_category_id', 'product_unit_id', 'name', 'sale_price', 'allowed_units', 'attributes', 'custom_attributes', 'inventory_tracking_mode', 'item_type', 'is_inventory_item', 'service_type_id'])
                 ->keyBy('id');
 
-            $items = $validatedItems->map(function (array $item) use ($commercialPolicy, $canOverridePrices, $products, $request, $customer) {
+            $grossTotal = '0';
+            $discountTotalExact = '0';
+            $totalExact = '0';
+            $items = $validatedItems->map(function (array $item) use ($commercialPolicy, $canOverridePrices, $products, $request, $customer, &$grossTotal, &$discountTotalExact, &$totalExact) {
                 $product = $products->get($item['product_id']);
 
                 $item['display_quantity'] = $item['display_quantity'] ?? 1;
@@ -144,8 +151,12 @@ class SaleController extends Controller
                 $item['unit_price'] = $canOverridePrices
                     ? $item['unit_price']
                     : ($product ? $commercialPolicy->priceFor($product, $request->integer('branch_id'), $customer?->id) : 0);
-                $lineGross = (float) $item['meters'] * (float) $item['unit_price'];
-                $discount = (float) $item['discount_amount'];
+                $quantity = Decimal::round((string) $item['meters'], 3);
+                $unitPrice = Decimal::round((string) $item['unit_price'], 4);
+                $discountExact = Decimal::round((string) $item['discount_amount'], 2);
+                $grossExact = bcmul($quantity, $unitPrice, 7);
+                $lineGross = (float) $grossExact;
+                $discount = (float) $discountExact;
 
                 if ($discount > 0 && ! $commercialPolicy->canApplyDiscount($request->user())) {
                     throw ValidationException::withMessages([
@@ -159,27 +170,48 @@ class SaleController extends Controller
                     ]);
                 }
 
-                $lineTotal = $lineGross - $discount;
-                $item['total'] = max(round($lineTotal, 2), 0);
+                if (bccomp($discountExact, $grossExact, 7) > 0) {
+                    throw ValidationException::withMessages(['items' => 'El descuento supera el importe del ítem.']);
+                }
+                $item['meters'] = $quantity;
+                $item['unit_price'] = $unitPrice;
+                $item['discount_amount'] = $discountExact;
+                $item['total'] = Decimal::round(bcsub($grossExact, $discountExact, 7), 2);
+                $grossTotal = bcadd($grossTotal, $grossExact, 7);
+                $discountTotalExact = bcadd($discountTotalExact, $discountExact, 2);
+                $totalExact = bcadd($totalExact, $item['total'], 2);
 
                 return $item;
             });
             $this->ensureProductsEnabledForBranch($items->pluck('product_id')->all(), $request->integer('branch_id'));
             $this->ensureStockPolicyAllowsSale($items->all(), $products, $request->integer('branch_id'), $request->user(), $commercialPolicy);
 
-            $subtotal = round($items->sum(fn ($item) => (float) $item['meters'] * (float) $item['unit_price']), 2);
-            $discountTotal = round($items->sum(fn ($item) => (float) $item['discount_amount']), 2);
-            $total = round($items->sum('total'), 2);
+            $subtotal = Decimal::round($grossTotal, 2);
+            $discountTotal = $discountTotalExact;
+            $total = $totalExact;
+            if (bccomp($total, '999999999999.99', 2) > 0) {
+                throw ValidationException::withMessages(['items' => 'El total supera el máximo permitido.']);
+            }
             if ($request->boolean('from_pos') && $request->filled('pos_payment_amount') && ! app(PosWorkflowPolicy::class)->allowsPartialBalance()) {
-                $posPayment = (float) $request->input('pos_payment_amount');
+                $posPayment = Decimal::round((string) $request->input('pos_payment_amount'), 2);
 
-                if (abs($posPayment - $total) > 0.01) {
+                if (bccomp($posPayment, $total, 2) !== 0) {
                     throw ValidationException::withMessages([
                         'pos_payment_amount' => 'Este perfil POS exige cobrar el total completo en un solo cierre.',
                     ]);
                 }
             }
-            [$advancePercentage, $advanceAmount] = $this->advanceValues($advanceOption, $total, (float) $request->input('advance_amount_input', 0), $advanceMode);
+            $advancePercentage = '0';
+            $advanceAmount = '0.00';
+            if ($advanceMode === 'amount') {
+                $manualAmount = Decimal::round((string) $request->input('advance_amount_input', 0), 2);
+                $advanceAmount = bccomp($manualAmount, '0', 2) < 0
+                    ? '0.00'
+                    : (bccomp($manualAmount, $total, 2) > 0 ? $total : $manualAmount);
+            } elseif ($advanceOption) {
+                $advancePercentage = (string) $advanceOption->percentage;
+                $advanceAmount = Decimal::round(bcdiv(bcmul($total, $advancePercentage, 8), '100', 8), 2);
+            }
             $commercialPolicy->assertCreditAllowed($customer, $total);
 
             $sourceQuotation = $request->filled('source_quotation_id')
@@ -189,6 +221,18 @@ class SaleController extends Controller
                     ->lockForUpdate()
                     ->first()
                 : null;
+
+            if ($request->filled('source_quotation_id') && (
+                ! $sourceQuotation
+                || $sourceQuotation->document_type !== 'quotation'
+                || $sourceQuotation->status !== 'quoted'
+                || (int) $sourceQuotation->branch_id !== $request->integer('branch_id')
+                || $request->input('document_type') !== 'sale_note'
+            )) {
+                throw ValidationException::withMessages([
+                    'source_quotation_id' => 'La cotización ya no está vigente para esta sucursal.',
+                ]);
+            }
 
             $sale = Sale::query()->create([
                 ...$request->safe()->except(['items', 'source_quotation_id', 'advance_mode', 'advance_amount_input', 'from_pos', 'pos_context', 'pos_payment_method_id', 'pos_payment_amount', 'pos_payment_reference']),
@@ -213,7 +257,7 @@ class SaleController extends Controller
             ]);
 
             $sale->items()->createMany($items->all());
-            $sale->load('items.product:id,inventory_tracking_mode,item_type,is_inventory_item');
+            $sale->load('items.product:id,inventory_tracking_mode,item_type,is_inventory_item,product_category_id');
 
             if ($sale->document_type === 'sale_note') {
                 event(new SaleNoteIssued(
@@ -223,7 +267,7 @@ class SaleController extends Controller
                     posPayment: $request->filled('pos_payment_method_id') && $request->filled('pos_payment_amount')
                         ? [
                             'payment_method_id' => $request->integer('pos_payment_method_id'),
-                            'amount' => (float) $request->input('pos_payment_amount'),
+                            'amount' => Decimal::round((string) $request->input('pos_payment_amount'), 2),
                             'reference' => $request->string('pos_payment_reference')->toString() ?: null,
                         ]
                         : null,
@@ -293,7 +337,7 @@ class SaleController extends Controller
             'items.product.unit:id,name,symbol',
             'items.coil:id,barcode,lot_number,available_meters,status',
             'items.deliveryItems:id,sale_item_id,meters,display_quantity,display_unit_label',
-            'payments:id,sale_id,payment_method_id,amount,paid_at',
+            'payments' => fn ($query) => $query->withCashContext(),
             'payments.method:id,name',
             'siatInvoices:id,sale_id,invoice_number,cuf,status,reception_code,total_amount,issued_at',
         ]);
@@ -314,8 +358,9 @@ class SaleController extends Controller
         abort_unless(BranchAccess::canAccess($request->user(), (int) $sale->branch_id), 403);
 
         $newSale = DB::transaction(function () use ($request, $sale) {
+            \App\Modules\Cash\Support\CashSessionGuard::lockRequiredOpenSession($request->user(), (int) $sale->branch_id);
             $quotation = Sale::query()
-                ->with(['items.product:id,inventory_tracking_mode,item_type,is_inventory_item'])
+                ->with(['items.product:id,inventory_tracking_mode,item_type,is_inventory_item,product_category_id'])
                 ->lockForUpdate()
                 ->findOrFail($sale->id);
 
@@ -405,7 +450,7 @@ class SaleController extends Controller
                 'discount_amount' => $item->discount_amount,
                 'total' => $item->total,
             ])->all());
-            $newSale->load('items.product:id,inventory_tracking_mode,item_type,is_inventory_item');
+            $newSale->load('items.product:id,inventory_tracking_mode,item_type,is_inventory_item,product_category_id');
 
             event(new SaleNoteIssued(
                 saleId: (int) $newSale->id,
@@ -452,7 +497,7 @@ class SaleController extends Controller
             $sale = Sale::query()
                 ->with([
                     'items.deliveryItems:id,sale_item_id',
-                    'items.product:id,inventory_tracking_mode,item_type,is_inventory_item',
+                    'items.product:id,inventory_tracking_mode,item_type,is_inventory_item,product_category_id',
                 ])
                 ->lockForUpdate()
                 ->findOrFail($sale->id);

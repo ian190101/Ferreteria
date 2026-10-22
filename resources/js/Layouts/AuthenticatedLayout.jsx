@@ -1,10 +1,11 @@
 import ApplicationLogo from '@/Components/ApplicationLogo';
 import AppearanceSwitch from '@/Components/AppearanceSwitch';
+import SystemErrorFeedback from '@/Components/SystemErrorFeedback';
 import IconGlyph from '@/Components/Icon';
 import { assetUrl } from '@/Utils/assets';
 import { applyBranding } from '@/Utils/branding';
 import { Link, router, usePage } from '@inertiajs/react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { roleLabel } from '../../../app/Modules/Users/Resources/Utils/permissionLabels';
 
 const iconPaths = {
@@ -25,7 +26,7 @@ const iconPaths = {
 };
 
 export default function AuthenticatedLayout({ header, children, businessNamePreview = null }) {
-    const { auth, branding, businessProfile, sandboxMode } = usePage().props;
+    const { props: { auth, branding, businessProfile, sandboxMode }, url } = usePage();
     const user = auth.user;
     const permissions = auth.permissions;
     const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -43,7 +44,7 @@ export default function AuthenticatedLayout({ header, children, businessNamePrev
     const isSystemSuperadmin = auth.roles?.includes('sistemasuperadmin');
     const navigation = useMemo(
         () => buildNavigation(permissions, isSystemSuperadmin, businessProfile?.modules ?? {}, businessProfile?.capabilities ?? {}, Boolean(sandboxMode?.active)),
-        [permissions, isSystemSuperadmin, businessProfile?.modules, businessProfile?.capabilities, sandboxMode?.active],
+        [permissions, isSystemSuperadmin, businessProfile?.modules, businessProfile?.capabilities, sandboxMode?.active, url],
     );
     const activeItem = navigation
         .flatMap((section) => section.items)
@@ -98,6 +99,7 @@ export default function AuthenticatedLayout({ header, children, businessNamePrev
 
     return (
         <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,rgb(var(--color-primary)/0.10),transparent_34rem),linear-gradient(180deg,#f8fafc,#eef2f7)] text-slate-900 dark:bg-[radial-gradient(circle_at_top_left,rgb(var(--color-primary)/0.22),transparent_32rem),linear-gradient(180deg,#020617,#0f172a)] dark:text-slate-100">
+            <SystemErrorFeedback />
             <aside className="app-surface fixed inset-y-0 left-0 z-40 hidden w-72 border-r border-white/60 bg-white/80 shadow-[0_20px_60px_rgb(15_23_42/0.08)] backdrop-blur-2xl dark:border-white/10 dark:bg-slate-950/80 lg:flex lg:flex-col">
                 <SidebarContent navigation={navigation} user={user} branding={branding} businessProfile={businessProfile} businessNamePreview={businessNamePreview} sandboxActive={Boolean(sandboxMode?.active)} />
             </aside>
@@ -191,20 +193,36 @@ export default function AuthenticatedLayout({ header, children, businessNamePrev
 
 function SidebarContent({ navigation, user, branding, businessProfile = {}, businessNamePreview = null, sandboxActive = false, onNavigate }) {
     const navRef = useRef(null);
+    const activeHref = navigation.flatMap((section) => section.items).find((item) => item.active)?.href;
     const displayBusinessName = String(businessNamePreview ?? '').trim()
         || businessProfile?.commercialName
         || businessProfile?.identity?.commercial_name
         || 'Fabrica de Calaminas';
 
-    useEffect(() => {
+    useLayoutEffect(() => {
         const nav = navRef.current;
 
-        if (!nav) {
+        if (!nav || nav.clientHeight === 0) {
             return undefined;
         }
 
-        const savedScroll = Number(sessionStorage.getItem('app-sidebar-scroll') ?? 0);
-        nav.scrollTop = Number.isFinite(savedScroll) ? savedScroll : 0;
+        const activeLink = nav.querySelector('[aria-current="page"]');
+
+        nav.style.paddingBottom = '';
+
+        if (activeLink) {
+            // Desplazamos solo el menú para conservar la posición de la página principal.
+            const styles = window.getComputedStyle(nav);
+            const paddingTop = Number.parseFloat(styles.paddingTop) || 0;
+            const paddingBottom = Number.parseFloat(styles.paddingBottom) || 0;
+            const targetScroll = nav.scrollTop + activeLink.getBoundingClientRect().top - nav.getBoundingClientRect().top - paddingTop;
+            // El espacio final permite alinear arriba incluso las últimas opciones.
+            nav.style.paddingBottom = `${paddingBottom + Math.max(0, targetScroll - (nav.scrollHeight - nav.clientHeight))}px`;
+            nav.scrollTop = targetScroll;
+        } else {
+            const savedScroll = Number(sessionStorage.getItem('app-sidebar-scroll') ?? 0);
+            nav.scrollTop = Number.isFinite(savedScroll) ? savedScroll : 0;
+        }
 
         const saveScroll = () => {
             sessionStorage.setItem('app-sidebar-scroll', String(nav.scrollTop));
@@ -216,7 +234,7 @@ function SidebarContent({ navigation, user, branding, businessProfile = {}, busi
             saveScroll();
             nav.removeEventListener('scroll', saveScroll);
         };
-    }, []);
+    }, [activeHref, sandboxActive]);
 
     return (
         <>
@@ -275,6 +293,7 @@ function SidebarLink({ item, sandboxActive = false, onNavigate }) {
     return (
         <Link
             href={item.href}
+            aria-current={item.active ? 'page' : undefined}
             onClick={onNavigate}
             className={[
                 'group flex items-center gap-3 rounded-2xl px-3 py-2.5 text-sm font-semibold transition',
@@ -319,6 +338,8 @@ function buildNavigation(permissions, isSystemSuperadmin = false, modules = {}, 
                 item(canShowSystemMaster, 'Sistema maestro', 'Configuracion de negocio', route('system-superadmin.business-profiles.index'), route().current('system-superadmin.business-profiles.*'), 'configuracion'),
                 item(canShowSystemMaster, 'Sistema maestro', 'Configuracion transversal', route('system-superadmin.transversal-config.index'), route().current('system-superadmin.transversal-config.*'), 'configuracion'),
                 item(canShowSystemMaster, 'Sistema maestro', 'Chatbot IA', route('ai-assistant.settings.index'), route().current('ai-assistant.settings.*'), 'configuracion'),
+                item(canShowSystemMaster, 'Sistema maestro', 'Purga y Limpieza BD', route('system-superadmin.database-purge.index'), route().current('system-superadmin.database-purge.*'), 'configuracion'),
+                item(canShowSystemMaster, 'Sistema maestro', 'Control de Versiones Git', route('system-superadmin.git-versioning.index'), route().current('system-superadmin.git-versioning.*'), 'configuracion'),
             ].filter(Boolean),
         },
         {

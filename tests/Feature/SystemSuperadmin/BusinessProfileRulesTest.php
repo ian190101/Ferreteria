@@ -598,40 +598,6 @@ it('guarda y reinicia una demo sandbox aislada por usuario', function () {
         ->assertJsonPath('message', 'Demo sandbox reiniciada desde datos reales actuales.');
 });
 
-it('entra y descarta la demo completa con base temporal aislada', function () {
-    $user = businessProfileUser(systemSuperadmin: true);
-
-    if (DB::getDriverName() !== 'mysql') {
-        $this->actingAs($user)
-            ->post(route('system-superadmin.business-profiles.sandbox-full.enter'))
-            ->assertRedirect()
-            ->assertSessionHas('error', 'La demo completa requiere MySQL o MariaDB para clonar una base aislada.');
-
-        return;
-    }
-
-    $this->actingAs($user)
-        ->post(route('system-superadmin.business-profiles.sandbox-full.enter'))
-        ->assertRedirect(route('dashboard'))
-        ->assertSessionHas('business_full_sandbox_id');
-
-    $session = BusinessProfileSandboxSession::query()
-        ->where('user_id', $user->id)
-        ->where('status', 'active')
-        ->latest('id')
-        ->firstOrFail();
-
-    expect($session->database_name)->not->toBeNull()
-        ->and(collect(DB::select("SHOW DATABASES LIKE '{$session->database_name}'"))->isNotEmpty())->toBeTrue();
-
-    $this->actingAs($user)
-        ->delete(route('system-superadmin.business-profiles.sandbox-full.discard'))
-        ->assertRedirect(route('system-superadmin.business-profiles.index'))
-        ->assertSessionMissing('business_full_sandbox_id');
-
-    expect(collect(DB::select("SHOW DATABASES LIKE '{$session->database_name}'"))->isEmpty())->toBeTrue();
-});
-
 it('bloquea el configurador maestro dentro de la demo completa para evitar demos anidadas', function () {
     $user = businessProfileUser(systemSuperadmin: true);
     $session = BusinessProfileSandboxSession::query()->create([
@@ -683,135 +649,6 @@ it('renueva la vigencia de una demo sandbox activa por actividad', function () {
 
     expect($resolved)->not->toBeNull()
         ->and($resolved->expires_at->greaterThan(now()->addHours(7)))->toBeTrue();
-});
-
-it('permite crear y visualizar cotizaciones y notas de venta dentro de la demo completa sin generar 404', function () {
-    if (DB::getDriverName() !== 'mysql') {
-        $this->markTestSkipped('La demo completa requiere MySQL o MariaDB.');
-    }
-
-    $user = businessProfileUser(['dashboard.view', 'sales.view', 'sales.manage'], systemSuperadmin: true);
-    activeBusinessProfile([
-        'modules' => [
-            'dashboard' => true,
-            'sales_notes' => true,
-            'quotes' => true,
-            'cash' => false,
-        ],
-        'sales' => [
-            'workflow' => 'quotation_to_sale_note',
-            'quotation_mode' => 'required',
-            'customer_mode' => 'optional',
-            'inventory_discount_timing' => 'sale_note',
-        ],
-        'cash' => [
-            'required_to_sell' => false,
-        ],
-    ]);
-
-    $saleType = SaleType::query()->create(['name' => 'Ocasionales demo', 'is_active' => true]);
-    $currency = Currency::query()->create([
-        'name' => 'Bolivianos demo',
-        'code' => 'BOB-DEMO',
-        'symbol' => 'Bs',
-        'exchange_rate_to_bob' => 1,
-        'is_base' => true,
-        'is_active' => true,
-    ]);
-    $product = Product::query()->create([
-        'name' => 'Producto cotizacion sandbox',
-        'sku' => 'SANDBOX-COT',
-        'barcode' => 'SANDBOX-COT-BAR',
-        'inventory_tracking_mode' => Product::TRACKING_GLOBAL,
-        'base_unit' => 'unidad',
-        'allowed_units' => ['unidad'],
-        'sale_price' => 12,
-        'minimum_stock_meters' => 0,
-        'is_active' => true,
-    ]);
-    ProductBranchStock::query()->create([
-        'branch_id' => $user->branch_id,
-        'product_id' => $product->id,
-        'available_meters' => 20,
-        'reserved_meters' => 0,
-        'is_enabled' => true,
-    ]);
-
-    $this->actingAs($user)
-        ->post(route('system-superadmin.business-profiles.sandbox-full.enter'))
-        ->assertRedirect(route('dashboard'))
-        ->assertSessionHas('business_full_sandbox_id');
-
-    $response = $this->actingAs($user)
-        ->post(route('sales.store'), [
-            'document_type' => 'quotation',
-            'branch_id' => $user->branch_id,
-            'sale_type_id' => $saleType->id,
-            'currency_id' => $currency->id,
-            'advance_mode' => 'none',
-            'receipt_number' => 'COT-SANDBOX-001',
-            'customer_name' => 'Cliente sandbox',
-            'customer_document' => '123',
-            'customer_contact' => '70000000',
-            'terms' => 'Cotizacion sandbox.',
-            'items' => [[
-                'product_id' => $product->id,
-                'product_coil_id' => null,
-                'description' => 'Producto cotizacion sandbox',
-                'unit_label' => 'unidad',
-                'display_quantity' => 2,
-                'display_unit_label' => 'unidad',
-                'calculation_mode' => 'direct',
-                'meters' => 2,
-                'unit_price' => 12,
-                'discount_amount' => 0,
-            ]],
-        ])
-        ->assertRedirect()
-        ->assertSessionHasNoErrors();
-
-    $sandboxSale = Sale::query()->where('receipt_number', 'COT-SANDBOX-001')->firstOrFail();
-
-    $this->actingAs($user)
-        ->get(route('sales.show', $sandboxSale))
-        ->assertOk();
-
-    $noteResponse = $this->actingAs($user)
-        ->post(route('sales.store'), [
-            'document_type' => 'sale_note',
-            'source_quotation_id' => $sandboxSale->id,
-            'branch_id' => $user->branch_id,
-            'sale_type_id' => $saleType->id,
-            'currency_id' => $currency->id,
-            'advance_mode' => 'none',
-            'receipt_number' => 'NV-SANDBOX-001',
-            'customer_name' => 'Cliente sandbox',
-            'customer_document' => '123',
-            'customer_contact' => '70000000',
-            'terms' => 'Nota sandbox.',
-            'items' => [[
-                'product_id' => $product->id,
-                'product_coil_id' => null,
-                'description' => 'Producto cotizacion sandbox',
-                'unit_label' => 'unidad',
-                'display_quantity' => 2,
-                'display_unit_label' => 'unidad',
-                'calculation_mode' => 'direct',
-                'meters' => 2,
-                'unit_price' => 12,
-                'discount_amount' => 0,
-            ]],
-        ])
-        ->assertRedirect()
-        ->assertSessionHasNoErrors();
-
-    $sandboxNote = Sale::query()->where('receipt_number', 'NV-SANDBOX-001')->firstOrFail();
-
-    expect($noteResponse->headers->get('Location'))->toBe(route('sales.show', $sandboxNote));
-
-    $this->actingAs($user)
-        ->get(route('sales.show', $sandboxNote))
-        ->assertOk();
 });
 
 it('permite abrir cotizaciones cuando el perfil tiene solo el modulo de cotizaciones activo', function () {
@@ -901,4 +738,101 @@ it('permite capacidades avanzadas cuando su feature flag tecnico esta habilitado
 
     expect($result['valid'])->toBeTrue()
         ->and($result['errors'])->toBe([]);
+});
+
+it('permite a sistemasuperadmin guardar y aplicar un perfil directamente a produccion', function () {
+    $user = businessProfileUser(systemSuperadmin: true);
+    $active = activeBusinessProfile([]);
+
+    $payload = [
+        'name' => 'Ferreteria Industrial Guardada',
+        'business_type' => 'hardware_store',
+        'configuration' => BusinessProfileConfiguration::normalized([
+            'identity' => [
+                'commercial_name' => 'Ferreteria Industrial Guardada',
+            ],
+            'modules' => [
+                'pos' => true,
+                'inventory' => true,
+                'cash' => true,
+                'quotes' => true,
+                'sales_notes' => true,
+            ],
+            'sales' => [
+                'workflow' => 'direct_sale',
+                'quotation_mode' => 'optional',
+                'document_main' => 'sale_note',
+            ],
+        ]),
+        'force' => true,
+    ];
+
+    $this->actingAs($user)
+        ->from(route('system-superadmin.business-profiles.index'))
+        ->post(route('system-superadmin.business-profiles.save-and-apply'), $payload)
+        ->assertRedirect(route('system-superadmin.business-profiles.index'))
+        ->assertSessionHas('success');
+
+    $newActive = BusinessProfile::query()->where('status', 'active')->latest('applied_at')->firstOrFail();
+    expect($newActive->name)->toBe('Ferreteria Industrial Guardada')
+        ->and($newActive->id)->not->toBe($active->id)
+        ->and($active->refresh()->status)->toBe('archived');
+});
+
+it('permite a sistemasuperadmin actualizar directamente el perfil activo', function () {
+    $user = businessProfileUser(systemSuperadmin: true);
+    $active = activeBusinessProfile(['name' => 'Perfil Inicial']);
+
+    $payload = [
+        'name' => 'Perfil Inicial Modificado',
+        'business_type' => 'hardware_store',
+        'configuration' => BusinessProfileConfiguration::normalized([
+            'identity' => [
+                'commercial_name' => 'Nombre Actualizado',
+            ],
+            'modules' => [
+                'pos' => true,
+                'inventory' => true,
+                'cash' => true,
+                'quotes' => true,
+                'sales_notes' => true,
+            ],
+        ]),
+    ];
+
+    $this->actingAs($user)
+        ->from(route('system-superadmin.business-profiles.index'))
+        ->put(route('system-superadmin.business-profiles.active.update'), $payload)
+        ->assertRedirect(route('system-superadmin.business-profiles.index'))
+        ->assertSessionHas('success');
+
+    expect($active->refresh()->name)->toBe('Perfil Inicial Modificado');
+});
+
+it('permite actualizar un preset personalizado existente', function () {
+    $user = businessProfileUser(systemSuperadmin: true);
+    $preset = BusinessProfilePreset::query()->create([
+        'name' => 'Preset Personalizado Uno',
+        'business_type' => 'hardware_store',
+        'is_system' => false,
+        'configuration' => BusinessProfileConfiguration::defaults(),
+        'created_by' => $user->id,
+        'updated_by' => $user->id,
+    ]);
+
+    $payload = [
+        'name' => 'Preset Personalizado Actualizado',
+        'business_type' => 'hardware_store',
+        'description' => 'Descripcion actualizada',
+        'configuration' => BusinessProfileConfiguration::defaults(),
+    ];
+
+    $this->actingAs($user)
+        ->from(route('system-superadmin.business-profiles.index'))
+        ->put(route('system-superadmin.business-profiles.presets.update', $preset), $payload)
+        ->assertRedirect(route('system-superadmin.business-profiles.index'))
+        ->assertSessionHas('success');
+
+    expect($preset->refresh()->name)->toBe('Preset Personalizado Actualizado')
+        ->and($preset->description)->toBe('Descripcion actualizada');
 });

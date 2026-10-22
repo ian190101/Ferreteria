@@ -4,6 +4,8 @@ use App\Modules\SystemSuperadmin\Http\Controllers\BusinessProfileController;
 use App\Modules\SystemSuperadmin\Http\Controllers\BusinessTransversalController;
 use App\Modules\SystemSuperadmin\Http\Controllers\CustomerQrOrderOperationalController;
 use App\Modules\SystemSuperadmin\Http\Controllers\CustomerQrOrderingController;
+use App\Modules\SystemSuperadmin\Http\Controllers\DatabasePurgeController;
+use App\Modules\SystemSuperadmin\Http\Controllers\GitVersioningController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('pedidos-qr')
@@ -40,6 +42,8 @@ Route::middleware(['auth', 'verified', 'system_superadmin'])
     ->name('system-superadmin.business-profiles.')
     ->group(function () {
         Route::get('/', [BusinessProfileController::class, 'index'])->name('index');
+        Route::post('/save-and-apply', [BusinessProfileController::class, 'saveAndApply'])->name('save-and-apply');
+        Route::put('/active', [BusinessProfileController::class, 'updateActiveProfile'])->name('active.update');
         Route::post('/drafts', [BusinessProfileController::class, 'store'])->name('drafts.store');
         Route::put('/drafts/{draft}', [BusinessProfileController::class, 'update'])->name('drafts.update');
         Route::post('/drafts/{draft}/use-preview', [BusinessProfileController::class, 'useDraftPreview'])->name('drafts.use-preview');
@@ -47,6 +51,7 @@ Route::middleware(['auth', 'verified', 'system_superadmin'])
         Route::delete('/drafts/{draft}', [BusinessProfileController::class, 'destroy'])->name('drafts.destroy');
         Route::delete('/draft-preview', [BusinessProfileController::class, 'stopDraftPreview'])->name('draft-preview.stop');
         Route::post('/presets', [BusinessProfileController::class, 'storePreset'])->name('presets.store');
+        Route::put('/presets/{preset}', [BusinessProfileController::class, 'updatePreset'])->name('presets.update');
         Route::post('/presets/{preset}/draft', [BusinessProfileController::class, 'presetToDraft'])->name('presets.draft');
         Route::delete('/presets/{preset}', [BusinessProfileController::class, 'destroyPreset'])->name('presets.destroy');
         Route::post('/versions/{version}/restore', [BusinessProfileController::class, 'restore'])->name('versions.restore');
@@ -67,4 +72,32 @@ Route::middleware(['auth', 'verified', 'system_superadmin'])
         Route::post('/{section}', [BusinessTransversalController::class, 'store'])->name('store');
         Route::put('/{section}/{record}', [BusinessTransversalController::class, 'update'])->name('update');
         Route::delete('/{section}/{record}', [BusinessTransversalController::class, 'destroy'])->name('destroy');
+    });
+
+Route::middleware(['auth', 'verified', 'system_superadmin'])
+    ->prefix('system-superadmin/database-purge')
+    ->name('system-superadmin.database-purge.')
+    ->group(function () {
+        Route::get('/', [DatabasePurgeController::class, 'index'])->name('index');
+        Route::get('/preview', [DatabasePurgeController::class, 'preview'])->name('preview');
+        Route::get('/runs', [DatabasePurgeController::class, 'runs'])->name('runs');
+        Route::post('/execute', [DatabasePurgeController::class, 'purge'])->name('execute');
+        Route::post('/backup', [DatabasePurgeController::class, 'backup'])->name('backup');
+    });
+
+Route::middleware(['auth', 'verified', 'system_superadmin'])
+    ->prefix('system-superadmin/git-versioning')
+    ->name('system-superadmin.git-versioning.')
+    ->group(function () {
+        Route::get('/', [GitVersioningController::class, 'index'])->name('index');
+        Route::get('/status', [GitVersioningController::class, 'status'])->name('status');
+        Route::get('/inspect', [GitVersioningController::class, 'inspect'])->name('inspect');
+        Route::post('/preview', [GitVersioningController::class, 'preview'])->name('preview');
+        Route::post('/deploy', [GitVersioningController::class, 'deploy'])->name('deploy');
+        Route::post('/push', [GitVersioningController::class, 'push'])->name('push');
+        Route::post('/fetch', [GitVersioningController::class, 'fetch'])->name('fetch');
+        Route::post('/commit', [GitVersioningController::class, 'commit'])->name('commit');
+        Route::post('/pull', [GitVersioningController::class, 'pull'])->name('pull');
+        Route::post('/reset', [GitVersioningController::class, 'resetToRemote'])->name('reset');
+        Route::post('/revert', [GitVersioningController::class, 'revertPrevious'])->name('revert');
     });

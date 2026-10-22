@@ -87,6 +87,17 @@ class SiatPackageService
         $response = $this->soap->call($setting, 'ServicioFacturacionCompraVenta', 'recepcionPaqueteFactura', $payload);
         $body = $response['RespuestaServicioFacturacion'] ?? $response['RespuestaServicio'] ?? [];
 
+        $accepted = filter_var($body['transaccion'] ?? false, FILTER_VALIDATE_BOOLEAN);
+        $receptionCode = $body['codigoRecepcion'] ?? null;
+
+        if (! $accepted || ! is_scalar($receptionCode) || blank((string) $receptionCode)) {
+            $package->update(['siat_response' => $response]);
+
+            throw ValidationException::withMessages([
+                'billing' => 'SIAT no confirmó la recepción del paquete. Revisa la respuesta registrada antes de reenviar.',
+            ]);
+        }
+
         $package->update([
             'reception_code' => $body['codigoRecepcion'] ?? null,
             'status' => SiatPackage::STATUS_SENT,
@@ -129,16 +140,49 @@ class SiatPackageService
         $body = $response['RespuestaServicioFacturacion'] ?? $response['RespuestaServicio'] ?? [];
         $state = (int) ($body['codigoEstado'] ?? 0);
 
-        $package->update([
-            'status' => $state === 908 ? SiatPackage::STATUS_VALIDATED : SiatPackage::STATUS_SENT,
-            'siat_response' => $response,
-            'validated_at' => $state === 908 ? now() : null,
-        ]);
+        return \Illuminate\Support\Facades\DB::transaction(
+            function () use ($package, $response, $state, $body): SiatPackage {
+                $locked = SiatPackage::query()
+                    ->lockForUpdate()
+                    ->findOrFail($package->id);
 
-        if ($state === 908) {
-            $package->invoices()->update(['status' => SiatInvoice::STATUS_VALIDATED, 'validated_at' => now()]);
-        }
+                // Una respuesta tardía no debe degradar una validación ya confirmada.
+                if ($locked->status === SiatPackage::STATUS_VALIDATED) {
+                    return $locked;
+                }
 
-        return $package->refresh();
+                $validated = $state === 908
+                    && filter_var($body['transaccion'] ?? false, FILTER_VALIDATE_BOOLEAN);
+
+                $locked->update([
+                    'status' => $validated ? SiatPackage::STATUS_VALIDATED : SiatPackage::STATUS_SENT,
+                    'siat_response' => $response,
+                    'validated_at' => $validated ? now() : null,
+                ]);
+
+                if ($validated) {
+                    $locked->invoices()
+                        ->orderBy('siat_invoices.id')
+                        ->lockForUpdate()
+                        ->get()
+                        ->each(function (SiatInvoice $invoice): void {
+                            if (in_array($invoice->status, [
+                                SiatInvoice::STATUS_VOIDED,
+                                SiatInvoice::STATUS_VALIDATED,
+                            ], true)) {
+                                return;
+                            }
+
+                            $invoice->update([
+                                'status' => SiatInvoice::STATUS_VALIDATED,
+                                'validated_at' => now(),
+                            ]);
+                        });
+                }
+
+                return $locked->refresh();
+            },
+            3,
+        );
     }
 }

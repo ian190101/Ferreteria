@@ -6,9 +6,12 @@ import { resolvePageComponent } from 'laravel-vite-plugin/inertia-helpers';
 import { createRoot } from 'react-dom/client';
 import { route as ziggyRoute } from 'ziggy-js';
 import { applyBranding } from './Utils/branding';
+import SystemErrorBoundary from './Components/SystemErrorBoundary';
+import { installSystemErrorHandlers } from './Utils/systemErrors';
 import { Ziggy as generatedZiggy } from './ziggy';
 
 const appName = import.meta.env.VITE_APP_NAME || 'Laravel';
+installSystemErrorHandlers();
 const pages = {
     ...import.meta.glob('./Pages/**/*.jsx'),
     ...import.meta.glob('../../app/Modules/**/Resources/Pages/**/*.jsx'),
@@ -39,7 +42,7 @@ createInertiaApp({
 
         const root = createRoot(el);
 
-        root.render(<App {...props} />);
+        root.render(<SystemErrorBoundary><App {...props} /></SystemErrorBoundary>);
     },
     progress: {
         color: '#4B5563',

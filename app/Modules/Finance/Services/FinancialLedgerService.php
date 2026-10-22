@@ -6,6 +6,7 @@ use App\Modules\Banks\Models\BankAccount;
 use App\Modules\Banks\Models\BankTransaction;
 use App\Modules\Cash\Models\CashRegisterSession;
 use App\Modules\Expenses\Models\Expense;
+use App\Modules\Finance\Support\Decimal;
 use App\Modules\HumanResources\Models\SalaryPayment;
 use App\Modules\HumanResources\Models\Worker;
 use App\Modules\Payments\Models\CreditNote;
@@ -25,7 +26,34 @@ class FinancialLedgerService
      */
     public function registerSalePayment(Sale $sale, int $userId, int $paymentMethodId, float $amount, ?string $reference = null, ?string $notes = null): SalePayment
     {
-        $amount = round($amount, 2);
+        return $this->registerSalePaymentExact($sale, $userId, $paymentMethodId, number_format($amount, 2, '.', ''), $reference, $notes);
+    }
+
+    public function registerSalePaymentExact(Sale $sale, int $userId, int $paymentMethodId, string $amount, ?string $reference = null, ?string $notes = null): SalePayment
+    {
+        if ($sale->getConnection()->transactionLevel() < 1) {
+            throw new \LogicException('El cobro requiere una transacción del flujo completo');
+        }
+
+        $locked = Sale::query()->whereKey($sale->id)->lockForUpdate()->firstOrFail();
+        $sale->setRawAttributes($locked->getAttributes(), true);
+        if ($sale->document_type !== 'sale_note' || ! in_array($sale->status, ['issued', 'partial_paid'], true)) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'sale_id' => 'La venta ya no admite cobros.',
+            ]);
+        }
+        $amount = Decimal::round($amount, 2);
+        if (bccomp($amount, '0', 2) <= 0 || bccomp($amount, (string) $sale->balance_due, 2) > 0) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'amount' => 'El cobro debe ser positivo y no superar el saldo pendiente.',
+            ]);
+        }
+
+        $cashSession = CashRegisterSession::query()
+            ->where('branch_id', $sale->branch_id)
+            ->where('opened_by', $userId)
+            ->where('status', CashRegisterSession::STATUS_OPEN)
+            ->orderBy('id')->lockForUpdate()->first();
 
         $payment = SalePayment::query()->create([
             'sale_id' => $sale->id,
@@ -35,23 +63,31 @@ class FinancialLedgerService
             'paid_at' => now(),
             'amount' => $amount,
             'exchange_rate_to_bob' => $sale->exchange_rate_to_bob,
-            'amount_bob' => round($amount * (float) $sale->exchange_rate_to_bob, 2),
+            'amount_bob' => Decimal::round(bcmul($amount, (string) $sale->exchange_rate_to_bob, 8), 2),
             'reference' => $reference ?: null,
             'notes' => $notes ?: null,
+            'cash_register_session_id' => $cashSession?->id,
+            'cash_context_recorded' => true,
         ]);
 
-        $this->applySalePaymentBalance($sale, $amount);
+        $this->applySalePaymentBalanceExact($sale, $amount);
 
         return $payment;
     }
 
     public function applySalePaymentBalance(Sale $sale, float $amount): void
     {
-        $newBalance = max(round((float) $sale->balance_due - round($amount, 2), 2), 0);
+        $this->applySalePaymentBalanceExact($sale, number_format($amount, 2, '.', ''));
+    }
+
+    public function applySalePaymentBalanceExact(Sale $sale, string $amount): void
+    {
+        $newBalance = bcsub((string) $sale->balance_due, Decimal::round($amount, 2), 2);
+        $total = (string) $sale->total;
 
         $sale->update([
             'balance_due' => $newBalance,
-            'status' => $this->saleStatusForBalance($newBalance, (float) $sale->total),
+            'status' => bccomp($newBalance, '0', 2) <= 0 ? 'paid' : (bccomp($newBalance, $total, 2) < 0 ? 'partial_paid' : 'issued'),
         ]);
     }
 
@@ -65,22 +101,40 @@ class FinancialLedgerService
         $payment->update(['notes' => $notes]);
         $payment->delete();
 
-        $activeCredits = (float) CreditNote::query()
+        $activeCredits = (string) CreditNote::query()
             ->where('sale_id', $sale->id)
             ->sum('amount');
-        $totalToCollect = max(round((float) $sale->total, 2), 0);
-        $newBalance = max(round((float) $sale->balance_due + (float) $payment->amount, 2), 0);
-        $newBalance = min($newBalance, max(round($totalToCollect - $activeCredits, 2), 0));
+        $totalToCollect = bccomp((string) $sale->total, '0', 2) > 0 ? (string) $sale->total : '0.00';
+        $newBalance = bcadd((string) $sale->balance_due, (string) $payment->amount, 2);
+        $newBalance = bccomp($newBalance, '0', 2) > 0 ? $newBalance : '0.00';
+        $maximum = bcsub($totalToCollect, $activeCredits, 2);
+        $maximum = bccomp($maximum, '0', 2) > 0 ? $maximum : '0.00';
+        $newBalance = bccomp($newBalance, $maximum, 2) < 0 ? $newBalance : $maximum;
 
         $sale->update([
             'balance_due' => $newBalance,
-            'status' => $this->saleStatusForBalance($newBalance, $totalToCollect),
+            'status' => bccomp($newBalance, '0', 2) <= 0 ? 'paid' : (bccomp($newBalance, $totalToCollect, 2) < 0 ? 'partial_paid' : 'issued'),
         ]);
     }
 
     public function registerPurchasePayment(Purchase $purchase, int $userId, int $paymentMethodId, float $amount, ?string $reference = null, ?string $notes = null): PurchasePayment
     {
-        $amount = round($amount, 2);
+        return $this->registerPurchasePaymentExact($purchase, $userId, $paymentMethodId, number_format($amount, 2, '.', ''), $reference, $notes);
+    }
+
+    public function registerPurchasePaymentExact(Purchase $purchase, int $userId, int $paymentMethodId, string $amount, ?string $reference = null, ?string $notes = null): PurchasePayment
+    {
+        if ($purchase->getConnection()->transactionLevel() < 1) {
+            throw new \LogicException('El pago requiere una transacción del flujo completo');
+        }
+        $locked = Purchase::query()->whereKey($purchase->id)->lockForUpdate()->firstOrFail();
+        $purchase->setRawAttributes($locked->getAttributes(), true);
+        $amount = Decimal::round($amount, 2);
+        if (bccomp($amount, '0', 2) <= 0 || bccomp($amount, (string) $purchase->balance_due, 2) > 0) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'amount' => 'El pago debe ser positivo y no superar el saldo pendiente.',
+            ]);
+        }
 
         $payment = PurchasePayment::query()->create([
             'purchase_id' => $purchase->id,
@@ -93,7 +147,7 @@ class FinancialLedgerService
             'notes' => $notes ?: null,
         ]);
 
-        $this->applyPurchasePaymentBalance($purchase, $amount);
+        $this->applyPurchasePaymentBalanceExact($purchase, $amount);
 
         return $payment;
     }
@@ -167,13 +221,18 @@ class FinancialLedgerService
 
     public function applyPurchasePaymentBalance(Purchase $purchase, float $amount): void
     {
-        $paidAmount = round((float) $purchase->paid_amount + round($amount, 2), 2);
-        $newBalance = max(round((float) $purchase->total_amount - $paidAmount, 2), 0);
+        $this->applyPurchasePaymentBalanceExact($purchase, number_format($amount, 2, '.', ''));
+    }
+
+    public function applyPurchasePaymentBalanceExact(Purchase $purchase, string $amount): void
+    {
+        $paidAmount = bcadd((string) $purchase->paid_amount, Decimal::round($amount, 2), 2);
+        $newBalance = bcsub((string) $purchase->total_amount, $paidAmount, 2);
 
         $purchase->update([
             'paid_amount' => $paidAmount,
             'balance_due' => $newBalance,
-            'payment_status' => $this->purchaseStatusForBalance($newBalance, (float) $purchase->total_amount),
+            'payment_status' => bccomp($newBalance, '0', 2) <= 0 ? 'paid' : (bccomp($newBalance, (string) $purchase->total_amount, 2) < 0 ? 'partial_paid' : 'unpaid'),
         ]);
     }
 
@@ -187,13 +246,15 @@ class FinancialLedgerService
         $payment->update(['notes' => $notes]);
         $payment->delete();
 
-        $paidAmount = max(round((float) $purchase->paid_amount - (float) $payment->amount, 2), 0);
-        $newBalance = max(round((float) $purchase->total_amount - $paidAmount, 2), 0);
+        $paidAmount = bcsub((string) $purchase->paid_amount, (string) $payment->amount, 2);
+        $paidAmount = bccomp($paidAmount, '0', 2) > 0 ? $paidAmount : '0.00';
+        $newBalance = bcsub((string) $purchase->total_amount, $paidAmount, 2);
+        $newBalance = bccomp($newBalance, '0', 2) > 0 ? $newBalance : '0.00';
 
         $purchase->update([
-            'paid_amount' => round($paidAmount, 2),
+            'paid_amount' => $paidAmount,
             'balance_due' => $newBalance,
-            'payment_status' => $this->purchaseStatusForBalance($newBalance, (float) $purchase->total_amount),
+            'payment_status' => bccomp($newBalance, '0', 2) <= 0 ? 'paid' : (bccomp($newBalance, (string) $purchase->total_amount, 2) < 0 ? 'partial_paid' : 'unpaid'),
         ]);
     }
 
@@ -238,32 +299,35 @@ class FinancialLedgerService
 
     public function voidBankTransaction(BankTransaction $transaction, string $reason): void
     {
-        if ($transaction->status === BankTransaction::STATUS_VOID) {
-            return;
-        }
+        $transaction->getConnection()->transaction(function () use ($transaction, $reason): void {
+            $locked = BankTransaction::query()->whereKey($transaction->id)->lockForUpdate()->firstOrFail();
+            $transaction->setRawAttributes($locked->getAttributes(), true);
+            if ($transaction->status === BankTransaction::STATUS_VOID) {
+                return;
+            }
 
-        $account = BankAccount::query()
-            ->whereKey($transaction->bank_account_id)
-            ->lockForUpdate()
-            ->firstOrFail();
+            $account = BankAccount::query()
+                ->whereKey($transaction->bank_account_id)
+                ->lockForUpdate()
+                ->firstOrFail();
 
-        $account->decrement('current_balance', $this->signedBankAmount($transaction->type, (float) $transaction->amount));
+            $account->decrement('current_balance', $transaction->type === BankTransaction::TYPE_WITHDRAWAL
+                ? bcsub('0', (string) $transaction->amount, 2)
+                : (string) $transaction->amount);
 
-        $transaction->update([
-            'status' => BankTransaction::STATUS_VOID,
-            'voided_at' => now(),
-            'void_reason' => mb_substr($reason, 0, 255),
-        ]);
+            $transaction->update([
+                'status' => BankTransaction::STATUS_VOID,
+                'voided_at' => now(),
+                'void_reason' => mb_substr($reason, 0, 255),
+            ]);
 
-        $this->bumpFinancialCaches();
+            $this->bumpFinancialCaches();
+        });
     }
 
     public function bumpFinancialCaches(): void
     {
-        Cache::forever('banks:summary_version', ((int) Cache::get('banks:summary_version', 1)) + 1);
-        Cache::forever('expenses:summary_version', ((int) Cache::get('expenses:summary_version', 1)) + 1);
-        Cache::forever('cash:summary_version', ((int) Cache::get('cash:summary_version', 1)) + 1);
-        UiCatalogCache::forgetFinancialCatalogs();
+        app(\App\Support\OperationalCacheOutbox::class)->schedule('financial');
     }
 
     public function signedBankAmount(string $type, float $amount): float
@@ -295,7 +359,12 @@ class FinancialLedgerService
             ->where('branch_id', $session->branch_id)
             ->where('user_id', $session->opened_by)
             ->whereHas('method', fn ($query) => $query->where('code', 'cash'))
-            ->whereBetween('paid_at', [$session->opened_at, $endAt])
+            ->where(function (Builder $query) use ($session, $endAt) {
+                $query->where('cash_register_session_id', $session->id)
+                    ->orWhere(fn (Builder $historical) => $historical
+                        ->where('cash_context_recorded', false)
+                        ->whereBetween('paid_at', [$session->opened_at, $endAt]));
+            })
             ->sum('amount_bob');
     }
 
@@ -358,9 +427,7 @@ class FinancialLedgerService
                 $query->where('cash_register_session_id', $session->id)
                     ->orWhere(fn ($fallback) => $fallback
                         ->whereNull('cash_register_session_id')
-                        ->where('branch_id', $session->branch_id)
-                        ->where('user_id', $session->opened_by)
-                        ->whereBetween('transacted_at', [$session->opened_at, $endAt]));
+                        ->whereIn('id', $this->bankTransactionsInCashPeriod($session, $endAt)->select('bank_transactions.id')));
             });
     }
 
@@ -371,6 +438,15 @@ class FinancialLedgerService
             ->where('branch_id', $session->branch_id)
             ->where('user_id', $session->opened_by)
             ->whereBetween('transacted_at', [$session->opened_at, $endAt])
+            // Un cobro explícitamente registrado fuera de caja tampoco se concilia con una apertura posterior.
+            ->whereNotExists(fn ($payment) => $payment->selectRaw('1')
+                ->from('sale_payments')
+                ->whereColumn('sale_payments.id', 'bank_transactions.source_id')
+                ->where('bank_transactions.source_type', SalePayment::class)
+                ->where('sale_payments.cash_context_recorded', true)
+                ->where(fn ($context) => $context
+                    ->whereNull('sale_payments.cash_register_session_id')
+                    ->orWhere('sale_payments.cash_register_session_id', '!=', $session->id)))
             ->whereIn('type', [BankTransaction::TYPE_DEPOSIT, BankTransaction::TYPE_WITHDRAWAL]);
     }
 

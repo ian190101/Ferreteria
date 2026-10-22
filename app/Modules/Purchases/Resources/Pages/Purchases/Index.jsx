@@ -1,4 +1,6 @@
+import IconButton from '@/Components/IconButton';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
+import { confirmPurchaseVoid, submitPurchaseVoid } from '@/Utils/purchaseVoid';
 import ActionLink from '../../../../Shared/Resources/Components/ActionLink';
 import ModuleHeader from '../../../../Shared/Resources/Components/ModuleHeader';
 import Pagination from '../../../../Shared/Resources/Components/Pagination';
@@ -7,6 +9,16 @@ import { Head, Link, usePage } from '@inertiajs/react';
 export default function Index({ purchases }) {
     const permissions = usePage().props.auth.permissions;
     const canManage = permissions.includes('purchases.manage');
+
+    const voidPurchase = async (purchase) => {
+        const reason = await confirmPurchaseVoid(purchase.id);
+
+        if (!reason) {
+            return;
+        }
+
+        submitPurchaseVoid(route('purchases.void', purchase.id), reason);
+    };
 
     return (
         <AuthenticatedLayout header={<h2 className="text-xl font-semibold leading-tight text-gray-800 dark:text-gray-200">Compras</h2>}>
@@ -34,7 +46,7 @@ export default function Index({ purchases }) {
                                 <th className="px-4 py-3 font-medium">Saldo</th>
                                 <th className="px-4 py-3 font-medium">Pago</th>
                                 <th className="px-4 py-3 font-medium">Estado</th>
-                                <th className="px-4 py-3 font-medium">Detalle</th>
+                                <th className="px-4 py-3 text-right font-medium">Acciones</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -47,9 +59,21 @@ export default function Index({ purchases }) {
                                     <td className="px-4 py-3">{purchase.total_amount}</td>
                                     <td className="px-4 py-3">{purchase.balance_due}</td>
                                     <td className="px-4 py-3">{paymentStatusLabel(purchase.payment_status)}</td>
-                                    <td className="px-4 py-3">{purchase.status === 'received' ? 'Recibida' : 'Borrador'}</td>
-                                    <td className="px-4 py-3">
-                                        <Link href={route('purchases.show', purchase.id)} className="text-brand-primary hover:underline">Ver</Link>
+                                    <td className="px-4 py-3">{purchaseStatusBadge(purchase.status)}</td>
+                                    <td className="whitespace-nowrap px-4 py-3 text-right">
+                                        <div className="flex items-center justify-end gap-2">
+                                            <Link href={route('purchases.show', purchase.id)} className="text-sm font-medium text-brand-primary hover:underline">
+                                                Ver
+                                            </Link>
+                                            {purchase.can_void && purchase.status !== 'voided' && purchase.status !== 'void' ? (
+                                                <IconButton
+                                                    icon="close"
+                                                    label="Anular compra y pagos"
+                                                    tone="danger"
+                                                    onClick={() => voidPurchase(purchase)}
+                                                />
+                                            ) : null}
+                                        </div>
                                     </td>
                                 </tr>
                             ))}
@@ -65,6 +89,30 @@ export default function Index({ purchases }) {
     );
 }
 
+function purchaseStatusBadge(status) {
+    if (status === 'voided' || status === 'void') {
+        return (
+            <span className="inline-flex items-center rounded-full bg-rose-100 px-2.5 py-0.5 text-xs font-medium text-rose-800 dark:bg-rose-900/40 dark:text-rose-300">
+                Anulada
+            </span>
+        );
+    }
+
+    if (status === 'received') {
+        return (
+            <span className="inline-flex items-center rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-medium text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300">
+                Recibida
+            </span>
+        );
+    }
+
+    return (
+        <span className="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-800 dark:bg-slate-800 dark:text-slate-300">
+            Borrador
+        </span>
+    );
+}
+
 function paymentStatusLabel(status) {
     if (status === 'paid') {
         return 'Pagada';
@@ -72,6 +120,10 @@ function paymentStatusLabel(status) {
 
     if (status === 'partial_paid') {
         return 'Parcial';
+    }
+
+    if (status === 'voided') {
+        return 'Anulada';
     }
 
     return 'Pendiente';

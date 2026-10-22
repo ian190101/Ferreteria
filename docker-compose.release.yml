@@ -1,0 +1,23 @@
+x-release: &release
+  image: ${RELEASE_IMAGE:?Define RELEASE_IMAGE}
+  environment:
+    APP_VERSION: ${RELEASE_VERSION:?Define RELEASE_VERSION}
+    SOURCE_COMMIT: ${RELEASE_COMMIT:?Define RELEASE_COMMIT}
+    BUILD_TIMESTAMP: ${RELEASE_TIMESTAMP:?Define RELEASE_TIMESTAMP}
+    RUN_STARTUP_OPEN_SERVICE: "true"
+
+services:
+  app-ferreteria:
+    <<: *release
+    build:
+      args:
+        APP_VERSION: ${RELEASE_VERSION}
+        SOURCE_COMMIT: ${RELEASE_COMMIT}
+        BUILD_TIMESTAMP: ${RELEASE_TIMESTAMP}
+        INSTALL_DEV_DEPENDENCIES: ${INSTALL_DEV_DEPENDENCIES:-false}
+  queue-ferreteria:
+    <<: *release
+  scheduler-ferreteria:
+    <<: *release
+  maintenance-ferreteria:
+    <<: *release

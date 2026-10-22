@@ -18,6 +18,7 @@ use App\Modules\Sales\Models\ReceiptTemplate;
 use App\Modules\Sales\Models\SaleType;
 use App\Modules\Settings\Models\SystemSetting;
 use App\Modules\SystemSuperadmin\Models\BusinessProfilePreset;
+use App\Modules\SystemSuperadmin\Services\BusinessProfileConfiguration;
 use App\Modules\SystemSuperadmin\Services\BusinessProfilePresetFactory;
 use App\Support\DecimalPrecision;
 use App\Support\SystemRoles;

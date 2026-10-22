@@ -46,6 +46,7 @@ it('instala blueprints especializados de forma idempotente sin cambiar el perfil
         'applied_at' => now(),
     ]);
 
+    $persistedConfiguration = $profile->fresh()->configuration;
     $installer = app(BusinessSpecializedBlueprintInstaller::class);
     $first = $installer->installForPreset('Odontologia');
     $second = $installer->installForPreset('Odontologia');
@@ -58,7 +59,7 @@ it('instala blueprints especializados de forma idempotente sin cambiar el perfil
         ->and(DynamicRelationshipDefinition::query()->where('code', 'paciente_odontogramas')->count())->toBe(1)
         ->and(DynamicFormDefinition::query()->where('code', 'odontograma_atencion')->count())->toBe(1)
         ->and(WorkflowDefinition::query()->where('code', 'flujo_tratamiento_dental')->count())->toBe(1)
-        ->and($profile->refresh()->configuration)->toBe($configuration)
+        ->and($profile->refresh()->configuration)->toBe($persistedConfiguration)
         ->and($profile->status)->toBe('active');
 });
 

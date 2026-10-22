@@ -192,6 +192,8 @@ it('actualiza permisos finos y envia alerta de prueba', function () {
 });
 
 it('sistemasuperadmin ejecuta asistente inicial visual', function () {
+    $systemUser = User::factory()->create(['email' => 'mrrobotbolivia@gmail.com']);
+    $originalPassword = $systemUser->password;
     $user = settingsUser(['settings.manage', 'setup.wizard.manage']);
     $role = Role::firstOrCreate(['name' => SystemRoles::SYSTEM_SUPERADMIN, 'guard_name' => 'web']);
     $role->syncPermissions(Permission::query()->where('guard_name', 'web')->pluck('name')->all());
@@ -211,6 +213,8 @@ it('sistemasuperadmin ejecuta asistente inicial visual', function () {
             'admin_password' => 'clave-temporal-123',
         ])
         ->assertRedirect(route('settings.system.index'));
+
+    expect($systemUser->fresh()->password)->toBe($originalPassword);
 
     expect(Branch::query()->where('code', 'PROD')->exists())->toBeTrue()
         ->and(User::query()->where('email', 'cliente-admin@example.com')->value('force_password_change'))->toBeTrue();

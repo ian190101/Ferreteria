@@ -1,8 +1,19 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
+import { confirmPurchaseVoid, submitPurchaseVoid } from '@/Utils/purchaseVoid';
 import ModuleHeader from '../../../../Shared/Resources/Components/ModuleHeader';
 import { Head, Link } from '@inertiajs/react';
 
 export default function Show({ purchase }) {
+    const voidPurchase = async () => {
+        const reason = await confirmPurchaseVoid(purchase.id);
+
+        if (!reason) {
+            return;
+        }
+
+        submitPurchaseVoid(route('purchases.void', purchase.id), reason);
+    };
+
     return (
         <AuthenticatedLayout header={<h2 className="text-xl font-semibold leading-tight text-gray-800 dark:text-gray-200">Compras</h2>}>
             <Head title={`Compra ${purchase.document_number}`} />
@@ -18,6 +29,7 @@ export default function Show({ purchase }) {
                     <p><span className="font-semibold">Pagado:</span> {purchase.paid_amount}</p>
                     <p><span className="font-semibold">Saldo:</span> {purchase.balance_due}</p>
                     <p><span className="font-semibold">Estado de pago:</span> {paymentStatusLabel(purchase.payment_status)}</p>
+                    <p><span className="font-semibold">Estado de compra:</span> {purchaseStatusLabel(purchase.status)}</p>
                 </div>
 
                 <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
@@ -47,10 +59,33 @@ export default function Show({ purchase }) {
                     </table>
                 </div>
 
-                <Link href={route('purchases.index')} className="mt-6 inline-block text-sm text-brand-primary hover:underline">Volver a compras</Link>
+                <div className="mt-6 flex items-center justify-between">
+                    <Link href={route('purchases.index')} className="text-sm text-brand-primary hover:underline">Volver a compras</Link>
+                    {purchase.can_void && purchase.status !== 'voided' && purchase.status !== 'void' ? (
+                        <button
+                            type="button"
+                            onClick={voidPurchase}
+                            className="rounded-md bg-rose-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-rose-700 focus:outline-none focus:ring-2 focus:ring-rose-500 focus:ring-offset-2"
+                        >
+                            Anular compra y pagos
+                        </button>
+                    ) : null}
+                </div>
             </section>
         </AuthenticatedLayout>
     );
+}
+
+function purchaseStatusLabel(status) {
+    if (status === 'voided' || status === 'void') {
+        return 'Anulada';
+    }
+
+    if (status === 'received') {
+        return 'Recibida';
+    }
+
+    return 'Borrador';
 }
 
 function paymentStatusLabel(status) {
@@ -60,6 +95,10 @@ function paymentStatusLabel(status) {
 
     if (status === 'partial_paid') {
         return 'Parcial';
+    }
+
+    if (status === 'voided') {
+        return 'Anulada';
     }
 
     return 'Pendiente';

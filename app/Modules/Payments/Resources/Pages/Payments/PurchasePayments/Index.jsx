@@ -1,7 +1,7 @@
 import IconButton from '@/Components/IconButton';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { currentDateTimeLocal } from '@/Utils/dateTime';
-import { promptAction } from '@/Utils/alerts';
+import { confirmPurchaseVoid, submitPurchaseVoid } from '@/Utils/purchaseVoid';
 import FormField from '../../../../../Shared/Resources/Components/FormField';
 import ModuleHeader from '../../../../../Shared/Resources/Components/ModuleHeader';
 import Pagination from '../../../../../Shared/Resources/Components/Pagination';
@@ -174,7 +174,7 @@ export default function Index({ payments, payables, branches, methods, filters }
                                         <td className="px-4 py-3 text-right">Bs {decimalFormat.money(payment.amount ?? 0)}</td>
                                         {canManage ? (
                                             <td className="px-4 py-3 text-right">
-                                                <IconButton icon="close" label="Anular" tone="danger" onClick={() => voidPayment(payment)} />
+                                                {payment.can_void && !['void', 'voided'].includes(payment.purchase?.status) ? <IconButton icon="close" label="Anular compra y pagos" tone="danger" onClick={() => voidPayment(payment)} /> : null}
                                             </td>
                                         ) : null}
                                     </tr>
@@ -215,15 +215,11 @@ function formatDate(value) {
 }
 
 async function voidPayment(payment) {
-    const reason = await promptAction({
-        title: 'Anular pago a proveedor',
-        text: `Motivo para anular el pago ${payment.id}`,
-        confirmButtonText: 'Anular',
-    });
+    const reason = await confirmPurchaseVoid(payment.purchase_id);
 
     if (!reason) {
         return;
     }
 
-    router.patch(route('payments.purchase-payments.void', payment.id), { reason }, { preserveScroll: true });
+    submitPurchaseVoid(route('payments.purchase-payments.void', payment.id), reason);
 }

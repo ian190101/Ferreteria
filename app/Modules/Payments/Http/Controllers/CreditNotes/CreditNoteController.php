@@ -46,7 +46,7 @@ class CreditNoteController extends Controller
                 });
             })
             ->latest('issued_at')
-            ->paginate($request->integer('per_page', 15))
+            ->paginate(max(1, min(100, $request->integer('per_page', 15))))
             ->withQueryString();
 
         return Inertia::render('Payments/CreditNotes/Index', [

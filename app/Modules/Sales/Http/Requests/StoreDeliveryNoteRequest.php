@@ -98,7 +98,7 @@ class StoreDeliveryNoteRequest extends FormRequest
             $saleItems = SaleItem::query()
                 ->where('sale_id', $sale->id)
                 ->whereIn('id', $itemIds)
-                ->get(['id', 'meters'])
+                ->get(['id', 'meters', 'display_quantity'])
                 ->keyBy('id');
 
             foreach ($this->input('items', []) as $index => $item) {

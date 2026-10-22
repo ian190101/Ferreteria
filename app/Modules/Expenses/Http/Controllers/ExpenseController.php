@@ -25,9 +25,12 @@ class ExpenseController extends Controller
     public function index(Request $request): Response
     {
         $query = $this->filteredQuery($request);
+        $branchIds = app(BranchAccess::class)->idsFor($request->user());
+        sort($branchIds);
+        $scope = hash('sha256', DB::connection()->getDatabaseName().':'.implode(',', $branchIds));
         $summaryVersion = Cache::get('expenses:summary_version', 1);
         $summaryKey = sprintf(
-            'expenses:summary:%s:%s:%s:%s:%s:%s',
+            'expenses:summary:'.$scope.':%s:%s:%s:%s:%s:%s',
             $summaryVersion,
             $request->input('branch_id', 'all'),
             $request->input('expense_category_id', 'all'),
@@ -36,10 +39,12 @@ class ExpenseController extends Controller
             $request->input('to', 'end'),
         );
 
-        $summary = Cache::remember($summaryKey, now()->addMinutes(5), fn () => [
+        $resolveSummary = fn () => [
             'total_amount' => (float) (clone $query)->sum('amount'),
             'count' => (clone $query)->count(),
-        ]);
+        ];
+        // Los datos sin confirmar no deben entrar ni consultarse en una caché compartida.
+        $summary = DB::transactionLevel() > 0 ? $resolveSummary() : Cache::remember($summaryKey, now()->addMinutes(5), $resolveSummary);
         $documentPolicy = app(SalesDocumentPolicy::class);
 
         return Inertia::render('Expenses/Index', [
@@ -132,5 +137,4 @@ class ExpenseController extends Controller
             ->when($request->filled('from'), fn ($query) => $query->whereDate('spent_at', '>=', $request->date('from')))
             ->when($request->filled('to'), fn ($query) => $query->whereDate('spent_at', '<=', $request->date('to')));
     }
-
 }

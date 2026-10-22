@@ -3,6 +3,7 @@ import SelectField from '../../../../../Shared/Resources/Components/SelectField'
 import ContextHelp from '../../../../../Shared/Resources/Components/ContextHelp';
 import { decimalStep } from '@/Utils/formatters';
 import { useState } from 'react';
+import ProductAdditionalDetails from './ProductAdditionalDetails';
 
 export function buildProductFormData({ product = null, categories = [], units = [], branches = [] }) {
     const initialBranchIds = (product?.branch_stocks ?? product?.branchStocks ?? [])
@@ -43,7 +44,6 @@ export function buildProductFormData({ product = null, categories = [], units = 
         requires_lot: product?.requires_lot ?? false,
         requires_expiration_date: product?.requires_expiration_date ?? false,
         is_rentable: product?.is_rentable ?? false,
-        catalog_settings_text: stringifyJson(product?.catalog_settings ?? {}),
         custom_attributes: normalizeCustomAttributes(product?.custom_attributes ?? []),
         allowed_units: normalizeAllowedUnits(product?.allowed_units, initialUnit),
         unit_conversions: normalizeUnitConversions(product?.unit_conversions ?? product?.unitConversions ?? []),
@@ -519,14 +519,6 @@ function InventoryControl({ data, setData, errors }) {
 }
 
 function CatalogTraceability({ data, setData, errors, productPolicy }) {
-    const updateSettingsText = (value) => {
-        setData({
-            ...data,
-            catalog_settings_text: value,
-            catalog_settings: parseJsonObject(value),
-        });
-    };
-
     return (
         <div className="sm:col-span-2">
             <div className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-950/40">
@@ -542,17 +534,7 @@ function CatalogTraceability({ data, setData, errors, productPolicy }) {
                     <ToggleOption label="Alquilable" checked={data.is_rentable} onChange={(value) => setData('is_rentable', value)} disabled={!productPolicy.rentalsEnabled} />
                 </div>
                 <div className="mt-4">
-                    <FormField
-                        label="Configuracion flexible JSON"
-                        name="catalog_settings_text"
-                        value={data.catalog_settings_text ?? ''}
-                        onChange={(event) => updateSettingsText(event.target.value)}
-                        error={errors.catalog_settings}
-                        placeholder='{"material_type":"obra","dosage":"1:2:3","warranty_days":30}'
-                    />
-                    <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
-                        Ejemplos: material de obra, dosis, garantia, link digital, sesiones, reglas de alquiler o datos sanitarios. No permite codigo ejecutable; el backend guarda solo datos.
-                    </p>
+                    <ProductAdditionalDetails settings={data.catalog_settings ?? {}} onChange={(settings) => setData('catalog_settings', settings)} errors={errors} />
                     {errors.requires_lot ? <p className="mt-1 text-sm text-red-600">{errors.requires_lot}</p> : null}
                     {errors.requires_expiration_date ? <p className="mt-1 text-sm text-red-600">{errors.requires_expiration_date}</p> : null}
                     {errors.is_rentable ? <p className="mt-1 text-sm text-red-600">{errors.is_rentable}</p> : null}
@@ -848,23 +830,6 @@ export function normalizeVariants(variants) {
         sale_price: variant.sale_price ?? '',
         is_active: variant.is_active ?? true,
     }));
-}
-
-function parseJsonObject(value) {
-    if (!value) {
-        return {};
-    }
-
-    try {
-        const parsed = JSON.parse(value);
-        return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
-    } catch {
-        return {};
-    }
-}
-
-function stringifyJson(value) {
-    return value && Object.keys(value).length ? JSON.stringify(value) : '';
 }
 
 function ToggleOption({ label, checked, onChange, disabled = false }) {

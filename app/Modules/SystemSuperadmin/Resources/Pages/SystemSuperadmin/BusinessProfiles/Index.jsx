@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import FormField from '../../../../../Shared/Resources/Components/FormField';
 import ModuleHeader from '../../../../../Shared/Resources/Components/ModuleHeader';
 import SelectField from '../../../../../Shared/Resources/Components/SelectField';
+import { confirmAction } from '@/Utils/alerts';
 
 const booleanLabels = {
     true: 'Si',
@@ -34,6 +35,8 @@ const draftStatusLabels = {
 
 export default function Index({ activeProfile, drafts, versions, presets = [], presetReadiness = {}, options, defaultConfiguration, sandboxSession = null, capabilitiesCatalog = {}, capabilitiesMatrix = {}, activePreflight = null, draftPreflights = {}, profilePreview = null }) {
     const [selectedDraftId, setSelectedDraftId] = useState(drafts[0]?.id ?? null);
+    const [selectedPresetId, setSelectedPresetId] = useState(null);
+    const selectedPreset = presets.find((p) => p.id === selectedPresetId) ?? null;
     const selectedDraft = drafts.find((draft) => draft.id === selectedDraftId) ?? null;
     const selectedDraftIsProtected = selectedDraft ? protectedDraftStatuses.includes(selectedDraft.status) : false;
     const selectedDraftPreflight = selectedDraft ? draftPreflights?.[selectedDraft.id] ?? null : activePreflight;
@@ -107,12 +110,43 @@ export default function Index({ activeProfile, drafts, versions, presets = [], p
 
         form.post(route('system-superadmin.business-profiles.drafts.store'), { preserveScroll: true });
     };
+
+    const saveAndApplyProfile = async () => {
+        const confirmed = await confirmAction({
+            title: '¿Guardar y aplicar perfil a producción?',
+            text: `Se aplicará la configuración de "${form.data.name}" directamente a producción para todas las sucursales y operaciones del sistema.`,
+            confirmButtonText: 'Sí, guardar y aplicar',
+            cancelButtonText: 'Cancelar',
+            icon: 'warning',
+        });
+
+        if (!confirmed) {
+            return;
+        }
+
+        form.transform((data) => ({
+            ...data,
+            force: true,
+            draft_id: selectedDraft?.id ?? null,
+        }));
+        form.post(route('system-superadmin.business-profiles.save-and-apply'), {
+            preserveScroll: true,
+            onFinish: () => form.transform((data) => data),
+        });
+    };
+
     const savePreset = () => {
+        if (selectedPresetId && selectedPreset && !selectedPreset.is_system) {
+            form.put(route('system-superadmin.business-profiles.presets.update', selectedPresetId), { preserveScroll: true });
+            return;
+        }
+
         form.post(route('system-superadmin.business-profiles.presets.store'), { preserveScroll: true });
     };
 
     const loadDraft = (draft) => {
         setSelectedDraftId(draft.id);
+        setSelectedPresetId(null);
         form.setData({
             name: draft.name,
             business_type: draft.business_type,
@@ -125,12 +159,28 @@ export default function Index({ activeProfile, drafts, versions, presets = [], p
         setMode('demo');
     };
 
+    const editActiveProfile = () => {
+        if (!activeProfile) {
+            return;
+        }
+
+        setSelectedDraftId(null);
+        setSelectedPresetId(null);
+        form.setData({
+            name: activeProfile.name,
+            business_type: activeProfile.business_type,
+            configuration: activeProfile.configuration ?? defaultConfiguration,
+        });
+        setMode('edit');
+    };
+
     const previewActiveProfile = () => {
         if (!activeProfile) {
             return;
         }
 
         setSelectedDraftId(null);
+        setSelectedPresetId(null);
         form.setData({
             name: activeProfile.name,
             business_type: activeProfile.business_type,
@@ -139,8 +189,38 @@ export default function Index({ activeProfile, drafts, versions, presets = [], p
         setMode('demo');
     };
 
+    const applyDraftWithConfirm = async (draft) => {
+        const confirmed = await confirmAction({
+            title: '¿Aplicar este perfil a producción?',
+            text: `El perfil "${draft.name}" pasará a ser el perfil activo del sistema.`,
+            confirmButtonText: 'Sí, aplicar',
+            cancelButtonText: 'Cancelar',
+            icon: 'question',
+        });
+
+        if (!confirmed) {
+            return;
+        }
+
+        router.post(route('system-superadmin.business-profiles.drafts.apply', draft.id), { force: true }, {
+            preserveScroll: true,
+        });
+    };
+
+    const loadPresetToEdit = (preset) => {
+        setSelectedPresetId(preset.id);
+        setSelectedDraftId(null);
+        form.setData({
+            name: preset.name,
+            business_type: preset.business_type,
+            configuration: preset.configuration ?? defaultConfiguration,
+        });
+        setMode('edit');
+    };
+
     const previewVersion = (version) => {
         setSelectedDraftId(null);
+        setSelectedPresetId(null);
         form.setData({
             name: version.name,
             business_type: version.business_type,
@@ -151,6 +231,7 @@ export default function Index({ activeProfile, drafts, versions, presets = [], p
 
     const newDraft = () => {
         setSelectedDraftId(null);
+        setSelectedPresetId(null);
         form.setData({
             name: 'Nuevo perfil de negocio',
             business_type: activeProfile?.business_type ?? 'hardware_store',
@@ -648,12 +729,21 @@ export default function Index({ activeProfile, drafts, versions, presets = [], p
 
                                 <ImpactSummary demo={demo} comparison={comparison} />
 
-                                <div className="flex flex-wrap gap-3">
+                                <div className="flex flex-wrap items-center gap-3">
+                                    <button
+                                        type="button"
+                                        onClick={saveAndApplyProfile}
+                                        disabled={form.processing}
+                                        className="rounded-full bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm shadow-emerald-600/25 hover:bg-emerald-700 disabled:opacity-60"
+                                        title="Guarda esta configuracion y la activa inmediatamente en produccion para todo el sistema."
+                                    >
+                                        Guardar y aplicar perfil
+                                    </button>
                                     <button type="submit" disabled={form.processing} className="rounded-full bg-brand-primary px-5 py-2.5 text-sm font-semibold text-white shadow-sm shadow-brand-primary/25 disabled:opacity-60">
                                         {selectedDraftIsProtected ? 'Guardar copia como borrador' : selectedDraft ? 'Actualizar borrador' : 'Guardar borrador'}
                                     </button>
                                     <button type="button" onClick={savePreset} disabled={form.processing} className="rounded-full border border-brand-primary px-5 py-2.5 text-sm font-semibold text-brand-primary disabled:opacity-60">
-                                        Guardar como preset
+                                        {selectedPreset && !selectedPreset.is_system ? 'Actualizar preset' : 'Guardar como preset'}
                                     </button>
                                     <button type="button" onClick={newDraft} className="rounded-full border border-slate-300 px-5 py-2.5 text-sm font-semibold text-slate-700 hover:border-brand-primary hover:text-brand-primary dark:border-slate-700 dark:text-slate-200">
                                         Nuevo borrador
@@ -666,7 +756,7 @@ export default function Index({ activeProfile, drafts, versions, presets = [], p
                         {mode === 'compare' ? <ComparisonPanel rows={comparison} /> : null}
                         {mode === 'history' ? (
                             <div className="space-y-6">
-                                <PresetPanel presets={presets} presetReadiness={presetReadiness} />
+                                <PresetPanel presets={presets} presetReadiness={presetReadiness} onEditPreset={loadPresetToEdit} />
                                 <HistoryPanel versions={versions} activeConfiguration={activeProfile?.configuration ?? defaultConfiguration} options={options} onPreviewVersion={previewVersion} />
                             </div>
                         ) : null}
@@ -687,9 +777,19 @@ export default function Index({ activeProfile, drafts, versions, presets = [], p
                                 </div>
                             ) : null}
                             {activeProfile ? (
-                                <button type="button" onClick={previewActiveProfile} className="mt-3 rounded-full border border-brand-primary px-3 py-1.5 text-xs font-semibold text-brand-primary">
-                                    Usar activo en demo
-                                </button>
+                                <div className="mt-3 flex flex-wrap gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={editActiveProfile}
+                                        className="rounded-full bg-brand-primary px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:opacity-90"
+                                        title="Carga la configuracion actual del perfil activo en el editor para modificarla y guardarla directamente."
+                                    >
+                                        Editar perfil activo
+                                    </button>
+                                    <button type="button" onClick={previewActiveProfile} className="rounded-full border border-brand-primary px-3 py-1.5 text-xs font-semibold text-brand-primary">
+                                        Usar activo en demo
+                                    </button>
+                                </div>
                             ) : null}
                         </Card>
 
@@ -717,12 +817,15 @@ export default function Index({ activeProfile, drafts, versions, presets = [], p
                                             <button type="button" onClick={() => previewDraft(draft)} className="rounded-full border border-brand-primary px-3 py-1.5 text-xs font-semibold text-brand-primary" title="Carga este borrador en el editor y abre la demo rapida sin tocar produccion.">
                                                 Usar en demo
                                             </button>
-                                            {draft.status !== 'applied' && !isActiveSnapshot ? (
-                                                <button type="button" onClick={() => router.post(route('system-superadmin.business-profiles.drafts.apply', draft.id), {}, { preserveScroll: true })} className="rounded-full bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white" title="Aplica la ultima version guardada de este borrador.">
-                                                    Aplicar
-                                                </button>
-                                            ) : null}
-                                            {draft.status !== 'applied' && !isProtectedDraft ? (
+                                            <button
+                                                type="button"
+                                                onClick={() => applyDraftWithConfirm(draft)}
+                                                className="rounded-full bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700"
+                                                title="Aplica la configuracion de este perfil a produccion."
+                                            >
+                                                {draft.status === 'applied' ? 'Volver a aplicar' : 'Aplicar perfil'}
+                                            </button>
+                                            {!isProtectedDraft ? (
                                                 <button type="button" onClick={() => router.delete(route('system-superadmin.business-profiles.drafts.destroy', draft.id), { preserveScroll: true })} className="rounded-full border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-600">
                                                     Descartar
                                                 </button>
@@ -1977,7 +2080,7 @@ function HistoryPanel({ versions, activeConfiguration, options, onPreviewVersion
     );
 }
 
-function PresetPanel({ presets, presetReadiness = {} }) {
+function PresetPanel({ presets, presetReadiness = {}, onEditPreset = null }) {
     return (
         <div className="space-y-3">
             <div>
@@ -2023,7 +2126,17 @@ function PresetPanel({ presets, presetReadiness = {} }) {
                             ) : null}
                         </div>
                     </div>
-                    <div className="flex flex-wrap gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                        {onEditPreset ? (
+                            <button
+                                type="button"
+                                onClick={() => onEditPreset(preset)}
+                                className="rounded-full border border-brand-primary px-3 py-1.5 text-xs font-semibold text-brand-primary hover:bg-brand-primary/5"
+                                title="Carga este preset en el editor para modificarlo o guardarlo."
+                            >
+                                Editar en formulario
+                            </button>
+                        ) : null}
                         <button
                             type="button"
                             disabled={draftDisabled}
@@ -2033,7 +2146,7 @@ function PresetPanel({ presets, presetReadiness = {} }) {
                             Crear borrador
                         </button>
                         {!preset.is_system ? (
-                            <button type="button" onClick={() => router.delete(route('system-superadmin.business-profiles.presets.destroy', preset.id), { preserveScroll: true })} className="rounded-full border border-red-200 px-4 py-2 text-sm font-semibold text-red-600">
+                            <button type="button" onClick={() => router.delete(route('system-superadmin.business-profiles.presets.destroy', preset.id), { preserveScroll: true })} className="rounded-full border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-600">
                                 Eliminar
                             </button>
                         ) : null}

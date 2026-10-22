@@ -1,4 +1,5 @@
 import IconButton from '@/Components/IconButton';
+import PaymentCashContext from '@/Components/PaymentCashContext';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { currentDateTimeLocal } from '@/Utils/dateTime';
 import { confirmAction, promptAction } from '@/Utils/alerts';
@@ -275,6 +276,7 @@ export default function Index({ payments, receivables, branches, methods, method
                                     <th className="px-4 py-3 font-medium">Fecha</th>
                                     <th className="px-4 py-3 font-medium">Documento</th>
                                     <th className="px-4 py-3 font-medium">Cliente</th>
+                                    <th className="px-4 py-3 font-medium">Caja al cobrar</th>
                                     <th className="px-4 py-3 font-medium">Metodo</th>
                                     <th className="px-4 py-3 font-medium">Referencia</th>
                                     <th className="px-4 py-3 text-right font-medium">Monto</th>
@@ -287,6 +289,7 @@ export default function Index({ payments, receivables, branches, methods, method
                                         <td className="whitespace-nowrap px-4 py-3">{formatDate(payment.paid_at)}</td>
                                         <td className="px-4 py-3">{payment.sale?.receipt_number ?? '-'}</td>
                                         <td className="px-4 py-3">{payment.sale?.customer_name ?? '-'}</td>
+                                        <td className="px-4 py-3"><PaymentCashContext sessionId={payment.collection_cash_session_id} /></td>
                                         <td className="px-4 py-3">{payment.method?.name ?? '-'}</td>
                                         <td className="px-4 py-3">{payment.reference ?? '-'}</td>
                                         <td className="px-4 py-3 text-right">Bs {decimalFormat.money(payment.amount_bob ?? 0)}</td>

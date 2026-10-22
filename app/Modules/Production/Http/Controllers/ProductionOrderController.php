@@ -8,6 +8,7 @@ use App\Modules\Inventory\Models\Product;
 use App\Modules\Inventory\Models\ProductBranchStock;
 use App\Modules\Inventory\Models\ProductCoil;
 use App\Modules\Inventory\Services\InventoryQuantityService;
+use App\Modules\Finance\Support\Decimal;
 use App\Modules\Production\Http\Requests\StoreProductionOrderRequest;
 use App\Modules\Production\Models\ProductionFormula;
 use App\Modules\Production\Models\ProductionOrder;
@@ -32,7 +33,7 @@ class ProductionOrderController extends Controller
             ->when($request->filled('branch_id'), fn ($query) => $query->where('branch_id', $request->integer('branch_id')))
             ->when($request->filled('search'), fn ($query) => $query->where('order_number', 'like', '%'.$request->string('search')->toString().'%'))
             ->latest('produced_at')
-            ->paginate($request->integer('per_page', 15))
+            ->paginate(max(1, min(100, $request->integer('per_page', 15))))
             ->withQueryString();
 
         return Inertia::render('Production/Index', [
@@ -66,25 +67,42 @@ class ProductionOrderController extends Controller
                 : null;
             $inputProduct = $formula?->items->first()?->inputProduct ?? Product::query()->findOrFail($request->integer('input_product_id'));
             $outputProduct = $formula?->outputProduct ?? Product::query()->findOrFail($request->integer('output_product_id'));
-            $outputMeters = round((float) $request->input('output_meters'), 3);
+            $outputMeters = Decimal::round((string) $request->input('output_meters'), 3);
+            if (bccomp($outputMeters, '0', 3) <= 0) {
+                throw \Illuminate\Validation\ValidationException::withMessages(['output_meters' => 'La producción debe ser mayor que cero.']);
+            }
+            if ($formula && bccomp((string) $formula->yield_quantity, '0', 4) <= 0) {
+                throw \Illuminate\Validation\ValidationException::withMessages(['production_formula_id' => 'El rendimiento de la fórmula debe ser mayor que cero.']);
+            }
             $inputMeters = $formula
-                ? round((float) $formula->items->first()->quantity * ($outputMeters / max((float) $formula->yield_quantity, 0.0001)), 3)
-                : round((float) $request->input('input_meters'), 3);
-            $laborCost = round((float) ($request->input('labor_cost') ?? $formula?->standard_labor_cost ?? 0), 4);
-            $overheadCost = round((float) ($request->input('overhead_cost') ?? $formula?->standard_overhead_cost ?? 0), 4);
-            $inputCost = 0.0;
+                ? Decimal::round(bcdiv(bcmul((string) $formula->items->first()->quantity, $outputMeters, 12), (string) $formula->yield_quantity, 12), 3)
+                : Decimal::round((string) $request->input('input_meters'), 3);
+            $laborCost = Decimal::round((string) ($request->input('labor_cost') ?? $formula?->standard_labor_cost ?? 0), 4);
+            $overheadCost = Decimal::round((string) ($request->input('overhead_cost') ?? $formula?->standard_overhead_cost ?? 0), 4);
+            $inputCost = '0.0000';
             $outputCoil = null;
 
+            if ($formula && $formula->items->contains(fn ($item) => $item->inputProduct->inventory_tracking_mode === Product::TRACKING_COIL)) {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'production_formula_id' => 'La fórmula requiere seleccionar bobinas; usa producción manual por bobina',
+                ]);
+            }
+
+            $inputCoilId = ! $formula && $inputProduct->inventory_tracking_mode === Product::TRACKING_COIL
+                ? ($request->integer('input_product_coil_id') ?: null)
+                : null;
+
             $order = ProductionOrder::query()->create([
-                ...$request->safe()->except(['output_coil_barcode', 'output_lot_number']),
+                ...$request->safe()->except(['output_coil_barcode', 'output_lot_number', 'input_product_coil_id']),
                 'user_id' => $request->user()->id,
                 'production_formula_id' => $formula?->id,
                 'input_product_id' => $inputProduct->id,
+                'input_product_coil_id' => $inputCoilId,
                 'output_product_id' => $outputProduct->id,
                 'input_meters' => $inputMeters,
                 'produced_at' => now(),
                 'waste_meters' => round((float) $request->input('waste_meters', 0), 3),
-                'planned_output_quantity' => $formula ? round((float) $formula->yield_quantity, 4) : $outputMeters,
+                'planned_output_quantity' => $formula ? Decimal::round((string) $formula->yield_quantity, 4) : $outputMeters,
                 'actual_output_quantity' => $outputMeters,
                 'labor_cost' => $laborCost,
                 'overhead_cost' => $overheadCost,
@@ -92,14 +110,16 @@ class ProductionOrderController extends Controller
             ]);
 
             if ($formula) {
-                $scale = $outputMeters / max((float) $formula->yield_quantity, 0.0001);
                 foreach ($formula->items as $item) {
-                    $quantity = round((float) $item->quantity * $scale, 4);
-                    $unitCost = (float) ($item->inputProduct->purchase_price ?? 0);
-                    $lineCost = round($quantity * $unitCost, 4);
-                    $inputCost += $lineCost;
+                    $quantity = Decimal::round(
+                        bcdiv(bcmul((string) $item->quantity, $outputMeters, 12), (string) $formula->yield_quantity, 12),
+                        3
+                    );
+                    $unitCost = Decimal::round((string) ($item->inputProduct->purchase_price ?? '0'), 4);
+                    $lineCost = Decimal::round(bcmul($quantity, $unitCost, 7), 4);
+                    $inputCost = bcadd($inputCost, $lineCost, 4);
 
-                    $this->consumeInput($order, $item->inputProduct, null, $quantity, $request->user()->id, $quantities, 'production_formula_input_global');
+                    $this->consumeInput($order, $item->inputProduct, null, (float) $quantity, $request->user()->id, $quantities, 'production_formula_input_global');
                     $order->inputs()->create([
                         'product_id' => $item->input_product_id,
                         'quantity' => $quantity,
@@ -122,14 +142,14 @@ class ProductionOrderController extends Controller
                     ]);
                 }
             } else {
-                $inputCost = round($inputMeters * (float) ($inputProduct->purchase_price ?? 0), 4);
-                $this->consumeInput($order, $inputProduct, $request->integer('input_product_coil_id') ?: null, $inputMeters, $request->user()->id, $quantities);
+                $inputCost = Decimal::round(bcmul($inputMeters, (string) ($inputProduct->purchase_price ?? '0'), 7), 4);
+                $this->consumeInput($order, $inputProduct, $inputCoilId, (float) $inputMeters, $request->user()->id, $quantities);
                 $order->inputs()->create([
                     'product_id' => $inputProduct->id,
-                    'product_coil_id' => $request->integer('input_product_coil_id') ?: null,
+                    'product_coil_id' => $inputCoilId,
                     'quantity' => $inputMeters,
                     'unit_label' => $inputProduct->base_unit,
-                    'unit_cost' => (float) ($inputProduct->purchase_price ?? 0),
+                    'unit_cost' => Decimal::round((string) ($inputProduct->purchase_price ?? '0'), 4),
                     'total_cost' => $inputCost,
                     'waste_percentage' => 0,
                 ]);
@@ -147,7 +167,7 @@ class ProductionOrderController extends Controller
                 ]);
 
                 $order->update(['output_product_coil_id' => $outputCoil->id]);
-                $this->movement($order, $outputProduct->id, $outputCoil->id, $request->user()->id, $outputMeters, 0, $outputMeters, 'production_output_coil');
+                $this->movement($order, $outputProduct->id, $outputCoil->id, $request->user()->id, (float) $outputMeters, 0, (float) $outputMeters, 'production_output_coil');
             } else {
                 $stock = ProductBranchStock::query()->firstOrCreate([
                     'branch_id' => $order->branch_id,
@@ -158,16 +178,16 @@ class ProductionOrderController extends Controller
                 ]);
 
                 $stock = ProductBranchStock::query()->whereKey($stock->id)->lockForUpdate()->firstOrFail();
-                [$before, $after] = $quantities->increase($stock, $outputMeters);
+                [$before, $after] = $quantities->increase($stock, (float) $outputMeters);
 
-                $this->movement($order, $outputProduct->id, null, $request->user()->id, $outputMeters, $before, $after, 'production_output_global');
+                $this->movement($order, $outputProduct->id, null, $request->user()->id, (float) $outputMeters, $before, $after, 'production_output_global');
             }
 
-            $totalCost = round($inputCost + $laborCost + $overheadCost, 4);
+            $totalCost = bcadd(bcadd($inputCost, $laborCost, 4), $overheadCost, 4);
             $order->update([
                 'input_cost' => $inputCost,
                 'total_cost' => $totalCost,
-                'unit_cost' => $outputMeters > 0 ? round($totalCost / $outputMeters, 4) : 0,
+                'unit_cost' => Decimal::round(bcdiv($totalCost, $outputMeters, 12), 4),
             ]);
         });
 
@@ -255,11 +275,33 @@ class ProductionOrderController extends Controller
             'notes' => 'notas',
         ]);
 
-        $stage->update([
-            ...$data,
-            'completed_at' => $data['status'] === ProductionOrderStage::STATUS_COMPLETED ? now() : null,
-            'started_at' => $stage->started_at ?? now(),
-        ]);
+        DB::transaction(function () use ($order, $stage, $data): void {
+            $lockedOrder = ProductionOrder::query()
+                ->whereKey($order->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            if ($lockedOrder->status === ProductionOrder::STATUS_COMPLETED
+                && $data['status'] !== ProductionOrderStage::STATUS_COMPLETED) {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'status' => 'No se puede reabrir una etapa de una producción terminada.',
+                ]);
+            }
+
+            $lockedStage = ProductionOrderStage::query()
+                ->where('production_order_id', $lockedOrder->id)
+                ->whereKey($stage->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            $lockedStage->update([
+                ...$data,
+                'completed_at' => $data['status'] === ProductionOrderStage::STATUS_COMPLETED
+                    ? ($lockedStage->completed_at ?? now())
+                    : null,
+                'started_at' => $lockedStage->started_at ?? now(),
+            ]);
+        });
 
         SystemCacheInvalidator::bumpOperational();
 
@@ -268,8 +310,29 @@ class ProductionOrderController extends Controller
 
     private function consumeInput(ProductionOrder $order, Product $product, ?int $coilId, float $meters, int $userId, InventoryQuantityService $quantities, string $movementType = 'production_input_global'): void
     {
+        $meters = round($meters, 3);
+        if (! is_finite($meters) || $meters <= 0) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'input_meters' => 'El consumo debe ser mayor que cero a precisión de inventario.',
+            ]);
+        }
+
         if ($product->inventory_tracking_mode === Product::TRACKING_COIL) {
-            $coil = ProductCoil::query()->lockForUpdate()->findOrFail($coilId);
+            $coil = ProductCoil::query()
+                ->where('branch_id', $order->branch_id)
+                ->where('product_id', $product->id)
+                ->where('status', 'available')
+                ->lockForUpdate()
+                ->findOrFail($coilId);
+            $reserved = (float) \App\Modules\Inventory\Models\InventoryReservation::query()
+                ->where('product_coil_id', $coil->id)
+                ->where('status', \App\Modules\Inventory\Models\InventoryReservation::STATUS_ACTIVE)
+                ->sum('meters');
+            if (round((float) $coil->available_meters - $reserved, 3) < $meters) {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'input_meters' => 'La bobina no tiene cantidad libre suficiente.',
+                ]);
+            }
             $before = (float) $coil->available_meters;
             $after = round($before - $meters, 3);
 
@@ -288,6 +351,12 @@ class ProductionOrderController extends Controller
             ->where('product_id', $product->id)
             ->lockForUpdate()
             ->firstOrFail();
+
+        if ($quantities->free($stock) < $meters) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'input_meters' => 'El inventario libre no alcanza para producir.',
+            ]);
+        }
 
         [$before, $after] = $quantities->decrease($stock, $meters);
 

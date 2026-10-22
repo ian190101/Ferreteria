@@ -1,4 +1,5 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
+import PaymentCashContext from '@/Components/PaymentCashContext';
 import { currentDateTimeLocal } from '@/Utils/dateTime';
 import FormField from '../../../../Shared/Resources/Components/FormField';
 import ModuleHeader from '../../../../Shared/Resources/Components/ModuleHeader';
@@ -26,7 +27,7 @@ const emptyCashCount = () => CASH_DENOMINATIONS.reduce((counts, denomination) =>
     [denomination.key]: 0,
 }), {});
 
-export default function Index({ sessions, openSessions, branches, filters }) {
+export default function Index({ sessions, openSessions, collections, branches, filters }) {
     const permissions = usePage().props.auth.permissions;
     const canManage = permissions.includes('cash.manage');
     const canViewBanks = permissions.includes('banks.view') || permissions.includes('banks.manage');
@@ -113,6 +114,39 @@ export default function Index({ sessions, openSessions, branches, filters }) {
                         </button>
                     </div>
                 </form>
+
+                <div className="mb-6">
+                    <Panel title="Flujo de cobros de notas de venta">
+                        <p className="px-4 py-3 text-sm text-slate-600 dark:text-slate-300">
+                            Incluye cobros en efectivo, QR y banco. Los cobros sin caja abierta quedan registrados en Pagos y no se suman al arqueo de una apertura posterior. El filtro de estado se aplica al historial de cajas.
+                        </p>
+                        <div className="overflow-x-auto">
+                            <table className="min-w-full divide-y divide-slate-200 text-sm dark:divide-slate-800">
+                                <thead className="bg-slate-100 text-left text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                                    <tr>
+                                        {['Fecha', 'Documento', 'Sucursal', 'Responsable', 'Método', 'Caja al cobrar', 'Ingreso (Bs)'].map((label) => <th key={label} scope="col" className="px-4 py-3 font-medium">{label}</th>)}
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                                    {collections.data.length === 0 ? (
+                                        <tr><td colSpan={7} className="px-4 py-5 text-slate-500">No hay cobros registrados para esta selección.</td></tr>
+                                    ) : collections.data.map((payment) => (
+                                        <tr key={payment.id}>
+                                            <td className="whitespace-nowrap px-4 py-3">{formatDate(payment.paid_at)}</td>
+                                            <td className="px-4 py-3">{payment.sale?.receipt_number ?? '-'}</td>
+                                            <td className="px-4 py-3">{payment.branch?.name ?? '-'}</td>
+                                            <td className="px-4 py-3">{payment.user?.name ?? '-'}</td>
+                                            <td className="px-4 py-3">{payment.method?.name ?? '-'}</td>
+                                            <td className="px-4 py-3"><PaymentCashContext sessionId={payment.collection_cash_session_id} /></td>
+                                            <MoneyCell value={payment.amount_bob} />
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                        <div className="px-4 py-3"><Pagination links={collections.links} /></div>
+                    </Panel>
+                </div>
 
                 <Panel title="Historial de cajas">
                     <div className="overflow-x-auto">

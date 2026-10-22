@@ -24,6 +24,8 @@ Route::middleware(['auth', 'verified'])
             Route::get('/orders/{order}/receive', [PurchaseOrderController::class, 'receive'])->name('orders.receive');
             Route::post('/orders/{order}/receipts', [PurchaseOrderController::class, 'storeReceipt'])->name('orders.receipts.store');
             Route::post('/orders/{order}/convert', [PurchaseOrderController::class, 'convert'])->name('orders.convert');
+            Route::patch('/{purchase}/void', [PurchaseController::class, 'void'])->name('void');
+            Route::get('/{purchase}/void-preview', [PurchaseController::class, 'voidPreview'])->name('void-preview');
         });
 
         Route::middleware(['business_feature:suppliers', 'permission:purchases.view'])->group(function () {

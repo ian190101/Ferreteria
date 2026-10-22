@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -e
+set -euo pipefail
 
 export PORT="${PORT:-10000}"
 
@@ -14,8 +14,8 @@ mkdir -p \
     bootstrap/cache
 chown -R www-data:www-data storage bootstrap/cache
 
-if [ ! -e public/storage ]; then
-    php artisan storage:link || true
+if [ ! -L public/storage ] && [ ! -e public/storage ]; then
+    php artisan storage:link
 fi
 
 if [ "${RUN_STARTUP_MIGRATIONS:-true}" = "true" ]; then
@@ -23,11 +23,11 @@ if [ "${RUN_STARTUP_MIGRATIONS:-true}" = "true" ]; then
 fi
 
 if [ -n "${SYSTEM_SUPERADMIN_EMAIL:-}" ] && [ -n "${SYSTEM_SUPERADMIN_PASSWORD:-}" ]; then
-    php artisan system:create-master-user "${SYSTEM_SUPERADMIN_EMAIL}" "${SYSTEM_SUPERADMIN_PASSWORD}" --name="${SYSTEM_SUPERADMIN_NAME:-Mr. Robot Bolivia}" || true
+    php artisan system:create-master-user "${SYSTEM_SUPERADMIN_EMAIL}" "${SYSTEM_SUPERADMIN_PASSWORD}" --name="${SYSTEM_SUPERADMIN_NAME:-Mr. Robot Bolivia}"
 fi
 
-php artisan cache:clear || true
-php artisan permission:cache-reset || true
+php artisan cache:clear
+php artisan permission:cache-reset
 mkdir -p storage/framework/cache/data storage/framework/sessions storage/framework/views storage/logs bootstrap/cache
 chown -R www-data:www-data storage bootstrap/cache
 php artisan config:cache
@@ -35,7 +35,12 @@ php artisan route:cache
 php artisan view:cache
 
 if [ "${RUN_STARTUP_CACHE_WARM:-true}" = "true" ]; then
-    php artisan performance:warm-operational-cache || true
+    php artisan performance:warm-operational-cache
+fi
+
+if [ "${RUN_STARTUP_OPEN_SERVICE:-false}" = "true" ]; then
+    php artisan deployment:verify --expected-commit="${SOURCE_COMMIT:?Falta SOURCE_COMMIT}"
+    php artisan up
 fi
 
 php-fpm -D

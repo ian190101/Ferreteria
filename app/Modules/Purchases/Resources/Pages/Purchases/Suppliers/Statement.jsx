@@ -85,6 +85,7 @@ export default function Statement({ supplier, metrics, purchases, items, filters
                         <option value="">Todos</option>
                         <option value="received">Recibidas</option>
                         <option value="pending">Pendientes</option>
+                        <option value="voided">Anuladas</option>
                     </SelectField>
                     <FormField label="Por pagina" name="per_page" type="number" min="5" max="50" value={filterForm.data.per_page} onChange={(event) => filterForm.setData('per_page', event.target.value)} error={filterForm.errors.per_page} />
                     <div className="flex items-end gap-2">
@@ -138,7 +139,7 @@ export default function Statement({ supplier, metrics, purchases, items, filters
                                         <td className="px-4 py-3 text-right">Bs {money(purchase.total_amount)}</td>
                                         <td className="px-4 py-3 text-right">Bs {money(purchase.balance_due)}</td>
                                         <td className="px-4 py-3">{paymentStatusLabel(purchase.payment_status)}</td>
-                                        <td className="px-4 py-3">{purchase.status}</td>
+                                        <td className="px-4 py-3">{purchaseStatusBadge(purchase.status)}</td>
                                     </tr>
                                 ))}
                             </tbody>
@@ -188,6 +189,30 @@ export default function Statement({ supplier, metrics, purchases, items, filters
     );
 }
 
+function purchaseStatusBadge(status) {
+    if (status === 'voided' || status === 'void') {
+        return (
+            <span className="inline-flex items-center rounded-full bg-rose-100 px-2.5 py-0.5 text-xs font-medium text-rose-800 dark:bg-rose-900/40 dark:text-rose-300">
+                Anulada
+            </span>
+        );
+    }
+
+    if (status === 'received') {
+        return (
+            <span className="inline-flex items-center rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-medium text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300">
+                Recibida
+            </span>
+        );
+    }
+
+    return (
+        <span className="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-800 dark:bg-slate-800 dark:text-slate-300">
+            Pendiente
+        </span>
+    );
+}
+
 function paymentStatusLabel(status) {
     if (status === 'paid') {
         return 'Pagada';
@@ -195,6 +220,10 @@ function paymentStatusLabel(status) {
 
     if (status === 'partial_paid') {
         return 'Parcial';
+    }
+
+    if (status === 'voided') {
+        return 'Anulada';
     }
 
     return 'Pendiente';

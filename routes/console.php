@@ -1,23 +1,23 @@
 <?php
 
 use App\Models\User;
+use App\Modules\Billing\Models\SiatBranchSetting;
+use App\Modules\Billing\Services\SiatCatalogSyncService;
+use App\Modules\Billing\Services\SiatCodeService;
 use App\Modules\Branches\Models\Branch;
-use App\Modules\Branches\Models\BranchSetting;
-use App\Modules\Customers\Models\CustomerType;
-use App\Modules\Payments\Models\PaymentMethod;
-use App\Modules\Sales\Models\AdvanceOption;
-use App\Modules\Sales\Models\Currency;
-use App\Modules\Sales\Models\SaleType;
-use App\Modules\Settings\Models\SystemSetting;
 use App\Modules\Settings\Models\MaintenanceBackup;
+use App\Modules\Settings\Models\SystemSetting;
 use App\Modules\Settings\Services\ClientSetupService;
 use App\Modules\Settings\Services\MaintenanceBackupService;
-use App\Modules\Settings\Services\ProductionLogService;
 use App\Modules\Settings\Services\ProductionAlertService;
+use App\Modules\Settings\Services\ProductionLogService;
 use App\Modules\Settings\Services\ProductionUpdateService;
 use App\Modules\Settings\Services\SystemHealthService;
 use App\Modules\SystemSuperadmin\Services\ActiveBusinessProfile;
+use App\Modules\SystemSuperadmin\Services\BusinessPresetReadinessService;
+use App\Modules\SystemSuperadmin\Services\BusinessTransversalReadinessService;
 use App\Support\AuthSessionCache;
+use App\Support\OperationalCacheOutbox;
 use App\Support\SystemRoles;
 use App\Support\UiCatalogCache;
 use Illuminate\Console\Scheduling\Schedule;
@@ -27,9 +27,16 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Facades\Route;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 use Symfony\Component\Console\Command\Command;
+
+Artisan::command('production:invalidate-caches', function (OperationalCacheOutbox $outbox) {
+    $this->info('Invalidaciones recuperadas: '.$outbox->flushPending());
+});
+
+app(Schedule::class)->command('production:invalidate-caches')->everyMinute();
 
 Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
@@ -81,7 +88,7 @@ Artisan::command('production:backup-scheduled', function (MaintenanceBackupServi
     try {
         $backup = $backups->generate($settings['backup_format'] ?? 'sql', metadata: ['reason' => 'scheduled']);
         $deleted = $backups->prune((int) ($settings['backup_retention_days'] ?? 14));
-    } catch (\Throwable $exception) {
+    } catch (Throwable $exception) {
         app(ProductionLogService::class)->record('maintenance', 'error', 'scheduled_backup_failed', 'Fallo el backup automatico.', [
             'error' => $exception->getMessage(),
         ]);
@@ -148,7 +155,7 @@ Artisan::command('production:cleanup', function () {
         $this->info('Limpieza productiva completada.');
 
         return Command::SUCCESS;
-    } catch (\Throwable $exception) {
+    } catch (Throwable $exception) {
         app(ProductionLogService::class)->record('maintenance', 'error', 'production_cleanup_failed', 'Fallo la limpieza productiva.', [
             'error' => $exception->getMessage(),
         ]);
@@ -160,6 +167,30 @@ Artisan::command('production:cleanup', function () {
         return Command::FAILURE;
     }
 })->purpose('Limpia caches temporales y registros fallidos antiguos de produccion.');
+
+Artisan::command('deployment:verify {--expected-commit=}', function (ProductionUpdateService $updates) {
+    $expected = (string) $this->option('expected-commit');
+    if ($expected === '' || ! hash_equals($expected, (string) config('deployment.commit'))) {
+        $this->error('La revisión desplegada no coincide con la publicación solicitada.');
+
+        return Command::FAILURE;
+    }
+    DB::select('SELECT 1');
+    if ($updates->pendingMigrations() !== [] || ! is_readable(public_path('build/manifest.json'))) {
+        $this->error('Quedan migraciones o recursos compilados pendientes.');
+
+        return Command::FAILURE;
+    }
+    $manifest = json_decode(file_get_contents(public_path('build/manifest.json')), true, 512, JSON_THROW_ON_ERROR);
+    if (! isset($manifest['resources/js/app.jsx'])) {
+        $this->error('El manifiesto no contiene el punto de entrada de la aplicación.');
+
+        return Command::FAILURE;
+    }
+    $this->info('Publicación, conexión, migraciones y frontend verificados.');
+
+    return Command::SUCCESS;
+})->purpose('Comprueba la publicación desplegada sin informar éxito parcial.');
 
 Artisan::command('production:pre-update {--target=}', function (ProductionUpdateService $updates) {
     $result = $updates->prepare($this->option('target') ?: null);
@@ -200,24 +231,24 @@ Artisan::command('siat:daily-maintenance', function () {
         return Command::SUCCESS;
     }
 
-    $branches = \App\Modules\Billing\Models\SiatBranchSetting::query()
+    $branches = SiatBranchSetting::query()
         ->where('is_active', true)
         ->pluck('branch_id');
 
     foreach ($branches as $branchId) {
         try {
             if ($settings['siat_auto_cufd'] ?? true) {
-                app(\App\Modules\Billing\Services\SiatCodeService::class)->requestCufd((int) $branchId);
+                app(SiatCodeService::class)->requestCufd((int) $branchId);
             }
 
             if ($settings['siat_auto_catalog_sync'] ?? true) {
-                app(\App\Modules\Billing\Services\SiatCatalogSyncService::class)->syncCoreCatalogs((int) $branchId);
+                app(SiatCatalogSyncService::class)->syncCoreCatalogs((int) $branchId);
             }
 
             app(ProductionLogService::class)->record('siat', 'info', 'siat_daily_maintenance_ok', 'Mantenimiento SIAT diario completado.', [
                 'branch_id' => $branchId,
             ]);
-        } catch (\Throwable $exception) {
+        } catch (Throwable $exception) {
             app(ProductionLogService::class)->record('siat', 'error', 'siat_daily_maintenance_failed', 'Fallo el mantenimiento diario SIAT.', [
                 'branch_id' => $branchId,
                 'error' => $exception->getMessage(),
@@ -233,7 +264,7 @@ Artisan::command('siat:daily-maintenance', function () {
     return Command::SUCCESS;
 })->purpose('Renueva CUFD y sincroniza catalogos SIAT segun configuracion.');
 
-Artisan::command('app:setup-client {--business-name=Fabrica de Calaminas} {--branch-name=Sucursal Central} {--admin-email=admin@calamina.local} {--admin-password=admin123456} {--system-email=mrrobotbolivia@gmail.com} {--system-password=mrrobot2026}', function () {
+Artisan::command('app:setup-client {--business-name=Fabrica de Calaminas} {--branch-name=Sucursal Central} {--admin-email=admin@calamina.local} {--admin-password=} {--system-email=mrrobotbolivia@gmail.com} {--system-password=}', function () {
     app(ClientSetupService::class)->setup([
         'business_name' => (string) $this->option('business-name'),
         'branch_name' => (string) $this->option('branch-name'),
@@ -253,7 +284,7 @@ Artisan::command('app:setup-client {--business-name=Fabrica de Calaminas} {--bra
 
 Artisan::command('production:visual-smoke', function () {
     $routes = ['login', 'dashboard', 'settings.info.index', 'settings.system.index'];
-    $missing = collect($routes)->reject(fn (string $route) => \Illuminate\Support\Facades\Route::has($route));
+    $missing = collect($routes)->reject(fn (string $route) => Route::has($route));
 
     if ($missing->isNotEmpty()) {
         $this->error('Rutas faltantes: '.$missing->implode(', '));
@@ -331,7 +362,7 @@ Artisan::command('production:staging-gate {--strict : Falla tambien con adverten
             : "Driver {$driver}. La demo completa y la validacion final deben correr en MySQL/MariaDB/TiDB.",
     );
 
-    $hasZip = class_exists(\ZipArchive::class);
+    $hasZip = class_exists(ZipArchive::class);
     $add(
         $hasZip ? 'ok' : 'warning',
         'Extension ZipArchive',
@@ -344,7 +375,7 @@ Artisan::command('production:staging-gate {--strict : Falla tambien con adverten
         foreach ($health->check()['checks'] as $check) {
             $add($check['status'], $check['name'], $check['message'], $check['details'] ?? null);
         }
-    } catch (\Throwable $exception) {
+    } catch (Throwable $exception) {
         $add('error', 'Salud del sistema', 'No se pudo ejecutar health check. Verifica que la base este migrada.', $exception->getMessage());
     }
 
@@ -357,7 +388,7 @@ Artisan::command('production:staging-gate {--strict : Falla tambien con adverten
                 ? 'No hay migraciones pendientes.'
                 : 'Hay migraciones pendientes: '.implode(', ', $pendingMigrations),
         );
-    } catch (\Throwable $exception) {
+    } catch (Throwable $exception) {
         $add('error', 'Migraciones', 'No se pudo leer la tabla de migraciones. Ejecuta php artisan migrate --force antes del gate.', $exception->getMessage());
     }
 
@@ -376,7 +407,7 @@ Artisan::command('production:staging-gate {--strict : Falla tambien con adverten
         'customer-qr-orders.index',
     ];
     $missingRoutes = collect($criticalRoutes)
-        ->reject(fn (string $route): bool => \Illuminate\Support\Facades\Route::has($route))
+        ->reject(fn (string $route): bool => Route::has($route))
         ->values()
         ->all();
     $add(
@@ -397,12 +428,12 @@ Artisan::command('production:staging-gate {--strict : Falla tambien con adverten
                 ? 'El perfil activo/default usa esquema 2.0.'
                 : 'El perfil activo/default no esta normalizado a esquema 2.0.',
         );
-    } catch (\Throwable $exception) {
+    } catch (Throwable $exception) {
         $add('error', 'Perfil de negocio 2.0', 'No se pudo leer el perfil activo/default. Verifica conexion y migraciones.', $exception->getMessage());
     }
 
     try {
-        $transversalReadiness = app(\App\Modules\SystemSuperadmin\Services\BusinessTransversalReadinessService::class)->evaluate();
+        $transversalReadiness = app(BusinessTransversalReadinessService::class)->evaluate();
         $add(
             (int) data_get($transversalReadiness, 'overall.blocked', 0) === 0 ? 'ok' : 'error',
             'Readiness transversal',
@@ -410,12 +441,12 @@ Artisan::command('production:staging-gate {--strict : Falla tambien con adverten
                 ? 'No hay motores transversales bloqueados.'
                 : 'Hay motores transversales bloqueados y no debe aplicarse el perfil.',
         );
-    } catch (\Throwable $exception) {
+    } catch (Throwable $exception) {
         $add('error', 'Readiness transversal', 'No se pudo evaluar readiness transversal.', $exception->getMessage());
     }
 
     try {
-        $presetReadiness = collect(app(\App\Modules\SystemSuperadmin\Services\BusinessPresetReadinessService::class)->all());
+        $presetReadiness = collect(app(BusinessPresetReadinessService::class)->all());
         $blockedPresets = $presetReadiness->where('ready', false)->pluck('name')->values()->all();
         $add(
             $blockedPresets === [] ? 'ok' : 'error',
@@ -424,7 +455,7 @@ Artisan::command('production:staging-gate {--strict : Falla tambien con adverten
                 ? 'Todos los presets oficiales pasan readiness.'
                 : 'Presets bloqueados: '.implode(', ', $blockedPresets),
         );
-    } catch (\Throwable $exception) {
+    } catch (Throwable $exception) {
         $add('error', 'Presets oficiales', 'No se pudo evaluar readiness de presets oficiales.', $exception->getMessage());
     }
 
@@ -456,7 +487,7 @@ Artisan::command('production:staging-gate {--strict : Falla tambien con adverten
             'environment' => $environment,
             'db_driver' => $driver,
         ]);
-    } catch (\Throwable) {
+    } catch (Throwable) {
         // El gate debe seguir funcionando incluso antes de tener logs productivos migrados.
     }
 
@@ -487,12 +518,12 @@ Artisan::command('performance:warm-operational-cache', function () {
         $this->info('Cache operativa precargada correctamente.');
 
         return Command::SUCCESS;
-    } catch (\Throwable $exception) {
+    } catch (Throwable $exception) {
         try {
             app(ProductionLogService::class)->record('performance', 'warning', 'operational_cache_warm_failed', 'No se pudo precargar la cache operativa.', [
                 'error' => $exception->getMessage(),
             ]);
-        } catch (\Throwable) {
+        } catch (Throwable) {
             // Si la base de datos esta caida, el comando debe reportar el fallo original sin encadenar otro error.
         }
 

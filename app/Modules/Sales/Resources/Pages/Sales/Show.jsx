@@ -1,4 +1,5 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
+import PaymentCashContext from '@/Components/PaymentCashContext';
 import { assetUrl } from '@/Utils/assets';
 import FormField from '../../../../Shared/Resources/Components/FormField';
 import SelectField from '../../../../Shared/Resources/Components/SelectField';
@@ -321,6 +322,7 @@ export default function Show({ sale, template, documentPolicy = {}, billingPolic
                                     <div>
                                         <p className="font-medium">{payment.method?.name ?? '-'}</p>
                                         <p className="text-xs text-slate-500">{new Date(payment.paid_at).toLocaleString('es-BO')}</p>
+                                        <PaymentCashContext sessionId={payment.collection_cash_session_id} />
                                     </div>
                                     <p className="font-semibold">{currency.symbol} {decimalFormat.money(payment.amount)}</p>
                                 </div>

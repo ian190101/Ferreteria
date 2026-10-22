@@ -43,6 +43,7 @@ it('instala plantillas de reportes por preset sin duplicar ni tocar perfiles act
         'applied_at' => now(),
     ]);
 
+    $persistedConfiguration = $profile->fresh()->configuration;
     $installer = app(BusinessSpecializedReportTemplateInstaller::class);
     $first = $installer->installForPreset('Odontologia');
     $second = $installer->installForPreset('Odontologia');
@@ -51,7 +52,7 @@ it('instala plantillas de reportes por preset sin duplicar ni tocar perfiles act
         ->and($second['templates'])->toBe(2)
         ->and(DynamicReportTemplate::query()->where('code', 'reporte_odontologia_tratamientos')->count())->toBe(1)
         ->and(DynamicReportTemplate::query()->where('code', 'reporte_odontologia_citas')->count())->toBe(1)
-        ->and($profile->refresh()->configuration)->toBe($configuration)
+        ->and($profile->refresh()->configuration)->toBe($persistedConfiguration)
         ->and($profile->status)->toBe('active');
 });
 

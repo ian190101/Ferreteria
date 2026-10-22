@@ -20,11 +20,13 @@ class PurchaseOrderReceipt extends Model
         'received_at',
         'total_amount',
         'notes',
+        'voided_at',
     ];
 
     protected $casts = [
         'received_at' => 'date',
         'total_amount' => 'decimal:2',
+        'voided_at' => 'datetime',
     ];
 
     public function order(): BelongsTo

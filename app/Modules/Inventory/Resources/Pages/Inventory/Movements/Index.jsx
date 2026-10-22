@@ -123,6 +123,19 @@ function movementType(type) {
         production_output_global: 'Produccion salida global',
         purchase_entry_coil: 'Compra lote/unidad',
         purchase_entry_global: 'Compra global',
+        purchase_order_receipt_coil: 'Recepcion orden lote/unidad',
+        purchase_order_receipt_global: 'Recepcion orden compra',
+        purchase_void_coil: 'Anulacion compra lote/unidad',
+        purchase_void_global: 'Anulacion compra global',
+        sale_stock_out: 'Venta salida',
+        sale_void_return: 'Anulacion venta',
+        sale_return: 'Devolucion venta',
+        transfer_out_global: 'Transferencia salida global',
+        transfer_in_global: 'Transferencia entrada global',
+        transfer_out_coil: 'Transferencia salida lote/unidad',
+        transfer_in_coil: 'Transferencia entrada lote/unidad',
+        restaurant_recipe_consumption: 'Consumo receta restaurante',
+        service_order_material_consumption: 'Consumo materiales servicio',
     };
 
     return labels[type] ?? type;

@@ -5,6 +5,7 @@ namespace App\Modules\Payments\Http\Controllers;
 use App\Http\Controllers\Controller;
 use App\Modules\Banks\Services\BankReconciliationService;
 use App\Modules\Finance\Services\FinancialLedgerService;
+use App\Modules\Finance\Support\Decimal;
 use App\Modules\Payments\Http\Requests\StoreSalePaymentRequest;
 use App\Modules\Payments\Http\Requests\VoidSalePaymentRequest;
 use App\Modules\Payments\Models\PaymentMethod;
@@ -31,6 +32,7 @@ class PaymentController extends Controller
             ->values();
 
         $payments = SalePayment::query()
+            ->withCashContext()
             ->with(['sale:id,receipt_number,customer_name,total,balance_due,status', 'branch:id,name', 'user:id,name', 'method:id,name'])
             ->when(true, fn ($query) => BranchAccess::apply($query, $request->user()))
             ->when($request->filled('branch_id'), fn ($query) => $query->where('branch_id', $request->integer('branch_id')))
@@ -69,9 +71,16 @@ class PaymentController extends Controller
     {
         $payment = DB::transaction(function () use ($request, $banks, $inventory, $workflow, $ledger) {
             $sale = Sale::query()->lockForUpdate()->findOrFail($request->integer('sale_id'));
-            $amount = round((float) $request->input('amount'), 2);
+            abort_unless(BranchAccess::canAccess($request->user(), (int) $sale->branch_id), 403);
+            \App\Modules\Cash\Support\CashSessionGuard::lockRequiredOpenSession($request->user(), (int) $sale->branch_id);
+            if ($sale->document_type !== 'sale_note' || ! in_array($sale->status, ['issued', 'partial_paid'], true)) {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'sale_id' => 'La venta ya no admite cobros.',
+                ]);
+            }
+            $amount = Decimal::round((string) $request->input('amount'), 2);
 
-            $payment = $ledger->registerSalePayment(
+            $payment = $ledger->registerSalePaymentExact(
                 sale: $sale,
                 userId: (int) $request->user()->id,
                 paymentMethodId: $request->integer('payment_method_id'),
@@ -84,7 +93,7 @@ class PaymentController extends Controller
             $ledger->bumpFinancialCaches();
 
             if ($workflow->shouldDiscountInventoryOnPayment()) {
-                $sale->loadMissing('items.product:id,inventory_tracking_mode');
+                $sale->load('items.product:id,inventory_tracking_mode,item_type,is_inventory_item,product_category_id');
                 $inventory->decrementForSale($sale, (int) $request->user()->id);
             }
 
@@ -93,7 +102,8 @@ class PaymentController extends Controller
 
         return redirect()
             ->back()
-            ->with('success', "Pago {$payment->id} registrado correctamente.");
+            ->with('success', "Pago {$payment->id} registrado correctamente."
+                .($payment->cash_register_session_id ? '' : ' Cobro realizado sin caja abierta; disponible en Pagos y en el flujo de cobros de Caja.'));
     }
 
     public function void(VoidSalePaymentRequest $request, SalePayment $payment, BankReconciliationService $banks, FinancialLedgerService $ledger): RedirectResponse

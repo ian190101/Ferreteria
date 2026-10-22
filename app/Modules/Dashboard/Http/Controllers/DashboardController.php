@@ -630,6 +630,7 @@ class DashboardController extends Controller
     private function purchaseQuery(?int $branchId, array $branchIds): Builder
     {
         return Purchase::query()
+            ->whereNotIn('status', ['void', 'voided'])
             ->when(true, fn ($query) => $this->applyBranchScope($query, $branchId, $branchIds));
     }
 

@@ -43,7 +43,7 @@ class SiatSoapClient
             $this->log($setting, $service, $method, 'error', $payload, null, $exception->getMessage(), $startedAt);
 
             throw ValidationException::withMessages([
-                'billing' => "No se pudo comunicar con SIAT en {$method}. Verifica token, ambiente, conexion y codigos fiscales. Detalle tecnico: {$exception->getMessage()}",
+                'billing' => 'No se pudo confirmar la comunicación con SIAT. Solicita al administrador revisar el registro de facturación antes de reintentar.',
             ]);
         }
     }

@@ -3,6 +3,7 @@
 namespace App\Modules\Sales\Http\Requests;
 
 use App\Modules\Cash\Support\CashSessionGuard;
+use App\Modules\Finance\Support\Decimal;
 use App\Modules\Inventory\Models\InventoryReservation;
 use App\Modules\Inventory\Models\Product;
 use App\Modules\Inventory\Models\ProductBranchStock;
@@ -29,6 +30,30 @@ class StoreSaleDocumentRequest extends FormRequest
 
     protected function prepareForValidation(): void
     {
+        \Illuminate\Support\Facades\Validator::make($this->all(), [
+            'items' => ['required', 'array', 'min:1', 'max:500'],
+            'items.*' => ['array'],
+            'items.*.product_id' => ['required', 'integer'],
+            'items.*.calculation_mode' => ['nullable', 'string'],
+            'items.*.display_unit_label' => ['nullable', 'string'],
+            'items.*.unit_label' => ['nullable', 'string'],
+            'items.*.meters' => ['nullable', 'numeric'],
+            'items.*.display_quantity' => ['nullable', 'numeric'],
+            'items.*.base_quantity' => ['nullable', 'numeric'],
+            'items.*.length' => ['nullable', 'numeric'],
+        ])->validate();
+
+        \Illuminate\Support\Facades\Validator::make($this->all(), [
+            'items.*.meters' => ['nullable', 'regex:/^-?\d+(?:\.\d+)?$/D'],
+            'items.*.display_quantity' => ['nullable', 'regex:/^-?\d+(?:\.\d+)?$/D'],
+            'items.*.base_quantity' => ['nullable', 'regex:/^-?\d+(?:\.\d+)?$/D'],
+            'items.*.length' => ['nullable', 'regex:/^-?\d+(?:\.\d+)?$/D'],
+            'items.*.unit_price' => ['nullable', 'regex:/^-?\d+(?:\.\d+)?$/D'],
+            'items.*.discount_amount' => ['nullable', 'regex:/^-?\d+(?:\.\d+)?$/D'],
+            'pos_payment_amount' => ['nullable', 'regex:/^-?\d+(?:\.\d+)?$/D'],
+            'advance_amount_input' => ['nullable', 'regex:/^-?\d+(?:\.\d+)?$/D'],
+        ])->validate();
+
         $products = Product::query()
             ->with('unitConversions.unit:id,symbol')
             ->whereIn('id', collect($this->input('items', []))->pluck('product_id')->filter()->unique()->values())
@@ -41,22 +66,26 @@ class StoreSaleDocumentRequest extends FormRequest
                 $product = $products->get($item['product_id'] ?? null);
 
                 if ($mode === 'weight' && blank($item['meters'] ?? null)) {
-                    $item['meters'] = $this->positiveNumber($item['base_quantity'] ?? null)
-                        ?? $this->positiveNumber($item['display_quantity'] ?? null);
+                    $quantity = $this->positiveDecimal($item['base_quantity'] ?? null)
+                        ?? $this->positiveDecimal($item['display_quantity'] ?? null);
+                    $item['meters'] = $quantity ? Decimal::round($quantity, 3) : null;
                 }
 
                 if ($mode === 'length' && blank($item['meters'] ?? null)) {
-                    $quantity = $this->positiveNumber($item['display_quantity'] ?? null);
-                    $length = $this->positiveNumber($item['base_quantity'] ?? null)
-                        ?? $this->positiveNumber($item['length'] ?? null);
+                    $quantity = $this->positiveDecimal($item['display_quantity'] ?? null);
+                    $length = $this->positiveDecimal($item['base_quantity'] ?? null)
+                        ?? $this->positiveDecimal($item['length'] ?? null);
 
                     if ($quantity && $length) {
-                        $item['meters'] = round($quantity * $length, 3);
+                        $item['meters'] = Decimal::round(bcmul($quantity, $length, 12), 3);
                     }
                 }
 
                 if ($mode === 'direct' && filled($item['display_quantity'] ?? null)) {
-                    $item['meters'] = round((float) $item['display_quantity'] * $this->unitFactorToBase($product, $item['display_unit_label'] ?? $item['unit_label'] ?? null), 3);
+                    $quantity = $this->positiveDecimal($item['display_quantity']);
+                    if ($quantity) {
+                        $item['meters'] = Decimal::round(bcmul($quantity, $this->unitFactorToBaseExact($product, $item['display_unit_label'] ?? $item['unit_label'] ?? null), 12), 3);
+                    }
                 }
 
                 if (blank($item['display_quantity'] ?? null) && filled($item['meters'] ?? null)) {
@@ -72,23 +101,33 @@ class StoreSaleDocumentRequest extends FormRequest
 
     private function unitFactorToBase(?Product $product, ?string $unitSymbol): float
     {
+        return (float) $this->unitFactorToBaseExact($product, $unitSymbol);
+    }
+
+    private function unitFactorToBaseExact(?Product $product, ?string $unitSymbol): string
+    {
         if (! $product || blank($unitSymbol) || $unitSymbol === $product->base_unit) {
-            return 1;
+            return '1';
         }
 
         $conversion = $product->unitConversions
             ->first(fn ($row) => $row->is_active && $row->unit?->symbol === $unitSymbol);
 
-        return $conversion ? (float) $conversion->factor_to_base : 1;
+        return $conversion ? (string) $conversion->factor_to_base : '1';
     }
 
-    private function positiveNumber(mixed $value): ?float
+    private function positiveDecimal(mixed $value): ?string
     {
-        if (blank($value) || ! is_numeric($value) || (float) $value <= 0) {
+        if (blank($value)) {
             return null;
         }
 
-        return (float) $value;
+        $decimal = (string) $value;
+        if (! preg_match('/^-?\d+(?:\.\d+)?$/D', $decimal)) {
+            throw \Illuminate\Validation\ValidationException::withMessages(['items' => 'La cantidad debe tener formato decimal válido.']);
+        }
+
+        return bccomp($decimal, '0', 12) > 0 ? $decimal : null;
     }
 
     public function rules(): array
@@ -132,7 +171,8 @@ class StoreSaleDocumentRequest extends FormRequest
             'pos_context.resource' => ['nullable', 'string', 'max:120'],
             'pos_context.assigned' => ['nullable', 'string', 'max:120'],
             'pos_context.reference' => ['nullable', 'string', 'max:120'],
-            'items' => ['required', 'array', 'min:1'],
+            'items' => ['required', 'array', 'min:1', 'max:500'],
+            'items.*' => ['array'],
             'items.*.product_id' => ['required', 'integer', 'exists:products,id'],
             'items.*.product_coil_id' => ['nullable', 'integer', 'exists:product_coils,id'],
             'items.*.description' => ['required', 'string', 'max:255'],
@@ -197,6 +237,10 @@ class StoreSaleDocumentRequest extends FormRequest
     public function withValidator($validator): void
     {
         $validator->after(function ($validator) {
+            if ($validator->errors()->isNotEmpty()) {
+                return;
+            }
+
             if ($message = BranchAccess::validate($this->user(), $this->integer('branch_id'))) {
                 $validator->errors()->add('branch_id', $message);
 

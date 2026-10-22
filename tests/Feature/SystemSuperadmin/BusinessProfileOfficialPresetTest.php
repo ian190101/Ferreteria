@@ -92,9 +92,10 @@ it('siembra presets oficiales sin tocar el perfil activo de ferreteria', functio
         'applied_by' => $user->id,
     ]);
 
+    $persistedConfiguration = $profile->fresh()->configuration;
     $this->seed(BusinessProfilePresetSeeder::class);
 
     expect(BusinessProfilePreset::query()->where('is_system', true)->count())->toBe(32)
-        ->and($profile->refresh()->configuration)->toBe($activeConfiguration)
+        ->and($profile->refresh()->configuration)->toBe($persistedConfiguration)
         ->and($profile->status)->toBe('active');
 });

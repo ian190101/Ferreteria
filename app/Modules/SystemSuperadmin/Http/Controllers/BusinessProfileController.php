@@ -237,15 +237,144 @@ class BusinessProfileController extends Controller
         return back()->with('success', 'Volviste a usar el perfil activo de produccion.');
     }
 
+    public function saveAndApply(Request $request): RedirectResponse
+    {
+        $data = $this->validatedPayload($request);
+        $force = $request->boolean('force', true);
+
+        $configuration = BusinessProfileConfiguration::normalized($data['configuration']);
+        $compatibility = app(BusinessProfileCompatibilityValidator::class)->validate($data['business_type'], $configuration);
+
+        if (! $compatibility['valid']) {
+            throw ValidationException::withMessages([
+                'configuration' => array_merge(
+                    ['No se puede aplicar esta configuracion porque tiene reglas incompatibles. Corrigela y vuelve a intentarlo.'],
+                    $compatibility['errors'],
+                ),
+            ]);
+        }
+
+        $preflight = app(BusinessProfileActivationChecklist::class)->evaluate($data['business_type'], $configuration);
+        $structuralBlockers = collect($preflight['blockers'])
+            ->filter(fn ($item) => in_array($item['code'] ?? '', ['compatibility', 'documents', 'billing_document', 'approval_engine', 'attachments_size'], true))
+            ->values();
+
+        if ($structuralBlockers->isNotEmpty()) {
+            throw ValidationException::withMessages([
+                'configuration' => array_merge(
+                    ['No se puede aplicar esta configuracion debido a errores estructurales criticos.'],
+                    $structuralBlockers->pluck('message')->all(),
+                ),
+            ]);
+        }
+
+        DB::transaction(function () use ($request, $data, $configuration) {
+            $activeProfile = BusinessProfile::query()
+                ->where('status', 'active')
+                ->lockForUpdate()
+                ->latest('applied_at')
+                ->first();
+
+            if ($activeProfile) {
+                app(BusinessProfileDraftHistoryService::class)->archiveActiveSnapshot($activeProfile, $request->user()->id);
+
+                BusinessProfileVersion::query()->create([
+                    'business_profile_id' => $activeProfile->id,
+                    'version_number' => $this->nextVersionNumber(),
+                    'name' => $activeProfile->name,
+                    'business_type' => $activeProfile->business_type,
+                    'configuration' => $activeProfile->configuration,
+                    'applied_by' => $activeProfile->applied_by,
+                    'applied_at' => $activeProfile->applied_at,
+                ]);
+
+                $activeProfile->update(['status' => 'archived']);
+            }
+
+            BusinessProfile::query()->create([
+                'name' => $data['name'],
+                'business_type' => $data['business_type'],
+                'status' => 'active',
+                'configuration' => $configuration,
+                'applied_at' => now(),
+                'applied_by' => $request->user()->id,
+            ]);
+
+            if ($draftId = $request->integer('draft_id')) {
+                BusinessProfileDraft::query()->whereKey($draftId)->update([
+                    'status' => 'applied',
+                    'updated_by' => $request->user()->id,
+                ]);
+            }
+        });
+
+        SystemCacheInvalidator::bumpOperational();
+
+        $message = 'Perfil de negocio guardado y aplicado correctamente a produccion.';
+        if (! $preflight['ready'] && count($preflight['blockers']) > 0) {
+            $pending = collect($preflight['blockers'])->pluck('message')->implode(' | ');
+            return back()->with('success', $message)->with('warning', 'Perfil activado. Recuerda configurar los pendientes operativos: '.$pending);
+        }
+
+        return back()->with('success', $message);
+    }
+
+    public function updateActiveProfile(Request $request): RedirectResponse
+    {
+        $activeProfile = BusinessProfile::query()
+            ->where('status', 'active')
+            ->latest('applied_at')
+            ->first();
+
+        abort_if(! $activeProfile, 404, 'No hay ningun perfil activo para actualizar.');
+
+        $data = $this->validatedPayload($request);
+        $configuration = BusinessProfileConfiguration::normalized($data['configuration']);
+        $compatibility = app(BusinessProfileCompatibilityValidator::class)->validate($data['business_type'], $configuration);
+
+        if (! $compatibility['valid']) {
+            throw ValidationException::withMessages([
+                'configuration' => array_merge(
+                    ['No se puede guardar esta configuracion porque tiene reglas incompatibles.'],
+                    $compatibility['errors'],
+                ),
+            ]);
+        }
+
+        DB::transaction(function () use ($request, $activeProfile, $data, $configuration) {
+            BusinessProfileVersion::query()->create([
+                'business_profile_id' => $activeProfile->id,
+                'version_number' => $this->nextVersionNumber(),
+                'name' => $activeProfile->name,
+                'business_type' => $activeProfile->business_type,
+                'configuration' => $activeProfile->configuration,
+                'applied_by' => $activeProfile->applied_by,
+                'applied_at' => $activeProfile->applied_at,
+            ]);
+
+            $activeProfile->update([
+                'name' => $data['name'],
+                'business_type' => $data['business_type'],
+                'configuration' => $configuration,
+                'applied_at' => now(),
+                'applied_by' => $request->user()->id,
+            ]);
+        });
+
+        SystemCacheInvalidator::bumpOperational();
+
+        return back()->with('success', 'Perfil activo actualizado correctamente.');
+    }
+
     public function apply(Request $request, BusinessProfileDraft $draft): RedirectResponse
     {
-        abort_if(
-            $draft->status === BusinessProfileDraftHistoryService::STATUS_ACTIVE_SNAPSHOT,
-            422,
-            'Este borrador ya representa el perfil activo actual. Usa otro borrador o una copia historica para aplicar cambios.'
-        );
+        $force = $request->boolean('force', false);
 
-        $this->validateDraftBeforeApply($draft);
+        if ($draft->status === BusinessProfileDraftHistoryService::STATUS_ACTIVE_SNAPSHOT && ! $force) {
+            abort(422, 'Este borrador ya representa el perfil activo actual. Usa otro borrador o una copia historica para aplicar cambios.');
+        }
+
+        $this->validateDraftBeforeApply($draft, $force);
 
         DB::transaction(function () use ($request, $draft) {
             $activeProfile = BusinessProfile::query()
@@ -348,6 +477,23 @@ class BusinessProfileController extends Controller
         ]);
 
         return back()->with('success', 'Preset empresarial guardado correctamente para reutilizarlo.');
+    }
+
+    public function updatePreset(Request $request, BusinessProfilePreset $preset): RedirectResponse
+    {
+        abort_if($preset->is_system, 422, 'No se puede sobrescribir un preset base del sistema.');
+
+        $data = $this->validatedPayload($request);
+
+        $preset->update([
+            'name' => $data['name'],
+            'business_type' => $data['business_type'],
+            'description' => $request->string('description')->toString() ?: $preset->description,
+            'configuration' => BusinessProfileConfiguration::normalized($data['configuration']),
+            'updated_by' => $request->user()->id,
+        ]);
+
+        return back()->with('success', 'Preset empresarial actualizado correctamente.');
     }
 
     public function presetToDraft(Request $request, BusinessProfilePreset $preset): RedirectResponse
@@ -721,7 +867,7 @@ class BusinessProfileController extends Controller
         return ((int) BusinessProfileVersion::query()->max('version_number')) + 1;
     }
 
-    private function validateDraftBeforeApply(BusinessProfileDraft $draft): void
+    private function validateDraftBeforeApply(BusinessProfileDraft $draft, bool $force = false): void
     {
         $configuration = BusinessProfileConfiguration::normalized($draft->configuration ?? []);
         $compatibility = app(BusinessProfileCompatibilityValidator::class)->validate($draft->business_type, $configuration);
@@ -737,12 +883,27 @@ class BusinessProfileController extends Controller
         }
 
         if (! $preflight['ready']) {
-            throw ValidationException::withMessages([
-                'configuration' => array_merge(
-                    ['No se puede aplicar este borrador porque el checklist de activacion tiene pendientes criticos.'],
-                    collect($preflight['blockers'])->pluck('message')->all(),
-                ),
-            ]);
+            $structuralBlockers = collect($preflight['blockers'])
+                ->filter(fn ($item) => in_array($item['code'] ?? '', ['compatibility', 'documents', 'billing_document', 'approval_engine', 'attachments_size'], true))
+                ->values();
+
+            if ($structuralBlockers->isNotEmpty()) {
+                throw ValidationException::withMessages([
+                    'configuration' => array_merge(
+                        ['No se puede aplicar este borrador debido a errores estructurales criticos.'],
+                        $structuralBlockers->pluck('message')->all(),
+                    ),
+                ]);
+            }
+
+            if (! $force) {
+                throw ValidationException::withMessages([
+                    'configuration' => array_merge(
+                        ['No se puede aplicar este borrador porque el checklist de activacion tiene pendientes criticos.'],
+                        collect($preflight['blockers'])->pluck('message')->all(),
+                    ),
+                ]);
+            }
         }
     }
 }

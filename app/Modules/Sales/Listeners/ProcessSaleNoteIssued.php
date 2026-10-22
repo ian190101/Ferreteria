@@ -19,17 +19,17 @@ class ProcessSaleNoteIssued
 
     public function handle(SaleNoteIssued $event): void
     {
+        if (\Illuminate\Support\Facades\DB::transactionLevel() < 1) {
+            throw new \LogicException('La emisión requiere la transacción de venta.');
+        }
+
         $sale = Sale::query()
-            ->with('items.product:id,inventory_tracking_mode,item_type,is_inventory_item')
+            ->with('items.product:id,inventory_tracking_mode,item_type,is_inventory_item,product_category_id')
             ->lockForUpdate()
             ->findOrFail($event->saleId);
 
         if ($sale->document_type !== 'sale_note') {
             return;
-        }
-
-        if ($this->workflow->shouldDiscountInventoryOnSaleNote()) {
-            $this->inventory->decrementForSale($sale, $event->userId);
         }
 
         if ($event->sourceQuotationId) {
@@ -47,12 +47,16 @@ class ProcessSaleNoteIssued
             ]);
         }
 
+        if ($this->workflow->shouldDiscountInventoryOnSaleNote()) {
+            $this->inventory->decrementForSale($sale, $event->userId);
+        }
+
         if ($event->posPayment) {
-            $this->payments->registerPosPayment(
+            $this->payments->registerPosPaymentExact(
                 sale: $sale,
                 userId: $event->userId,
                 paymentMethodId: (int) $event->posPayment['payment_method_id'],
-                amount: (float) $event->posPayment['amount'],
+                amount: (string) $event->posPayment['amount'],
                 reference: $event->posPayment['reference'] ?? null,
             );
         }

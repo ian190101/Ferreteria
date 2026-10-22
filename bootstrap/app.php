@@ -1,14 +1,16 @@
 <?php
 
-use App\Http\Middleware\EnsureBusinessFeatureEnabled;
+use App\Http\Middleware\BusinessProfilePreviewContext;
+use App\Http\Middleware\CoordinateOperationalWrites;
 use App\Http\Middleware\EnsureBusinessCapabilityEnabled;
+use App\Http\Middleware\EnsureBusinessFeatureEnabled;
 use App\Http\Middleware\EnsurePasswordWasChanged;
 use App\Http\Middleware\EnsureSystemSuperadmin;
-use App\Http\Middleware\BusinessProfilePreviewContext;
 use App\Http\Middleware\ForceHttpsForProxy;
 use App\Http\Middleware\HandleInertiaRequests;
 use App\Http\Middleware\SandboxContext;
 use App\Http\Middleware\SecurityHeaders;
+use App\Support\SystemErrorResponder;
 use App\Support\UserHomeRoute;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -18,6 +20,7 @@ use Illuminate\Http\Request;
 use Spatie\Permission\Middleware\PermissionMiddleware;
 use Spatie\Permission\Middleware\RoleMiddleware;
 use Spatie\Permission\Middleware\RoleOrPermissionMiddleware;
+use Symfony\Component\HttpFoundation\Response;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -73,6 +76,7 @@ return Application::configure(basePath: dirname(__DIR__))
             SecurityHeaders::class,
             BusinessProfilePreviewContext::class,
             SandboxContext::class,
+            CoordinateOperationalWrites::class,
             HandleInertiaRequests::class,
             EnsurePasswordWasChanged::class,
             AddLinkHeadersForPreloadedAssets::class,
@@ -93,5 +97,5 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {
-        //
+        $exceptions->respond(fn (Response $response, Throwable $exception, Request $request) => app(SystemErrorResponder::class)->respond($response, $exception, $request));
     })->create();

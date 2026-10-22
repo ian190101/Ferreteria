@@ -176,3 +176,30 @@ it('bloquea caja sin permiso', function () {
         ->get(route('cash.index'))
         ->assertForbidden();
 });
+
+it('reconstruye la caja de cobros históricos y limita el flujo al responsable autorizado', function () {
+    $user = cashUser(['cash.view']);
+    $other = User::factory()->create(['branch_id' => $user->branch_id, 'email_verified_at' => now()]);
+    $method = PaymentMethod::query()->create(['name' => 'Efectivo', 'code' => 'cash', 'is_active' => true]);
+    $sale = cashSale($user);
+    $session = CashRegisterSession::query()->create([
+        'branch_id' => $user->branch_id, 'opened_by' => $user->id,
+        'opened_at' => now()->subHours(2), 'closed_at' => now()->subHour(),
+        'opening_amount' => 0, 'expected_cash_amount' => 0, 'status' => 'closed',
+    ]);
+    $attributes = [
+        'sale_id' => $sale->id, 'branch_id' => $user->branch_id, 'user_id' => $user->id,
+        'payment_method_id' => $method->id, 'paid_at' => now()->subMinutes(90),
+        'amount' => 10, 'exchange_rate_to_bob' => 1, 'amount_bob' => 10,
+    ];
+    $historical = SalePayment::query()->create($attributes);
+    $outside = SalePayment::query()->create([...$attributes, 'paid_at' => now()]);
+    SalePayment::query()->create([...$attributes, 'user_id' => $other->id]);
+
+    $this->actingAs($user)->get(route('cash.index'))->assertOk()->assertInertia(fn (Assert $page) => $page
+        ->has('collections.data', 2)
+        ->where('collections.data.0.id', $outside->id)
+        ->where('collections.data.0.collection_cash_session_id', null)
+        ->where('collections.data.1.id', $historical->id)
+        ->where('collections.data.1.collection_cash_session_id', $session->id));
+});

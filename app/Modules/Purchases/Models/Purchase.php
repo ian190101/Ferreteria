@@ -25,6 +25,10 @@ class Purchase extends AuditableModel
         'balance_due',
         'payment_status',
         'status',
+        'voided_by',
+        'voided_at',
+        'void_reason',
+        'void_references',
     ];
 
     protected $casts = [
@@ -32,6 +36,8 @@ class Purchase extends AuditableModel
         'total_amount' => 'decimal:2',
         'paid_amount' => 'decimal:2',
         'balance_due' => 'decimal:2',
+        'voided_at' => 'datetime',
+        'void_references' => 'array',
     ];
 
     public function branch(): BelongsTo

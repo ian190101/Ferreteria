@@ -3,7 +3,7 @@
 namespace App\Modules\Settings\Services;
 
 use App\Modules\Settings\Models\MaintenanceBackup;
-use App\Modules\Settings\Models\MaintenanceLog;
+use App\Support\OperationalWriteGate;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
@@ -12,41 +12,48 @@ class ProductionUpdateService
 {
     public function prepare(?string $targetVersion = null): array
     {
-        $backup = app(MaintenanceBackupService::class)->generate('sql', metadata: [
-            'reason' => 'pre_update',
-            'target_version' => $targetVersion,
-        ]);
+        return app(OperationalWriteGate::class)->exclusive(function () use ($targetVersion): array {
+            $backup = app(MaintenanceBackupService::class)->generate('sql', metadata: [
+                'reason' => 'pre_update',
+                'target_version' => $targetVersion,
+            ]);
+            app(MaintenanceBackupService::class)->verifyRecovery($backup);
 
-        app(ProductionLogService::class)->record('maintenance', 'info', 'pre_update_ready', 'Backup previo a actualizacion generado.', [
-            'backup_id' => $backup->id,
-            'target_version' => $targetVersion,
-        ]);
+            app(ProductionLogService::class)->record('maintenance', 'info', 'pre_update_ready', 'Backup previo a actualizacion generado.', [
+                'backup_id' => $backup->id,
+                'target_version' => $targetVersion,
+            ]);
 
-        return [
-            'backup' => $backup,
-            'pending_migrations' => $this->pendingMigrations(),
-            'current_version' => config('system_info.version'),
-            'target_version' => $targetVersion,
-        ];
+            return [
+                'backup' => $backup,
+                'pending_migrations' => $this->pendingMigrations(),
+                'current_version' => config('system_info.version'),
+                'target_version' => $targetVersion,
+            ];
+        });
     }
 
     public function applyMigrations(): array
     {
-        Artisan::call('migrate', ['--force' => true]);
+        return app(OperationalWriteGate::class)->exclusive(function (): array {
+            if (Artisan::call('migrate', ['--force' => true]) !== 0) {
+                throw new \RuntimeException('Las migraciones fallaron. No se informó una actualización completada.');
+            }
 
-        app(ProductionLogService::class)->record('maintenance', 'info', 'migrations_applied', 'Migraciones aplicadas desde modulo de mantenimiento.', [
-            'output' => Artisan::output(),
-        ]);
+            app(ProductionLogService::class)->record('maintenance', 'info', 'migrations_applied', 'Migraciones aplicadas desde modulo de mantenimiento.', [
+                'output' => Artisan::output(),
+            ]);
 
-        return [
-            'output' => Artisan::output(),
-            'pending_migrations' => $this->pendingMigrations(),
-        ];
+            return [
+                'output' => Artisan::output(),
+                'pending_migrations' => $this->pendingMigrations(),
+            ];
+        });
     }
 
-    public function rollbackToBackup(MaintenanceBackup $backup): array
+    public function rollbackToBackup(MaintenanceBackup $backup, ?\Closure $progress = null): array
     {
-        $result = app(MaintenanceBackupService::class)->restoreSql($backup);
+        $result = app(MaintenanceBackupService::class)->restoreSql($backup, $progress);
 
         app(ProductionLogService::class)->record('maintenance', 'warning', 'production_rollback_restored', 'Se restauro un backup SQL desde mantenimiento productivo.', [
             'backup_id' => $backup->id,

@@ -4,6 +4,7 @@ namespace App\Modules\Sales\Services;
 
 use App\Modules\Banks\Services\BankReconciliationService;
 use App\Modules\Finance\Services\FinancialLedgerService;
+use App\Modules\Finance\Support\Decimal;
 use App\Modules\Sales\Models\Sale;
 use Illuminate\Validation\ValidationException;
 
@@ -19,19 +20,24 @@ class SalePaymentService
 
     public function registerPosPayment(Sale $sale, int $userId, int $paymentMethodId, float $amount, ?string $reference = null): void
     {
-        $amount = round($amount, 2);
+        $this->registerPosPaymentExact($sale, $userId, $paymentMethodId, number_format($amount, 2, '.', ''), $reference);
+    }
 
-        if ($amount <= 0) {
+    public function registerPosPaymentExact(Sale $sale, int $userId, int $paymentMethodId, string $amount, ?string $reference = null): void
+    {
+        $amount = Decimal::round($amount, 2);
+
+        if (bccomp($amount, '0', 2) <= 0) {
             return;
         }
 
-        if ($amount > (float) $sale->balance_due) {
+        if (bccomp($amount, (string) $sale->balance_due, 2) > 0) {
             throw ValidationException::withMessages([
                 'pos_payment_amount' => 'El cobro POS no puede ser mayor al total pendiente de la nota de venta.',
             ]);
         }
 
-        $payment = $this->ledger->registerSalePayment(
+        $payment = $this->ledger->registerSalePaymentExact(
             sale: $sale,
             userId: $userId,
             paymentMethodId: $paymentMethodId,
@@ -43,7 +49,7 @@ class SalePaymentService
         $this->banks->recordSalePayment($payment);
 
         if ($this->workflow->shouldDiscountInventoryOnPayment()) {
-            $sale->loadMissing('items.product:id,inventory_tracking_mode');
+            $sale->load('items.product:id,inventory_tracking_mode,item_type,is_inventory_item,product_category_id');
             $this->inventory->decrementForSale($sale, $userId);
         }
     }

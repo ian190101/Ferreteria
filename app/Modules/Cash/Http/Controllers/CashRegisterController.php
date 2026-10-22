@@ -7,6 +7,7 @@ use App\Modules\Cash\Http\Requests\CloseCashSessionRequest;
 use App\Modules\Cash\Http\Requests\OpenCashSessionRequest;
 use App\Modules\Cash\Models\CashRegisterSession;
 use App\Modules\Finance\Services\FinancialLedgerService;
+use App\Modules\Payments\Models\SalePayment;
 use App\Support\UiCatalogCache;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -34,7 +35,7 @@ class CashRegisterController extends Controller
             )
             ->when($request->filled('status'), fn ($query) => $query->where('status', $request->string('status')->toString()))
             ->latest('opened_at')
-            ->paginate($request->integer('per_page', 15))
+            ->paginate(max(1, min(100, $request->integer('per_page', 15))))
             ->withQueryString();
 
         $openSessions = CashRegisterSession::query()
@@ -58,7 +59,19 @@ class CashRegisterController extends Controller
                 return $session;
             });
 
+        $collections = SalePayment::query()
+            ->withCashContext()
+            ->with(['sale:id,receipt_number,customer_name', 'branch:id,name', 'user:id,name', 'method:id,name'])
+            ->when(! $isSuperAdministrator, fn ($query) => $query
+                ->where('user_id', $user->id)
+                ->whereIn('branch_id', $allowedBranchIds))
+            ->when($requestedBranchId, fn ($query) => $query->where('branch_id', $requestedBranchId))
+            ->latest('paid_at')->orderByDesc('id')
+            ->paginate(max(1, min(100, $request->integer('per_page', 15))), ['*'], 'collections_page')
+            ->withQueryString();
+
         return Inertia::render('Cash/Index', [
+            'collections' => $collections,
             'sessions' => $sessions,
             'openSessions' => $openSessions,
             'branches' => UiCatalogCache::activeBranchesForUser($user),
@@ -74,13 +87,27 @@ class CashRegisterController extends Controller
             403
         );
 
-        CashRegisterSession::query()->create([
-            ...$request->validated(),
-            'opened_by' => $request->user()->id,
-            'opened_at' => now(),
-            'expected_cash_amount' => $request->float('opening_amount'),
-            'status' => CashRegisterSession::STATUS_OPEN,
-        ]);
+        DB::transaction(function () use ($request) {
+            \App\Models\User::query()->whereKey($request->user()->id)->lockForUpdate()->firstOrFail();
+            $open = CashRegisterSession::query()
+                ->where('branch_id', $request->integer('branch_id'))
+                ->where('opened_by', $request->user()->id)
+                ->where('status', CashRegisterSession::STATUS_OPEN)
+                ->lockForUpdate()->first();
+            if ($open) {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'branch_id' => 'Ya tienes una caja abierta en esta sucursal.',
+                ]);
+            }
+
+            CashRegisterSession::query()->create([
+                ...$request->validated(),
+                'opened_by' => $request->user()->id,
+                'opened_at' => now(),
+                'expected_cash_amount' => $request->float('opening_amount'),
+                'status' => CashRegisterSession::STATUS_OPEN,
+            ]);
+        }, 3);
 
         return redirect()->route('cash.index')->with('success', 'Caja abierta correctamente.');
     }
@@ -95,6 +122,12 @@ class CashRegisterController extends Controller
                     ->whereIn('branch_id', $request->user()->accessibleBranchIds() ?: [-1]))
                 ->lockForUpdate()
                 ->firstOrFail();
+
+            if ($cashSession->status !== CashRegisterSession::STATUS_OPEN) {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'cash_session' => 'La caja ya fue cerrada; actualiza la pantalla.',
+                ]);
+            }
 
             $closedAt = now();
             $summary = $ledger->cashSessionSummary($cashSession, $closedAt, attachBankTransactions: true);

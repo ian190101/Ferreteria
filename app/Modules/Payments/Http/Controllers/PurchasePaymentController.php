@@ -9,6 +9,8 @@ use App\Modules\Payments\Http\Requests\StorePurchasePaymentRequest;
 use App\Modules\Payments\Http\Requests\VoidPurchasePaymentRequest;
 use App\Modules\Payments\Models\PurchasePayment;
 use App\Modules\Purchases\Models\Purchase;
+use App\Modules\Purchases\Services\PurchaseService;
+use App\Modules\Purchases\Services\PurchaseVoidAuthorization;
 use App\Modules\Sales\Services\SalesDocumentPolicy;
 use App\Support\BranchAccess;
 use App\Support\UiCatalogCache;
@@ -28,7 +30,7 @@ class PurchasePaymentController extends Controller
             ->values();
 
         $payments = PurchasePayment::query()
-            ->with(['purchase:id,branch_id,supplier_id,document_number,total_amount,paid_amount,balance_due,payment_status', 'purchase.supplier:id,name', 'branch:id,name', 'user:id,name', 'method:id,name'])
+            ->with(['purchase:id,branch_id,supplier_id,document_number,total_amount,paid_amount,balance_due,payment_status,status', 'purchase.supplier:id,name', 'branch:id,name', 'user:id,name', 'method:id,name'])
             ->when(true, fn ($query) => BranchAccess::apply($query, $request->user()))
             ->when($request->filled('branch_id'), fn ($query) => $query->where('branch_id', $request->integer('branch_id')))
             ->when($request->filled('payment_method_id'), fn ($query) => $query->where('payment_method_id', $request->integer('payment_method_id')))
@@ -38,9 +40,18 @@ class PurchasePaymentController extends Controller
             ->paginate($request->integer('per_page', 15))
             ->withQueryString();
 
+        $payments->through(function (PurchasePayment $payment) use ($request): PurchasePayment {
+            $payment->setAttribute('can_void', $payment->purchase
+                && $request->user()->can('payments.manage')
+                && app(PurchaseVoidAuthorization::class)->allows($request->user(), $payment->purchase));
+
+            return $payment;
+        });
+
         $payables = Purchase::query()
             ->with(['branch:id,name', 'supplier:id,name'])
             ->when(true, fn ($query) => BranchAccess::apply($query, $request->user()))
+            ->whereNotIn('status', ['void', 'voided'])
             ->where('balance_due', '>', 0)
             ->latest('purchase_date')
             ->limit(12)
@@ -60,6 +71,11 @@ class PurchasePaymentController extends Controller
         $payment = DB::transaction(function () use ($request, $banks, $ledger) {
             $purchase = Purchase::query()->lockForUpdate()->findOrFail($request->integer('purchase_id'));
             $amount = round((float) $request->input('amount'), 2);
+
+            abort_unless(BranchAccess::canAccess($request->user(), (int) $purchase->branch_id), 403);
+            if (in_array($purchase->status, ['void', 'voided'], true) || $amount <= 0 || $amount > (float) $purchase->balance_due) {
+                throw \Illuminate\Validation\ValidationException::withMessages(['amount' => 'La compra no admite este pago: su estado o saldo cambió.']);
+            }
 
             $payment = $ledger->registerPurchasePayment(
                 purchase: $purchase,
@@ -81,22 +97,16 @@ class PurchasePaymentController extends Controller
             ->with('success', "Pago de compra {$payment->id} registrado correctamente.");
     }
 
-    public function void(VoidPurchasePaymentRequest $request, PurchasePayment $payment, BankReconciliationService $banks, FinancialLedgerService $ledger): RedirectResponse
+    public function void(VoidPurchasePaymentRequest $request, PurchasePayment $payment, PurchaseService $purchaseService): RedirectResponse
     {
         abort_unless(BranchAccess::canAccess($request->user(), (int) $payment->branch_id), 403);
 
-        DB::transaction(function () use ($request, $payment, $banks, $ledger) {
-            $payment = PurchasePayment::query()->lockForUpdate()->findOrFail($payment->id);
-            $purchase = Purchase::query()->lockForUpdate()->findOrFail($payment->purchase_id);
-            $voidReason = 'Anulado por '.$request->user()->name.': '.$request->string('reason')->toString();
+        $purchase = Purchase::query()->findOrFail($payment->purchase_id);
+        $voidReason = 'Anulado por '.$request->user()->name.': '.$request->string('reason')->toString();
 
-            $banks->voidForSource($payment, $voidReason);
-            $ledger->voidPurchasePayment($payment, $purchase, $voidReason);
+        $purchaseService->voidPurchase($purchase, (int) $request->user()->id, $voidReason);
 
-            $ledger->bumpFinancialCaches();
-        });
-
-        return redirect()->back()->with('success', 'Pago de compra anulado correctamente.');
+        return redirect()->back()->with('success', 'Pago y compra anulados correctamente.');
     }
 
 }
