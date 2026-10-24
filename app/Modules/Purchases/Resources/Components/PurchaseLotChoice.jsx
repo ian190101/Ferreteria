@@ -1,17 +1,21 @@
 import LotSelector from '../../../Inventory/Resources/Components/LotSelector';
+import FormField from '../../../Shared/Resources/Components/FormField';
+import { decimalStep, useDecimalFormatter } from '@/Utils/formatters';
 
 export function normalizeLotCode(value) {
     return String(value ?? '').trim().toUpperCase();
 }
 
 export default function PurchaseLotChoice({ productId, branchId, item, onChange, errors = {}, index, context = 'purchase', unit = 'm' }) {
+    const decimalFormat = useDecimalFormatter('purchases');
+    const quantityUnit = item.display_unit_label || unit;
     const mode = item.lot_mode === 'existing' ? 'existing' : 'new';
     const changeMode = (value) => {
         onChange({ lot_mode: value, [value === 'existing' ? 'new_lot_code' : 'lot_id']: '' });
     };
 
     return <fieldset className="space-y-3 rounded-md border border-slate-200 p-3 dark:border-slate-700">
-        <legend className="px-1 text-sm font-medium">Identidad del lote</legend>
+        <legend className="px-1 text-sm font-medium">{context === 'purchase' ? 'Lote y cantidad de este ingreso' : 'Identidad del lote'}</legend>
         <div className="flex flex-wrap gap-4 text-sm">
             <label className="inline-flex items-center gap-2"><input type="radio" checked={mode === 'existing'} disabled={!productId} onChange={() => changeMode('existing')} />Lote existente</label>
             <label className="inline-flex items-center gap-2"><input type="radio" checked={mode === 'new'} onChange={() => changeMode('new')} />Nuevo lote</label>
@@ -26,5 +30,17 @@ export default function PurchaseLotChoice({ productId, branchId, item, onChange,
             <p className="text-xs text-slate-500">Cada bobina física nueva debe tener un código distinto y su propia línea.</p>
         </>}
         {context === 'purchase' && item.calculation_mode !== 'weight' ? <label className="block text-sm" htmlFor={`lot-weight-${index}`}>Peso en Kg (referencia de este ingreso)<input id={`lot-weight-${index}`} type="number" min="0" step="0.001" value={item.kilograms ?? ''} onChange={(event) => onChange({ kilograms: event.target.value, weight_unit: 'kg' })} className="mt-1 block w-full rounded-md border-slate-300 text-sm dark:bg-slate-900" />{errors[`items.${index}.kilograms`] ? <span className="text-red-600">{errors[`items.${index}.kilograms`]}</span> : null}</label> : null}
+        {context === 'purchase' && (!item.calculation_mode || item.calculation_mode === 'direct') ? <FormField
+            label={quantityUnit === 'm' ? 'Metros que ingresan de este lote' : `Cantidad que ingresa de este lote (${quantityUnit})`}
+            name={`items.${index}.display_quantity`}
+            type="number"
+            min="0"
+            step={decimalStep(decimalFormat.decimalsFor('measure'))}
+            value={item.display_quantity}
+            onChange={(event) => onChange({ display_quantity: event.target.value })}
+            error={errors[`items.${index}.display_quantity`]}
+            helpText="Esta es la cantidad de la compra. Se suma una sola vez al lote y al inventario; no debes repetirla en otro campo."
+            required
+        /> : null}
     </fieldset>;
 }

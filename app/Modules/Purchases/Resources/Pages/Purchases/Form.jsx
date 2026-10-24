@@ -384,13 +384,14 @@ export default function Form({ branches = [], suppliers = [], units = [], catego
                                                 {workflow.lotTrackingEnabled && product?.requires_lot ? 'Ingreso por lote obligatorio. Se suma una sola vez al lote y al total del producto.' : `Se usará el rastreo configurado en el producto: ${stockModeLabel(product?.inventory_tracking_mode ?? 'global')}.`}
                                             </div>
                                         )}
+                                        {!draftLots.length ? <>
                                         {item.calculation_mode === 'weight' ? (
                                             <div className="rounded-md border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300">
                                                 <span className="block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Cantidad</span>
                                                 Se calculara automaticamente desde el peso ingresado.
                                             </div>
                                         ) : (
-                                            <FormField label={item.calculation_mode === 'length' ? 'Cantidad de piezas' : `Cantidad (${item.display_unit_label || productUnitSymbol(product)})`} name={`items.${index}.display_quantity`} disabled={draftLots.length > 0} type="number" step={decimalStep(decimalFormat.decimalsFor(quantityKindForItem(item, product, units)))} value={item.display_quantity} onChange={(event) => updateItem(index, 'display_quantity', event.target.value)} error={errors[`items.${index}.display_quantity`]} required />
+                                            workflow.lotTrackingEnabled && product?.requires_lot && item.calculation_mode !== 'length' ? null : <FormField label={item.calculation_mode === 'length' ? 'Cantidad de piezas' : `Cantidad (${item.display_unit_label || productUnitSymbol(product)})`} name={`items.${index}.display_quantity`} type="number" step={decimalStep(decimalFormat.decimalsFor(quantityKindForItem(item, product, units)))} value={item.display_quantity} onChange={(event) => updateItem(index, 'display_quantity', event.target.value)} error={errors[`items.${index}.display_quantity`]} required />
                                         )}
                                         <SelectField label="Unidad" name={`items.${index}.display_unit_label`} disabled={draftLots.length > 0} value={item.display_unit_label || productUnitSymbol(product)} onChange={(event) => updateItem(index, 'display_unit_label', event.target.value)} error={errors[`items.${index}.display_unit_label`]} required>
                                             {documentUnits(units, product).map((unit) => (
@@ -417,7 +418,8 @@ export default function Form({ branches = [], suppliers = [], units = [], catego
                                                 {draftLots.length ? `La cantidad de esta compra se toma de las ${draftLots.length} filas de lote capturadas arriba.` : `Cantidad capturada: ${decimalFormat.format(item.display_quantity || 0, quantityKindForItem(item, product, units))} ${item.display_unit_label || productUnitSymbol(product)}. Revisa abajo su equivalente en inventario.`}
                                             </div>
                                         )}
-                                        {product && !draftLots.length ? <div className="sm:col-span-7"><UnitConversionGuide product={product} unit={item.display_unit_label} mode={item.calculation_mode} /></div> : null}
+                                        {product ? <div className="sm:col-span-7"><UnitConversionGuide product={product} unit={item.display_unit_label} mode={item.calculation_mode} /></div> : null}
+                                        </> : null}
                                         {productAttributes(product).length ? (
                                             <div className="grid gap-3 rounded-md border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-950 sm:col-span-7 sm:grid-cols-4">
                                                 {productAttributes(product).map((attribute) => (
