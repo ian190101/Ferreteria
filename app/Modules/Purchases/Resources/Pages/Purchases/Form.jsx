@@ -5,6 +5,8 @@ import ModuleHeader from '../../../../Shared/Resources/Components/ModuleHeader';
 import SelectField from '../../../../Shared/Resources/Components/SelectField';
 import ContextHelp from '../../../../Shared/Resources/Components/ContextHelp';
 import ProductFormFields, { buildProductFormData } from '../../../../Inventory/Resources/Pages/Inventory/Products/ProductFormFields';
+import PurchaseLotChoice, { normalizeLotCode } from '../../Components/PurchaseLotChoice';
+import UnitConversionGuide from '../../../../Inventory/Resources/Components/UnitConversionGuide';
 import { Head, Link, useForm } from '@inertiajs/react';
 import { decimalStep, useDecimalFormatter } from '@/Utils/formatters';
 import { infoAction } from '@/Utils/alerts';
@@ -27,6 +29,9 @@ const DEFAULT_ITEM = {
     unit_cost: '0',
     purchase_stock_mode: '',
     lot_number: '',
+    lot_id: '',
+    new_lot_code: '',
+    lot_mode: 'new',
     coil_barcode: '',
     description: '',
 };
@@ -66,6 +71,8 @@ export default function Form({ branches = [], suppliers = [], units = [], catego
             item_attributes: defaultItemAttributes(product),
             calculation_mode: 'direct',
             meters: '',
+            lot_id: '',
+            new_lot_code: '',
         } : item));
 
         setItemsWithMergeNotice(mergeDuplicateItems(items, index, productMap, itemMergePolicy));
@@ -155,6 +162,10 @@ export default function Form({ branches = [], suppliers = [], units = [], catego
         }));
     };
     const addItem = () => setData('items', [...data.items, newDefaultItem(categories, units, branches)]);
+    const addAnotherLot = (index) => {
+        const source = data.items[index];
+        setData('items', [...data.items.slice(0, index + 1), { ...source, lot_id: '', new_lot_code: '', lot_number: '', coil_barcode: '', kilograms: '', meters: '', display_quantity: '', lot_mode: 'new' }, ...data.items.slice(index + 1)]);
+    };
     const removeItem = (index) => setData('items', data.items.filter((_, itemIndex) => itemIndex !== index));
     const addProductByBarcode = () => {
         const code = barcodeQuery.trim();
@@ -202,14 +213,15 @@ export default function Form({ branches = [], suppliers = [], units = [], catego
         const enteredWeight = Number(item.kilograms || 0);
         const kg = item.weight_unit === 'ton' ? enteredWeight * 1000 : enteredWeight;
 
-        return item.meters || (kgPerMeter && kg ? decimalFormat.fixed(kg / kgPerMeter, 'measure') : '');
+        const metersPerKg = product?.requires_lot ? Number(product?.thickness?.kg_to_meter_factor ?? 0) : 0;
+        return item.meters || (kg > 0 && (kgPerMeter > 0 || metersPerKg > 0) ? decimalFormat.fixed(kgPerMeter > 0 ? kg / kgPerMeter : kg * metersPerKg, 'measure') : '');
     };
 
     const submit = (event) => {
         event.preventDefault();
         transform((payload) => ({
             ...payload,
-            items: payload.items.map((item) => preparePurchaseItem(item, products, decimalFormat, units, categories, thicknesses)),
+            items: payload.items.map((item) => preparePurchaseItem(item, products, decimalFormat, units, categories, thicknesses, workflow.lotTrackingEnabled)),
         }));
         post(route('purchases.store'), {
             preserveScroll: true,
@@ -223,6 +235,16 @@ export default function Form({ branches = [], suppliers = [], units = [], catego
 
             <section className="mx-auto max-w-6xl px-4 py-8 sm:px-6 lg:px-8">
                 <ModuleHeader title="Nueva compra" description="Ingresa la cantidad en la unidad real del producto. Usa calculo por largo o peso solo cuando corresponda." />
+                {workflow.lotTrackingEnabled ? <section aria-label="Cómo ingresar compras por lote" className="mb-5 rounded-lg border border-slate-200 bg-white p-4 text-sm dark:border-slate-700 dark:bg-slate-900">
+                    <h3 className="font-semibold">Compra con lotes: producto → cantidad y unidad → lote → recepción</h3>
+                    <ol className="mt-2 list-inside list-decimal space-y-1">
+                        <li>Selecciona el producto existente o créalo aquí con su unidad base, espesor y equivalencias.</li>
+                        <li>Si conoces los metros, elige m e ingresa los metros. Para piezas de largo variable usa Cantidad × largo; para calcular desde kg o toneladas usa Peso a metros.</li>
+                        <li>Selecciona un lote existente para reingresar a esa misma bobina, o un código nuevo para otra bobina. Agrega una línea por cada lote.</li>
+                        <li>Guarda como Recibida para ingresar stock una vez. Un borrador no lo ingresa. Registrar después el pago no vuelve a sumar stock.</li>
+                    </ol>
+                    <p className="mt-2 font-medium">Las cantidades ya ingresadas como stock inicial en Inventario no deben registrarse otra vez como entrada por compra para la misma mercadería.</p>
+                </section> : null}
 
                 <div className="mb-5 rounded-lg border border-sky-200 bg-sky-50 p-4 text-sm text-sky-900 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-100">
                     Perfil activo de compras: {workflow.barcodeEntryEnabled ? 'entrada rapida por barcode habilitada' : 'compra tradicional'}; proveedor {supplierModeLabel}; {workflow.allowCreateProduct ? 'puedes crear productos desde compras' : 'solo productos ya registrados'}; {workflow.productPolicy?.unitEquivalencesEnabled === false ? 'sin equivalencias de unidades' : 'con equivalencias de unidades'}; {workflow.purchaseStockModeChoiceEnabled ? 'puedes elegir ingreso por producto o por lote' : 'el ingreso usa el rastreo del producto'}.
@@ -262,7 +284,7 @@ export default function Form({ branches = [], suppliers = [], units = [], catego
 
                     <div className="grid gap-5 rounded-lg border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:grid-cols-4">
                         <FormField label="Documento" name="document_number" value="Se asigna automáticamente al guardar" disabled helpText="Número correlativo automático por sucursal." />
-                        <SelectField label="Sucursal" name="branch_id" value={data.branch_id} onChange={(event) => setData('branch_id', event.target.value)} error={errors.branch_id} helpTitle="Sucursal de ingreso" helpTooltip="Todo stock que ingrese por esta compra quedara disponible en esta sucursal, salvo que la compra quede como borrador." helpText="La sucursal seleccionada recibira el stock cuando la compra quede como recibida.">
+                        <SelectField label="Sucursal" name="branch_id" value={data.branch_id} onChange={(event) => setData((current) => ({ ...current, branch_id: event.target.value, items: current.items.map((item) => ({ ...item, lot_id: '', new_lot_code: '', new_product: { ...item.new_product, lot_registrations: (item.new_product?.lot_registrations ?? []).map((lot) => ({ ...lot, branch_id: event.target.value })) } })) }))} error={errors.branch_id} helpTitle="Sucursal de ingreso" helpTooltip="Todo stock que ingrese por esta compra quedara disponible en esta sucursal, salvo que la compra quede como borrador." helpText="La sucursal seleccionada recibira el stock cuando la compra quede como recibida.">
                             {branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
                         </SelectField>
                         {!supplierHidden ? (
@@ -302,6 +324,7 @@ export default function Form({ branches = [], suppliers = [], units = [], catego
                                 const purchaseStockMode = selectedPurchaseStockMode(item, product);
                                 const isCoil = purchaseStockMode === 'coil';
                                 const summary = purchaseItemSummary(item, product);
+                                const draftLots = item.product_mode === 'new' && workflow.lotTrackingEnabled && product?.requires_lot ? item.new_product?.lot_registrations ?? [] : [];
 
                                 return (
                                     <div key={index} className="grid gap-3 border-t border-slate-100 pt-5 dark:border-slate-800 sm:grid-cols-7">
@@ -328,6 +351,9 @@ export default function Form({ branches = [], suppliers = [], units = [], catego
                                                     attributeDefinitions={attributeDefinitions}
                                                     decimalFormat={decimalFormat}
                                                     productPolicy={workflow.productPolicy}
+                                                    lotBranchId={data.branch_id}
+                                                    lockLotBranch
+                                                    lotEntryContext="purchase"
                                                     compact
                                                 />
                                             </section>
@@ -348,13 +374,14 @@ export default function Form({ branches = [], suppliers = [], units = [], catego
                                                 item={item}
                                                 product={product}
                                                 value={purchaseStockMode}
+                                                managed={workflow.lotTrackingEnabled && product?.requires_lot}
                                                 error={errors[`items.${index}.purchase_stock_mode`]}
                                                 onChange={(value) => setPurchaseStockMode(index, value)}
                                             />
                                         ) : (
                                             <div className="rounded-md border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300">
                                                 <span className="block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Ingreso de stock</span>
-                                                Se usara el rastreo configurado en el producto: {stockModeLabel(product?.inventory_tracking_mode ?? 'global')}.
+                                                {workflow.lotTrackingEnabled && product?.requires_lot ? 'Ingreso por lote obligatorio. Se suma una sola vez al lote y al total del producto.' : `Se usará el rastreo configurado en el producto: ${stockModeLabel(product?.inventory_tracking_mode ?? 'global')}.`}
                                             </div>
                                         )}
                                         {item.calculation_mode === 'weight' ? (
@@ -363,15 +390,15 @@ export default function Form({ branches = [], suppliers = [], units = [], catego
                                                 Se calculara automaticamente desde el peso ingresado.
                                             </div>
                                         ) : (
-                                            <FormField label="Cantidad" name={`items.${index}.display_quantity`} type="number" step={decimalStep(decimalFormat.decimalsFor(quantityKindForItem(item, product, units)))} value={item.display_quantity} onChange={(event) => updateItem(index, 'display_quantity', event.target.value)} error={errors[`items.${index}.display_quantity`]} required />
+                                            <FormField label={item.calculation_mode === 'length' ? 'Cantidad de piezas' : `Cantidad (${item.display_unit_label || productUnitSymbol(product)})`} name={`items.${index}.display_quantity`} disabled={draftLots.length > 0} type="number" step={decimalStep(decimalFormat.decimalsFor(quantityKindForItem(item, product, units)))} value={item.display_quantity} onChange={(event) => updateItem(index, 'display_quantity', event.target.value)} error={errors[`items.${index}.display_quantity`]} required />
                                         )}
-                                        <SelectField label="Unidad" name={`items.${index}.display_unit_label`} value={item.display_unit_label || productUnitSymbol(product)} onChange={(event) => updateItem(index, 'display_unit_label', event.target.value)} error={errors[`items.${index}.display_unit_label`]} required>
+                                        <SelectField label="Unidad" name={`items.${index}.display_unit_label`} disabled={draftLots.length > 0} value={item.display_unit_label || productUnitSymbol(product)} onChange={(event) => updateItem(index, 'display_unit_label', event.target.value)} error={errors[`items.${index}.display_unit_label`]} required>
                                             {documentUnits(units, product).map((unit) => (
                                                 <option key={unit.symbol} value={unit.symbol}>{unit.name} ({unit.symbol})</option>
                                             ))}
                                         </SelectField>
-                                        <SelectField label="Calculo opcional" name={`items.${index}.calculation_mode`} value={item.calculation_mode ?? 'direct'} onChange={(event) => updateItem(index, 'calculation_mode', event.target.value)} helpTitle="Calculo de ingreso" helpTooltip="Usa calculo solo cuando el documento de compra viene en otra unidad. Ejemplo: toneladas compradas que deben convertirse a metros por espesor." helpText="Sin calculo ingresa cantidad directa. Cantidad x largo registra piezas por medida. Peso a metros convierte kg o toneladas segun el espesor.">
-                                            <option value="direct">Sin calculo</option>
+                                        <SelectField label="Calculo opcional" name={`items.${index}.calculation_mode`} disabled={draftLots.length > 0} value={item.calculation_mode ?? 'direct'} onChange={(event) => updateItem(index, 'calculation_mode', event.target.value)} helpTitle="Calculo de ingreso" helpTooltip="Usa calculo solo cuando el documento de compra viene en otra unidad. Ejemplo: toneladas compradas que deben convertirse a metros por espesor." helpText="Sin calculo ingresa cantidad directa. Cantidad x largo registra piezas por medida. Peso a metros convierte kg o toneladas segun el espesor.">
+                                            <option value="direct">Cantidad en la unidad seleccionada</option>
                                             <option value="length">Cantidad x largo</option>
                                             <option value="weight">Peso a metros</option>
                                         </SelectField>
@@ -387,9 +414,10 @@ export default function Form({ branches = [], suppliers = [], units = [], catego
                                             <FormField label={`Largo por unidad (${productUnitSymbol(product)})`} name={`items.${index}.meters`} type="number" step={decimalStep(decimalFormat.decimalsFor(quantityKind(product)))} value={baseQuantityFieldValue(item)} placeholder={convertedMeters(item)} onChange={(event) => updateItem(index, 'meters', event.target.value)} error={errors[`items.${index}.meters`]} />
                                         ) : (
                                             <div className="rounded-md border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300">
-                                                Se guardara {decimalFormat.format(item.display_quantity || 0, quantityKindForItem(item, product, units))} {item.display_unit_label || productUnitSymbol(product)}
+                                                {draftLots.length ? `La cantidad de esta compra se toma de las ${draftLots.length} filas de lote capturadas arriba.` : `Cantidad capturada: ${decimalFormat.format(item.display_quantity || 0, quantityKindForItem(item, product, units))} ${item.display_unit_label || productUnitSymbol(product)}. Revisa abajo su equivalente en inventario.`}
                                             </div>
                                         )}
+                                        {product && !draftLots.length ? <div className="sm:col-span-7"><UnitConversionGuide product={product} unit={item.display_unit_label} mode={item.calculation_mode} /></div> : null}
                                         {productAttributes(product).length ? (
                                             <div className="grid gap-3 rounded-md border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-950 sm:col-span-7 sm:grid-cols-4">
                                                 {productAttributes(product).map((attribute) => (
@@ -403,27 +431,28 @@ export default function Form({ branches = [], suppliers = [], units = [], catego
                                             </div>
                                         ) : null}
                                         <SelectField label="Costo en" name={`items.${index}.cost_mode`} value={item.cost_mode ?? 'meter'} onChange={(event) => updateItem(index, 'cost_mode', event.target.value)}>
-                                            <option value="meter">{item.calculation_mode === 'direct' ? 'Costo por unidad' : 'Costo por metro'}</option>
+                                            <option value="meter">{`Costo por ${productUnitSymbol(product)} (unidad base)`}</option>
                                             {item.calculation_mode === 'weight' ? <option value="ton">Costo por tonelada</option> : null}
                                         </SelectField>
                                         {item.cost_mode === 'ton' && item.calculation_mode === 'weight' ? (
                                             <FormField label="Costo/TON (Bs.)" name={`items.${index}.cost_per_ton`} type="number" step={decimalStep(decimalFormat.decimalsFor('money'))} value={item.cost_per_ton} placeholder={`Bs. ${decimalFormat.money(0)}`} onChange={(event) => updateItem(index, 'cost_per_ton', event.target.value)} />
                                         ) : (
-                                            <FormField label={item.calculation_mode === 'direct' ? 'Costo/unidad' : 'Costo/metro'} name={`items.${index}.unit_cost`} type="number" step={decimalStep(decimalFormat.decimalsFor('cost'))} value={item.unit_cost} onChange={(event) => updateItem(index, 'unit_cost', event.target.value)} error={errors[`items.${index}.unit_cost`]} required />
+                                            <FormField label={`Costo/${productUnitSymbol(product)} (Bs.)`} name={`items.${index}.unit_cost`} type="number" step={decimalStep(decimalFormat.decimalsFor('cost'))} value={item.unit_cost} onChange={(event) => updateItem(index, 'unit_cost', event.target.value)} error={errors[`items.${index}.unit_cost`]} required />
                                         )}
-                                        <SelectField label="Lote existente" name={`items.${index}.existing_lot`} value={lotOptions.includes(item.lot_number) ? item.lot_number : ''} disabled={!isCoil} onChange={(event) => updateItem(index, 'lot_number', event.target.value)} helpTitle="Lotes ya ingresados" helpTooltip="Si varios productos vienen en el mismo lote, selecciona aqui el lote ya usado. Si es nuevo, escribe el numero en el campo Lote opcional." helpText="La lista se alimenta automaticamente con lotes registrados antes en compras o inventario.">
+                                        {draftLots.length ? <div className="rounded-md border border-sky-200 p-3 text-sm sm:col-span-7"><p className="font-semibold">{draftLots.length} líneas de lote listas para ingresar con esta compra</p><ul>{draftLots.map((lot, position) => <li key={position}>{lot.lot_code || "Código pendiente"} · {lot.initial_kg || "—"} Kg · {lot.initial_meters || "Metros calculados por espesor"}</li>)}</ul><p>El producto se creará una sola vez y cada lote ingresará en su propia línea de compra.</p></div> : workflow.lotTrackingEnabled && product?.requires_lot ? <div className="sm:col-span-7"><PurchaseLotChoice productId={product.id} branchId={data.branch_id} unit={productUnitSymbol(product)} item={item} index={index} errors={errors} onChange={(patch) => setData('items', data.items.map((entry, itemIndex) => itemIndex === index ? { ...entry, ...patch } : entry))} /></div> : <><SelectField label="Lote existente" name={`items.${index}.existing_lot`} value={lotOptions.includes(item.lot_number) ? item.lot_number : ''} disabled={!isCoil} onChange={(event) => updateItem(index, 'lot_number', event.target.value)} helpTitle="Lotes ya ingresados" helpTooltip="Si varios productos vienen en el mismo lote, selecciona aqui el lote ya usado. Si es nuevo, escribe el numero en el campo Lote opcional." helpText="La lista se alimenta automaticamente con lotes registrados antes en compras o inventario.">
                                             <option value="">Sin seleccionar</option>
                                             {lotOptions.map((lot) => <option key={lot} value={lot}>{lot}</option>)}
                                         </SelectField>
                                         <FormField label="Lote opcional" name={`items.${index}.lot_number`} value={item.lot_number} disabled={!isCoil} onChange={(event) => updateItem(index, 'lot_number', event.target.value)} error={errors[`items.${index}.lot_number`]} />
-                                        <FormField label="Barcode opcional" name={`items.${index}.coil_barcode`} value={item.coil_barcode} disabled={!isCoil} onChange={(event) => updateItem(index, 'coil_barcode', event.target.value)} error={errors[`items.${index}.coil_barcode`]} />
+                                        <FormField label="Barcode opcional" name={`items.${index}.coil_barcode`} value={item.coil_barcode} disabled={!isCoil} onChange={(event) => updateItem(index, 'coil_barcode', event.target.value)} error={errors[`items.${index}.coil_barcode`]} /></>}
                                         <div className="sm:col-span-7">
                                             <div className="mb-3 rounded-md border border-slate-200 bg-slate-50 px-4 py-3 text-sm dark:border-slate-800 dark:bg-slate-950">
-                                                <p className="text-slate-500 dark:text-slate-400">{item.calculation_mode === 'direct' ? 'Cantidad' : 'Equivalente'}: <span className="font-semibold text-emerald-600">{item.calculation_mode === 'direct' ? formatDocumentQuantity(summary.meters, item, product, units, decimalFormat) : `${decimalFormat.measure(summary.meters)} m`}</span></p>
+                                                <p className="text-slate-500 dark:text-slate-400">{data.status === 'draft' ? 'Cantidad preparada (sin ingreso de stock)' : 'Ingreso previsto al stock'}: <span className="font-semibold text-emerald-600">{decimalFormat.format(summary.meters, quantityKind(product))} {productUnitSymbol(product)}</span></p>
                                                 <p className="mt-1 text-slate-500 dark:text-slate-400">Subtotal costo: <span className="font-semibold text-slate-950 dark:text-slate-50">Bs {decimalFormat.money(summary.total)}</span></p>
                                             </div>
                                             <FormField label="Descripcion" name={`items.${index}.description`} value={item.description} onChange={(event) => updateItem(index, 'description', event.target.value)} error={errors[`items.${index}.description`]} />
                                         </div>
+                                        {workflow.lotTrackingEnabled && product?.requires_lot && item.product_mode !== 'new' ? <button type="button" onClick={() => addAnotherLot(index)} className="text-left text-sm font-semibold text-brand-primary sm:col-span-7">+ Agregar otro lote de este producto</button> : null}
                                         {data.items.length > 1 ? <button type="button" onClick={() => removeItem(index)} className="self-end text-left text-sm text-red-600">Quitar item</button> : null}
                                     </div>
                                 );
@@ -443,7 +472,7 @@ export default function Form({ branches = [], suppliers = [], units = [], catego
     );
 }
 
-function preparePurchaseItem(item, products, decimalFormat, units, categories, thicknesses) {
+function preparePurchaseItem(item, products, decimalFormat, units, categories, thicknesses, lotTrackingEnabled) {
     const product = products.find((product) => String(product.id) === String(item.product_id))
         ?? draftProductFromItem(item, categories, units, thicknesses);
     const summary = purchaseItemSummary(item, product);
@@ -462,11 +491,14 @@ function preparePurchaseItem(item, products, decimalFormat, units, categories, t
         item_attributes: normalizedItemAttributes(item, product),
         purchase_stock_mode: item.purchase_stock_mode || product?.inventory_tracking_mode || 'global',
         weight_unit: item.weight_unit,
-        kilograms: item.calculation_mode === 'weight' ? item.kilograms : '',
-        meters: summary.meters ? decimalFormat.fixed(summary.meters, item.calculation_mode === 'direct' ? quantityKindForItem(item, product, units) : 'measure') : item.meters,
+        kilograms: item.calculation_mode === 'weight' || (lotTrackingEnabled && product?.requires_lot) ? item.kilograms : '',
+        meters: lotTrackingEnabled && product?.requires_lot ? '' : summary.meters ? decimalFormat.fixed(summary.meters, item.calculation_mode === 'direct' ? quantityKindForItem(item, product, units) : 'measure') : item.meters,
+        base_quantity: lotTrackingEnabled && product?.requires_lot && item.calculation_mode === 'length' ? item.meters : undefined,
         unit_cost: summary.unitCost ? decimalFormat.fixed(summary.unitCost, 'cost') : item.unit_cost,
         lot_number: item.lot_number,
         coil_barcode: item.coil_barcode,
+        lot_id: lotTrackingEnabled && product?.requires_lot && item.lot_mode === 'existing' ? item.lot_id : undefined,
+        new_lot_code: lotTrackingEnabled && product?.requires_lot && item.lot_mode !== 'existing' ? normalizeLotCode(item.new_lot_code) : undefined,
         description: item.description,
     };
 }
@@ -536,10 +568,18 @@ function nestedErrors(errors, prefix) {
 }
 
 function purchaseItemSummary(item, product) {
+    const initialLots = item.product_mode === 'new' && item.new_product?.requires_lot ? item.new_product.lot_registrations ?? [] : [];
+    if (initialLots.length) {
+        const kgPerMeter = Number(product?.thickness?.kg_per_meter ?? 0);
+        const metersPerKg = Number(product?.thickness?.kg_to_meter_factor ?? 0);
+        const meters = initialLots.reduce((sum, row) => sum + (row.initial_meters !== '' ? Number(row.initial_meters || 0) : kgPerMeter > 0 ? Number(row.initial_kg || 0) / kgPerMeter : Number(row.initial_kg || 0) * metersPerKg), 0);
+        return { meters, total: meters * Number(item.unit_cost || 0), unitCost: Number(item.unit_cost || 0) };
+    }
     const kgPerMeter = Number(product?.thickness?.kg_per_meter ?? 0);
+    const metersPerKg = product?.requires_lot ? Number(product?.thickness?.kg_to_meter_factor ?? 0) : 0;
     const kg = weightInKg(item.kilograms, item.weight_unit);
     const meters = item.calculation_mode === 'weight'
-        ? (kgPerMeter && kg ? kg / kgPerMeter : 0)
+        ? (kgPerMeter > 0 ? kg / kgPerMeter : kg * metersPerKg)
         : baseQuantityFromItem(item, product);
     const tons = kg / 1000;
     const lineTotal = item.cost_mode === 'ton' && item.calculation_mode === 'weight'
@@ -588,7 +628,12 @@ function AttributeField({ attribute, value, onChange }) {
     );
 }
 
-function PurchaseStockModeSelector({ item, product, value, error, onChange }) {
+function PurchaseStockModeSelector({ item, product, value, error, onChange, managed = false }) {
+    if (managed) return <div className="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-950 dark:border-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-100">
+        <p className="font-semibold">Ingreso por lote obligatorio</p>
+        <p>Selecciona o registra el lote de cada línea. La recepción actualiza su saldo y el total del producto una sola vez.</p>
+        {error ? <p className="text-red-700">{error}</p> : null}
+    </div>;
     const existingProduct = item.product_mode !== 'new' && product;
     const mismatch = existingProduct && value && value !== product.inventory_tracking_mode;
 
@@ -717,8 +762,10 @@ function draftProductFromItem(item, categories = [], units = [], thicknesses = [
         name: payload.name ?? '',
         sku: payload.sku ?? '',
         inventory_tracking_mode: item.purchase_stock_mode || payload.inventory_tracking_mode || category?.default_tracking_mode || 'global',
+        requires_lot: Boolean(payload.requires_lot),
         base_unit: symbol,
-        allowed_units: [symbol],
+        allowed_units: payload.allowed_units?.length ? payload.allowed_units : [symbol],
+        unit_conversions: (payload.unit_conversions ?? []).map((row) => ({ ...row, unit: units.find((entry) => Number(entry.id) === Number(row.product_unit_id)) })),
         unit,
         thickness,
         custom_attributes: [],
@@ -747,7 +794,7 @@ function documentUnits(units, product) {
         .filter((conversion) => conversion.is_active !== false)
         .map((conversion) => conversion.unit?.symbol)
         .filter(Boolean);
-    const allowedSymbols = conversionSymbols.length
+    const allowedSymbols = product?.requires_lot || conversionSymbols.length
         ? [productSymbol, ...conversionSymbols]
         : (product?.allowed_units?.length ? product.allowed_units : [productSymbol]);
     const selected = units.filter((unit) => allowedSymbols.includes(unit.symbol));
@@ -766,7 +813,7 @@ function unitFactorToBase(symbol, product) {
     const conversion = (product?.unit_conversions ?? product?.unitConversions ?? [])
         .find((row) => row.is_active !== false && row.unit?.symbol === symbol);
 
-    return Number(conversion?.factor_to_base || 1);
+    return conversion ? Number(conversion.factor_to_base) : product?.requires_lot ? 0 : 1;
 }
 
 function attributeUnit(attribute) {
@@ -808,6 +855,12 @@ function mergeDuplicateItems(items, changedIndex, productMap, itemMergePolicy = 
 
 function canMergeChangedItem(existing, changed, existingProduct, changedProduct, itemMergePolicy = {}) {
     const rule = itemMergePolicy.rule ?? 'same_product_unit_and_measure';
+
+    if (existingProduct?.requires_lot || changedProduct?.requires_lot) {
+        return String(existing.lot_id ?? '') === String(changed.lot_id ?? '')
+            && normalizeLotCode(existing.new_lot_code) === normalizeLotCode(changed.new_lot_code)
+            && Boolean(existing.lot_id || existing.new_lot_code);
+    }
 
     if (rule === 'never') {
         return false;

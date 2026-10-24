@@ -59,17 +59,20 @@ class PurchaseOrderController extends Controller
             'branches' => UiCatalogCache::activeBranchesForUser(request()->user()),
             'suppliers' => UiCatalogCache::activeSuppliers(),
             'products' => UiCatalogCache::activeProductsWithThicknessForUser($request->user()),
+            'lotTrackingEnabled' => app(\App\Modules\Inventory\Services\LotTrackingPolicy::class)->enabled(
+                app(\App\Modules\Inventory\Services\LotTrackingPolicy::class)->activeConfiguration()),
         ]);
     }
 
     public function store(StorePurchaseOrderRequest $request): RedirectResponse
     {
         $order = DB::transaction(function () use ($request) {
+            app(\App\Modules\Inventory\Services\LotTrackingPolicy::class)->lockRule();
             $payloadItems = collect($request->validated('items'));
             $products = Product::query()
                 ->with('thickness')
                 ->whereIn('id', $payloadItems->pluck('product_id')->unique()->values())
-                ->get(['id', 'thickness_id', 'name'])
+                ->get(['id', 'thickness_id', 'name', 'is_inventory_item', 'requires_lot'])
                 ->keyBy('id');
             $items = $payloadItems->map(fn (array $item) => $this->normalizeItem($item, $products));
             $status = $request->string('status')->toString();
@@ -82,7 +85,7 @@ class PurchaseOrderController extends Controller
                 'order_number' => $request->string('order_number')->toString(),
                 'ordered_at' => $request->date('ordered_at'),
                 'expected_at' => $request->date('expected_at'),
-                'total_amount' => $items->sum('line_total'),
+                'total_amount' => $items->reduce(fn (string $sum, array $item) => bcadd($sum, (string) $item['line_total'], 2), '0.00'),
                 'status' => $status,
                 'notes' => $request->string('notes')->toString() ?: null,
                 'approved_at' => $status === PurchaseOrder::STATUS_APPROVED ? now() : null,
@@ -91,6 +94,7 @@ class PurchaseOrderController extends Controller
             foreach ($items as $item) {
                 $order->items()->create([
                     'product_id' => $item['product_id'],
+                    'product_coil_id' => app(\App\Modules\Inventory\Support\LotPayloadMapper::class)->toDatabase($item)['product_coil_id'],
                     'coil_barcode' => $item['coil_barcode'] ?? null,
                     'kilograms' => $item['kilograms'],
                     'meters' => $item['meters'],
@@ -149,7 +153,9 @@ class PurchaseOrderController extends Controller
         }
 
         return Inertia::render('Purchases/Orders/Receive', [
-            'order' => $order->load(['branch:id,name', 'supplier:id,name', 'items.product:id,name,sku,inventory_tracking_mode']),
+            'order' => $order->load(['branch:id,name', 'supplier:id,name', 'items.product:id,name,sku,inventory_tracking_mode,requires_lot,base_unit']),
+            'lotTrackingEnabled' => app(\App\Modules\Inventory\Services\LotTrackingPolicy::class)->enabled(
+                app(\App\Modules\Inventory\Services\LotTrackingPolicy::class)->activeConfiguration()),
         ]);
     }
 
@@ -174,6 +180,11 @@ class PurchaseOrderController extends Controller
         if (! in_array($order->status, [PurchaseOrder::STATUS_APPROVED, PurchaseOrder::STATUS_PARTIAL_RECEIVED], true)) {
             throw ValidationException::withMessages(['order' => 'Solo las ordenes aprobadas o parcialmente recibidas pueden convertirse en compra.']);
         }
+        $lotPolicy = app(\App\Modules\Inventory\Services\LotTrackingPolicy::class);
+        if ($order->items()->with('product')->get()->contains(fn (PurchaseOrderItem $item) =>
+            $lotPolicy->required($item->product, $lotPolicy->activeConfiguration()))) {
+            throw ValidationException::withMessages(['order' => 'La recepción de productos gestionados requiere elegir un lote por cada cantidad recibida.']);
+        }
 
         $payload = [
             'received_at' => now()->toDateString(),
@@ -197,29 +208,55 @@ class PurchaseOrderController extends Controller
 
     private function createReceipt(PurchaseOrder $order, array $payload, User $user, InventoryQuantityService $quantities): Purchase
     {
+        $lotPolicy = app(\App\Modules\Inventory\Services\LotTrackingPolicy::class);
+        $lotPolicy->lockRule();
+        $lotConfiguration = $lotPolicy->persistedConfiguration();
         $order = PurchaseOrder::query()->with('items.product')->lockForUpdate()->findOrFail($order->id);
         if (! in_array($order->status, [PurchaseOrder::STATUS_APPROVED, PurchaseOrder::STATUS_PARTIAL_RECEIVED], true)) {
             throw ValidationException::withMessages(['order' => 'La orden ya no admite recepciones.']);
         }
         $payloadItems = collect($payload['items'] ?? [])
-            ->filter(fn (array $item) => (float) ($item['meters'] ?? 0) > 0)
+            ->filter(fn (array $item) => collect(['meters', 'kilograms'])->contains(fn (string $field) =>
+                preg_match('/^\d+(?:\.\d+)?$/D', (string) ($item[$field] ?? ''))
+                && bccomp((string) $item[$field], '0', 3) > 0))
             ->values();
 
         $orderItems = PurchaseOrderItem::query()
             ->whereIn('id', $payloadItems->pluck('purchase_order_item_id'))
-            ->with('product')
+            ->with('product.thickness')
             ->orderBy('id')
             ->lockForUpdate()
             ->get()
             ->keyBy('id');
 
-        $normalizedItems = $payloadItems->map(function (array $payloadItem) use ($order, $orderItems) {
+        $normalizedItems = $payloadItems->map(function (array $payloadItem) use ($order, $orderItems, $lotPolicy, $lotConfiguration, $quantities) {
             $orderItem = $orderItems->get($payloadItem['purchase_order_item_id']);
 
             if (! $orderItem || $orderItem->purchase_order_id !== $order->id) {
                 throw ValidationException::withMessages(['items' => 'El item recibido no pertenece a esta orden de compra.']);
             }
 
+            if ($lotPolicy->required($orderItem->product, $lotConfiguration)) {
+                try {
+                    $meters = app(\App\Modules\Purchases\Services\PurchaseReceiptService::class)->orderQuantity($orderItem, $payloadItem);
+                } catch (\InvalidArgumentException $exception) {
+                    throw ValidationException::withMessages(['items' => $exception->getMessage()]);
+                }
+                $pending = $quantities->subtractExact((string) $orderItem->meters, (string) $orderItem->received_meters);
+                if ($quantities->compareExact($meters, $pending) > 0) {
+                    throw ValidationException::withMessages(['items' => 'La recepción supera el saldo pendiente de la orden.']);
+                }
+
+                return [
+                    'order_item' => $orderItem,
+                    'meters' => $meters,
+                    'kilograms' => filled($payloadItem['kilograms'] ?? null) ? $quantities->multiplyExact((string) $payloadItem['kilograms'], ($payloadItem['weight_unit'] ?? 'kg') === 'ton' ? '1000' : '1') : null,
+                    'coil_barcode' => $payloadItem['coil_barcode'] ?? null,
+                    'lot_id' => $payloadItem['lot_id'] ?? null,
+                    'new_lot_code' => $payloadItem['new_lot_code'] ?? null,
+                    'line_total' => $quantities->multiplyExact($meters, (string) $orderItem->unit_cost, 2),
+                ];
+            }
             $meters = round((float) $payloadItem['meters'], 3);
             $pending = round((float) $orderItem->meters - (float) $orderItem->received_meters, 3);
 
@@ -241,9 +278,15 @@ class PurchaseOrderController extends Controller
         });
         $receivedMetersByItem = $normalizedItems
             ->groupBy(fn (array $item) => $item['order_item']->id)
-            ->map(fn ($rows) => round((float) $rows->sum('meters'), 3));
+            ->map(fn ($rows) => $rows->reduce(fn (string $sum, array $item) => bcadd($sum, (string) $item['meters'], 3), '0.000'));
+        foreach ($receivedMetersByItem as $orderItemId => $received) {
+            $row = $orderItems->get($orderItemId);
+            if ($quantities->compareExact($received, $quantities->subtractExact((string) $row->meters, (string) $row->received_meters)) > 0) {
+                throw ValidationException::withMessages(['items' => 'La suma de los lotes recibidos supera la cantidad pendiente de la orden.']);
+            }
+        }
 
-        $totalAmount = $normalizedItems->sum('line_total');
+        $totalAmount = $normalizedItems->reduce(fn (string $sum, array $item) => bcadd($sum, (string) $item['line_total'], 2), '0.00');
         $receiptNumber = 'REC-'.mb_substr($order->order_number, 0, 45).'-'.now()->format('YmdHis').'-'.\Illuminate\Support\Str::lower((string) \Illuminate\Support\Str::ulid());
 
         $purchase = Purchase::query()->create([
@@ -271,9 +314,46 @@ class PurchaseOrderController extends Controller
             'notes' => $payload['notes'] ?? null,
         ]);
 
+        $plan = $normalizedItems->filter(fn (array $item) => $lotPolicy->required($item['order_item']->product, $lotConfiguration))
+            ->map(fn (array $item) => [
+                'product_id' => (int) $item['order_item']->product_id,
+                'branch_id' => (int) $purchase->branch_id,
+                'lot_id' => $item['lot_id'] ?? null,
+            ])->all();
+        if ($plan !== []) {
+            app(\App\Modules\Inventory\Services\LotInventoryService::class)->lockBatch($plan, true);
+        }
+
         foreach ($normalizedItems as $item) {
             $orderItem = $item['order_item'];
             $coil = null;
+
+            if ($lotPolicy->required($orderItem->product, $lotConfiguration)) {
+                $purchaseItem = $purchase->items()->create([
+                    'product_id' => $orderItem->product_id,
+                    'kilograms' => $item['kilograms'],
+                    'meters' => $item['meters'],
+                    'unit_cost' => $orderItem->unit_cost,
+                    'conversion_factor' => $orderItem->conversion_factor,
+                    'description' => $orderItem->description,
+                ]);
+                $lot = app(\App\Modules\Purchases\Services\PurchaseReceiptService::class)
+                    ->receiveManaged($purchaseItem, $item, (int) $purchase->branch_id, (int) $user->id);
+                $receipt->items()->create([
+                    'purchase_order_item_id' => $orderItem->id,
+                    'product_id' => $orderItem->product_id,
+                    'product_coil_id' => $lot->id,
+                    'lot_code_snapshot' => $lot->lot_code,
+                    'coil_barcode' => $lot->barcode,
+                    'kilograms' => $item['kilograms'],
+                    'meters' => $item['meters'],
+                    'unit_cost' => $orderItem->unit_cost,
+                    'line_total' => $item['line_total'],
+                ]);
+                $orderItem->received_meters = $quantities->addExact((string) $orderItem->received_meters, $item['meters']);
+                $orderItem->save();
+                continue;
+            }
 
             if ($orderItem->product->inventory_tracking_mode === Product::TRACKING_COIL) {
                 $coil = ProductCoil::query()->create([
@@ -330,7 +410,8 @@ class PurchaseOrderController extends Controller
             $orderItem->increment('received_meters', $item['meters']);
         }
 
-        $allReceived = $order->items->every(fn (PurchaseOrderItem $item) => ((float) $item->received_meters + (float) ($receivedMetersByItem[$item->id] ?? 0)) >= (float) $item->meters);
+        $allReceived = $order->items->every(fn (PurchaseOrderItem $item) =>
+            bccomp(bcadd((string) $item->received_meters, (string) ($receivedMetersByItem[$item->id] ?? '0.000'), 3), (string) $item->meters, 3) >= 0);
         $order->update([
             'status' => $allReceived ? PurchaseOrder::STATUS_CONVERTED : PurchaseOrder::STATUS_PARTIAL_RECEIVED,
             'converted_purchase_id' => $allReceived ? $purchase->id : $order->converted_purchase_id,
@@ -343,6 +424,28 @@ class PurchaseOrderController extends Controller
     private function normalizeItem(array $item, $products): array
     {
         $product = $products->get($item['product_id']);
+        $lotPolicy = app(\App\Modules\Inventory\Services\LotTrackingPolicy::class);
+        if ($lotPolicy->required($product, $lotPolicy->persistedConfiguration())) {
+            $item['lot_number'] = filled($item['new_lot_code'] ?? null)
+                ? app(\App\Modules\Inventory\Services\ProductLotService::class)->normalizeCode((string) $item['new_lot_code'])
+                : \App\Modules\Inventory\Models\ProductCoil::query()->find($item['lot_id'] ?? null)?->lot_code;
+            $quantity = app(InventoryQuantityService::class);
+            $item['kilograms'] = filled($item['kilograms'] ?? null)
+                ? $quantity->multiplyExact((string) $item['kilograms'], ($item['weight_unit'] ?? 'kg') === 'ton' ? '1000' : '1') : null;
+            try {
+                $item['meters'] = filled($item['meters'] ?? null)
+                    ? $quantity->exact((string) $item['meters'])
+                    : $quantity->metersFromWeightExact((string) $item['kilograms'],
+                        $product->thickness?->kg_per_meter, $product->thickness?->kg_to_meter_factor);
+            } catch (\InvalidArgumentException $exception) {
+                throw ValidationException::withMessages(['meters' => $exception->getMessage()]);
+            }
+            $item['conversion_factor'] = $product->thickness?->kg_to_meter_factor;
+            $item['description'] = ($item['description'] ?? null) ?: $product->name;
+            $item['line_total'] = $quantity->multiplyExact($item['meters'], (string) $item['unit_cost'], 2);
+
+            return $item;
+        }
         $kilograms = $this->normalizeKilograms($item);
         $meters = filled($item['meters'] ?? null) ? (float) $item['meters'] : null;
         $kgPerMeter = $product->thickness?->kg_per_meter;
@@ -361,7 +464,7 @@ class PurchaseOrderController extends Controller
         $item['meters'] = $meters;
         $item['kilograms'] = $kilograms;
         $item['conversion_factor'] = $conversionFactor;
-        $item['description'] = $item['description'] ?: $product->name;
+        $item['description'] = ($item['description'] ?? null) ?: $product->name;
         $item['line_total'] = round($meters * (float) $item['unit_cost'], 2);
 
         return $item;

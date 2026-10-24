@@ -2,10 +2,13 @@
 
 namespace App\Modules\Sales\Services;
 
+use App\Modules\Inventory\Services\LotTrackingPolicy;
 use App\Modules\SystemSuperadmin\Services\ActiveBusinessProfile;
 
 class SalesWorkflowPolicy
 {
+    public function __construct(private readonly LotTrackingPolicy $lots) {}
+
     public function workflow(): string
     {
         return (string) (ActiveBusinessProfile::payload()['sales']['workflow'] ?? 'quotation_to_sale_note');
@@ -67,17 +70,22 @@ class SalesWorkflowPolicy
 
     public function shouldDiscountInventoryOnSaleNote(): bool
     {
-        return $this->inventoryDiscountTiming() === 'sale_note';
+        return $this->persistedInventoryDiscountTiming() === 'sale_note';
     }
 
     public function shouldDiscountInventoryOnPayment(): bool
     {
-        return $this->inventoryDiscountTiming() === 'payment';
+        return $this->persistedInventoryDiscountTiming() === 'payment';
     }
 
     public function shouldDiscountInventoryOnDelivery(): bool
     {
-        return $this->inventoryDiscountTiming() === 'delivery';
+        return $this->persistedInventoryDiscountTiming() === 'delivery';
+    }
+
+    private function persistedInventoryDiscountTiming(): string
+    {
+        return (string) ($this->lots->persistedConfiguration()['sales']['inventory_discount_timing'] ?? 'sale_note');
     }
 
     public function summary(): array
@@ -94,6 +102,8 @@ class SalesWorkflowPolicy
             'canCreateQuotation' => $this->allowsDocumentType('quotation'),
             'canCreateSaleNote' => $this->allowsDocumentType('sale_note'),
             'requiresSourceQuotationForSaleNote' => $this->requiresSourceQuotationForSaleNote(),
+            'lotTrackingEnabled' => $this->lots->enabled($this->lots->activeConfiguration()),
+            'reserveLotsOnQuotation' => $this->lots->reserveOnQuotation($this->lots->activeConfiguration()),
         ];
     }
 

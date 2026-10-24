@@ -48,7 +48,7 @@ class UiCatalogCache
         );
     }
 
-    public static function activeProducts(array $columns = ['id', 'name', 'sku', 'inventory_tracking_mode'])
+    public static function activeProducts(array $columns = ['id', 'name', 'sku', 'inventory_tracking_mode', 'requires_lot'])
     {
         return self::remember('products:'.SystemCacheInvalidator::operationalVersion().':'.implode(',', $columns), fn () => Product::query()
             ->with('branchStocks:id,product_id,branch_id,is_enabled')
@@ -57,7 +57,7 @@ class UiCatalogCache
             ->get($columns));
     }
 
-    public static function activeProductsForUser(User $user, array $columns = ['id', 'name', 'sku', 'inventory_tracking_mode'])
+    public static function activeProductsForUser(User $user, array $columns = ['id', 'name', 'sku', 'inventory_tracking_mode', 'requires_lot'])
     {
         if ($user->isSuperAdministrator()) {
             return self::activeProducts($columns);
@@ -91,7 +91,7 @@ class UiCatalogCache
             ])
             ->where('is_active', true)
             ->orderBy('name')
-            ->get(['id', 'thickness_id', 'product_category_id', 'product_unit_id', 'service_type_id', 'name', 'sku', 'barcode', 'inventory_tracking_mode', 'base_unit', 'item_type', 'is_inventory_item', 'allowed_units', 'attributes', 'custom_attributes', 'purchase_price', 'sale_price']));
+            ->get(['id', 'thickness_id', 'product_category_id', 'product_unit_id', 'service_type_id', 'name', 'sku', 'barcode', 'inventory_tracking_mode', 'base_unit', 'item_type', 'is_inventory_item', 'requires_lot', 'allowed_units', 'attributes', 'custom_attributes', 'purchase_price', 'sale_price']));
     }
 
     public static function activeProductsWithThicknessForUser(User $user)
@@ -116,7 +116,7 @@ class UiCatalogCache
                 ->where('is_enabled', true)
                 ->whereIn('branch_id', $branchIds))
             ->orderBy('name')
-            ->get(['id', 'thickness_id', 'product_category_id', 'product_unit_id', 'service_type_id', 'name', 'sku', 'barcode', 'inventory_tracking_mode', 'base_unit', 'item_type', 'is_inventory_item', 'allowed_units', 'attributes', 'custom_attributes', 'purchase_price', 'sale_price']));
+            ->get(['id', 'thickness_id', 'product_category_id', 'product_unit_id', 'service_type_id', 'name', 'sku', 'barcode', 'inventory_tracking_mode', 'base_unit', 'item_type', 'is_inventory_item', 'requires_lot', 'allowed_units', 'attributes', 'custom_attributes', 'purchase_price', 'sale_price']));
     }
 
     public static function activeCoilProducts()
@@ -126,7 +126,7 @@ class UiCatalogCache
             ->where('is_active', true)
             ->where('inventory_tracking_mode', Product::TRACKING_COIL)
             ->orderBy('name')
-            ->get(['id', 'product_unit_id', 'name', 'sku', 'base_unit', 'allowed_units']));
+            ->get(['id', 'product_unit_id', 'name', 'sku', 'base_unit', 'allowed_units', 'requires_lot']));
     }
 
     public static function activeCoilProductsForUser(User $user)
@@ -146,7 +146,7 @@ class UiCatalogCache
                 ->where('is_enabled', true)
                 ->whereIn('branch_id', $branchIds))
             ->orderBy('name')
-            ->get(['id', 'product_unit_id', 'name', 'sku', 'base_unit', 'allowed_units']));
+            ->get(['id', 'product_unit_id', 'name', 'sku', 'base_unit', 'allowed_units', 'requires_lot']));
     }
 
     public static function activeThicknesses()

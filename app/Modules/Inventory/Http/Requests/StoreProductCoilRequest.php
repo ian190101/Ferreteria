@@ -20,6 +20,7 @@ class StoreProductCoilRequest extends FormRequest
             'product_id' => ['required', 'integer', 'exists:products,id'],
             'barcode' => ['nullable', 'string', 'max:80', 'unique:product_coils,barcode'],
             'lot_number' => ['nullable', 'string', 'max:80'],
+            'new_lot_code' => ['nullable', 'string', 'max:80'],
             'initial_kg' => ['nullable', 'numeric', 'gt:0', 'max:999999999999.999'],
             'initial_meters' => ['required', 'numeric', 'gt:0', 'max:999999999999.999'],
         ];

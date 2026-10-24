@@ -103,14 +103,13 @@ class ProductCatalogController extends Controller
 
     private function thicknessData(Request $request, ?Thickness $thickness = null): array
     {
-        if ($request->filled('kg_per_meter')) {
-            $kgPerMeter = (float) $request->input('kg_per_meter');
-
-            if ($kgPerMeter > 0) {
-                $request->merge([
-                    'kg_to_meter_factor' => round(1 / $kgPerMeter, 6),
-                ]);
-            }
+        $kgPerMeter = (string) $request->input('kg_per_meter', '');
+        if (preg_match('/^\d+(?:\.\d{1,6})?$/D', $kgPerMeter)
+            && bccomp($kgPerMeter, '0', 6) > 0) {
+            $request->merge([
+                'kg_to_meter_factor' => app(\App\Modules\Inventory\Services\InventoryQuantityService::class)
+                    ->divideExact('1', $kgPerMeter, 6),
+            ]);
         }
 
         return $request->validate([
@@ -122,7 +121,7 @@ class ProductCatalogController extends Controller
                 'max:9999.9999',
                 Rule::unique('thicknesses', 'millimeters')->ignore($thickness?->id),
             ],
-            'kg_per_meter' => ['required', 'numeric', 'gt:0', 'max:999999999999.999999'],
+            'kg_per_meter' => ['required', 'regex:/^\d+(?:\.\d{1,6})?$/D', 'numeric', 'gt:0', 'max:999999999999.999999'],
             'kg_to_meter_factor' => ['required', 'numeric', 'gt:0', 'max:999999999999.999999'],
             'is_active' => ['required', 'boolean'],
         ]);

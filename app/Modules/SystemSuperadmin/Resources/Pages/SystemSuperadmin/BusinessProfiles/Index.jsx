@@ -400,6 +400,7 @@ export default function Index({ activeProfile, drafts, versions, presets = [], p
                                         {Object.entries(options.itemMergeRules ?? {}).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
                                     </SelectField>
                                     <Toggle label="Cliente ocasional permitido" checked={form.data.configuration.sales.allow_occasional_customer} onChange={(value) => setConfig('sales', 'allow_occasional_customer', value)} />
+                                    <Toggle label="Reservar el lote al cotizar" checked={form.data.configuration.sales.reserve_lots_on_quotation ?? false} onChange={(value) => setConfig('sales', 'reserve_lots_on_quotation', value)} helpTooltip="Requiere control de lotes y módulo de reservas. La elección del lote siempre es obligatoria al cotizar un producto gestionado." />
                                     <Toggle label="Permitir que superadmin configure reglas de items" checked={form.data.configuration.sales.item_merge_control_enabled ?? true} onChange={(value) => setConfig('sales', 'item_merge_control_enabled', value)} helpTooltip="Si esta activo, el superadmin del cliente vera el ajuste en Catalogos de ventas. Si esta apagado, solo sistemasuperadmin define esta regla desde aqui." />
                                 </Section> : null}
 
@@ -541,7 +542,8 @@ export default function Index({ activeProfile, drafts, versions, presets = [], p
                                         {Object.entries(options.deliveryModes).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
                                     </SelectField>
                                     <Toggle label="Stock siempre por sucursal" checked={form.data.configuration.inventory.always_by_branch} onChange={(value) => setConfig('inventory', 'always_by_branch', value)} />
-                                    <Toggle label="Lote/unidad fisica opcional" checked={form.data.configuration.inventory.lot_tracking_optional} onChange={(value) => setConfig('inventory', 'lot_tracking_optional', value)} />
+                                    <Toggle label="Controlar lotes por producto" checked={form.data.configuration.inventory.lot_tracking_enabled ?? false} onChange={(value) => setConfig('inventory', 'lot_tracking_enabled', value)} helpTooltip="Requiere inventario y capacidad de lotes. Habilita el checkbox por producto y exige elegir lote en compras, cotizaciones, ventas y POS." />
+                                    <p className="text-sm text-slate-600 dark:text-slate-300 md:col-span-2 xl:col-span-3">La capacidad «usa lotes» permite ofrecer esta regla; el control efectivo se activa aquí. El preflight mostrará productos y sucursales con saldos sin conciliar.</p>
                                     <Toggle label="Equivalencias de unidades" checked={form.data.configuration.inventory.unit_conversions} onChange={(value) => setConfig('inventory', 'unit_conversions', value)} />
                                     <Toggle label="Conductor obligatorio" checked={form.data.configuration.deliveries.driver_required} onChange={(value) => setConfig('deliveries', 'driver_required', value)} />
                                     <Toggle label="Camion obligatorio" checked={form.data.configuration.deliveries.truck_required} onChange={(value) => setConfig('deliveries', 'truck_required', value)} />

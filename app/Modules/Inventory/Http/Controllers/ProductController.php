@@ -38,6 +38,7 @@ class ProductController extends Controller
                 'sku',
                 'barcode',
                 'inventory_tracking_mode',
+                'requires_lot',
                 'base_unit',
                 'item_type',
                 'service_type_id',
@@ -50,7 +51,9 @@ class ProductController extends Controller
                 'created_at',
             ])
             ->with(['thickness:id,name', 'productCategory:id,name', 'unit:id,name,symbol', 'serviceType:id,name,code,is_delivery', 'primaryImage:id,product_id,url,path,alt_text'])
-            ->withCount(['activeVariants'])
+            ->withCount(['activeVariants', 'lots' => fn ($query) => $query->whereIn('branch_id', $allowedBranchIds),
+                'lots as stocked_lots_count' => fn ($query) => $query->whereIn('branch_id', $allowedBranchIds)->whereNull('voided_at')->where('available_meters', '>', '0.000'),
+                'lots as depleted_lots_count' => fn ($query) => $query->whereIn('branch_id', $allowedBranchIds)->whereNotNull('lot_code')->whereNull('voided_at')->where('available_meters', '=', '0.000')])
             ->whereHas('branchStocks', function ($query) use ($allowedBranchIds, $filterBranchId) {
                 $query->where('is_enabled', true)
                     ->whereIn('branch_id', $filterBranchId ? [$filterBranchId] : $allowedBranchIds);
@@ -100,20 +103,27 @@ class ProductController extends Controller
 
     public function store(StoreProductRequest $request): RedirectResponse
     {
-        DB::transaction(function () use ($request) {
+        $product = DB::transaction(function () use ($request) {
             $validated = $request->validated();
-            $product = Product::query()->create(Arr::except($validated, ['branch_scope', 'branch_ids', 'unit_conversions', 'images', 'variants']));
+            app(\App\Modules\Inventory\Services\ProductInventoryConfigurationService::class)
+                ->validateCreate($validated);
+            $product = Product::query()->create(Arr::except($validated, ['branch_scope', 'branch_ids', 'unit_conversions', 'images', 'variants', 'lot_registrations']));
 
             $this->syncProductBranches($product, $request, $validated);
             $this->syncUnitConversions($product, $validated['unit_conversions'] ?? []);
             $this->syncImages($product, $validated['images'] ?? []);
             $this->syncVariants($product, $validated['variants'] ?? []);
+            if (! empty($validated['lot_registrations'])) {
+                app(\App\Modules\Inventory\Services\ProductLotService::class)->registerCodes($request->user(), $product, $validated['lot_registrations']);
+            }
+
+            return $product;
         });
 
         UiCatalogCache::forgetProductCatalogs();
 
         return redirect()
-            ->route('inventory.products.index')
+            ->route($request->filled('lot_registrations') ? 'inventory.lots.index' : 'inventory.products.index', $request->filled('lot_registrations') ? ['product' => $product->id] : [])
             ->with('success', 'Producto creado correctamente.');
     }
 
@@ -123,6 +133,7 @@ class ProductController extends Controller
 
         return Inertia::render('Inventory/Products/Form', [
             'product' => $product->load(['thickness', 'productCategory', 'unit', 'serviceType:id,name,code,is_delivery', 'unitConversions.unit:id,name,symbol,kind', 'branchStocks:id,product_id,branch_id,is_enabled', 'images', 'activeVariants']),
+            'lotOverview' => app(\App\Modules\Inventory\Services\ProductLotOverview::class)->forProduct(request(), $product),
             'thicknesses' => $this->activeThicknesses(),
             'categories' => $this->activeCategories(),
             'units' => $this->activeUnits(),
@@ -137,11 +148,20 @@ class ProductController extends Controller
     {
         DB::transaction(function () use ($request, $product) {
             $validated = $request->validated();
-            $product->update(Arr::except($validated, ['branch_scope', 'branch_ids', 'unit_conversions', 'images', 'variants']));
+            $available = $this->activeBranches($request)->pluck('id')->map(fn ($id) => (int) $id)->all();
+            $enabled = ($validated['branch_scope'] ?? 'global') === 'global'
+                ? $available
+                : array_values(array_intersect(array_map('intval', $validated['branch_ids'] ?? []), $available));
+            app(\App\Modules\Inventory\Services\ProductInventoryConfigurationService::class)
+                ->validateUpdate($product, $validated, $enabled);
+            $product->update(Arr::except($validated, ['branch_scope', 'branch_ids', 'unit_conversions', 'images', 'variants', 'lot_registrations']));
             $this->syncProductBranches($product, $request, $validated);
             $this->syncUnitConversions($product, $validated['unit_conversions'] ?? []);
             $this->syncImages($product, $validated['images'] ?? []);
             $this->syncVariants($product, $validated['variants'] ?? []);
+            if (! empty($validated['lot_registrations'])) {
+                app(\App\Modules\Inventory\Services\ProductLotService::class)->registerCodes($request->user(), $product, $validated['lot_registrations']);
+            }
         });
 
         UiCatalogCache::forgetProductCatalogs();

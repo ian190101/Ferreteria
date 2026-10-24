@@ -4,11 +4,12 @@ import ModuleHeader from '../../../../../Shared/Resources/Components/ModuleHeade
 import { Head, Link, useForm } from '@inertiajs/react';
 import { useDecimalFormatter } from '@/Utils/formatters';
 import ProductFormFields, { buildProductFormData } from './ProductFormFields';
+import ProductLotsPanel from '../../../Components/ProductLotsPanel';
 
-export default function Form({ product, thicknesses, categories, units, branches = [], attributeDefinitions = [], serviceTypes = [], productPolicy = {} }) {
+export default function Form({ product, thicknesses, categories, units, branches = [], attributeDefinitions = [], serviceTypes = [], productPolicy = {}, lotOverview = null }) {
     const isEditing = Boolean(product);
     const decimalFormat = useDecimalFormatter('inventory');
-    const { data, setData, post, put, processing, errors } = useForm(buildProductFormData({
+    const { data, setData, post, put, transform, processing, errors } = useForm(buildProductFormData({
         product,
         categories,
         units,
@@ -17,6 +18,14 @@ export default function Form({ product, thicknesses, categories, units, branches
 
     const submit = (event) => {
         event.preventDefault();
+        transform((current) => {
+            if (productPolicy.lotsEnabled) return { ...current, lot_registrations: current.requires_lot ? current.lot_registrations : [] };
+            const payload = { ...current };
+            delete payload.lot_registrations;
+            if (isEditing) delete payload.requires_lot;
+            else payload.requires_lot = false;
+            return payload;
+        });
 
         if (isEditing) {
             put(route('inventory.products.update', product.id), { preserveScroll: true });
@@ -66,6 +75,7 @@ export default function Form({ product, thicknesses, categories, units, branches
                         </Link>
                     </div>
                 </form>
+                {lotOverview ? <ProductLotsPanel overview={lotOverview} /> : null}
             </section>
         </AuthenticatedLayout>
     );

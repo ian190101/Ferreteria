@@ -34,7 +34,7 @@ export default function Index({ coils }) {
                             {coils.data.map((coil) => (
                                 <tr key={coil.id}>
                                     <td className="px-4 py-3">{coil.barcode}</td>
-                                    <td className="px-4 py-3">{coil.lot_number}</td>
+                                    <td className="px-4 py-3">{coil.lot_code ?? coil.lot_number}</td>
                                     <td className="px-4 py-3">{coil.product?.name}</td>
                                     <td className="px-4 py-3">{coil.branch?.name}</td>
                                     <td className="px-4 py-3">{formatTrackedQuantity(coil.available_meters, coil.product, decimalFormat)}</td>

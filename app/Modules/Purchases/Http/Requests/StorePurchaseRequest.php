@@ -5,6 +5,8 @@ namespace App\Modules\Purchases\Http\Requests;
 use App\Modules\Inventory\Models\Product;
 use App\Modules\Inventory\Models\ProductCategory;
 use App\Modules\Inventory\Models\ProductUnit;
+use App\Modules\Inventory\Services\InventoryQuantityService;
+use App\Modules\Inventory\Services\LotTrackingPolicy;
 use App\Modules\Purchases\Services\PurchaseWorkflowPolicy;
 use App\Support\BranchAccess;
 use Illuminate\Foundation\Http\FormRequest;
@@ -19,28 +21,97 @@ class StorePurchaseRequest extends FormRequest
 
     protected function prepareForValidation(): void
     {
+        if (is_array($this->input('items'))) {
+            $this->merge(['items' => array_map(function ($item) {
+                if (! is_array($item)) return $item;
+                if (is_string($item['new_lot_code'] ?? null)) $item['new_lot_code'] = strtoupper(trim($item['new_lot_code']));
+                if (isset($item['new_product']['lot_registrations'])) {
+                    $item['new_product']['lot_registrations'] = \App\Modules\Inventory\Support\LotRegistrationPayload::normalize($item['new_product']['lot_registrations']);
+                }
+                return $item;
+            }, $this->input('items'))]);
+        }
+        \Illuminate\Support\Facades\Validator::make($this->all(), \App\Modules\Inventory\Support\LotRegistrationPayload::rules('items.*.new_product.lot_registrations'))->validate();
         \Illuminate\Support\Facades\Validator::make($this->all(), [
             'items' => ['required', 'array', 'min:1', 'max:200'],
             'items.*' => ['required', 'array'],
             'items.*.product_id' => ['nullable', 'integer'],
             'items.*.calculation_mode' => ['nullable', 'in:direct,length,weight'],
             'items.*.display_unit_label' => ['nullable', 'string', 'max:24'],
-            'items.*.display_quantity' => ['nullable', 'numeric', 'between:0,999999999999.999'],
-            'items.*.meters' => ['nullable', 'numeric', 'between:0,999999999999.999'],
-            'items.*.base_quantity' => ['nullable', 'numeric', 'between:0,999999999999.999'],
-            'items.*.length' => ['nullable', 'numeric', 'between:0,999999999999.999'],
+            'items.*.display_quantity' => ['nullable', 'numeric', 'between:0,999999999999.999', 'regex:/^\d+(?:\.\d+)?$/D'],
+            'items.*.meters' => ['nullable', 'numeric', 'between:0,999999999999.999', 'regex:/^\d+(?:\.\d+)?$/D'],
+            'items.*.base_quantity' => ['nullable', 'numeric', 'between:0,999999999999.999', 'regex:/^\d+(?:\.\d+)?$/D'],
+            'items.*.length' => ['nullable', 'numeric', 'between:0,999999999999.999', 'regex:/^\d+(?:\.\d+)?$/D'],
         ])->validate();
 
         $products = Product::query()
             ->with('unitConversions.unit:id,symbol')
             ->whereIn('id', collect($this->input('items', []))->pluck('product_id')->filter()->unique()->values())
-            ->get(['id', 'base_unit'])
+            ->get(['id', 'base_unit', 'is_inventory_item', 'requires_lot'])
             ->keyBy('id');
 
         $items = collect($this->input('items', []))
             ->map(function (array $item) use ($products): array {
+                $rows = $item['new_product']['lot_registrations'] ?? [];
+                if ($rows !== []) {
+                    $quantity = app(InventoryQuantityService::class);
+                    $thickness = \App\Modules\Inventory\Models\Thickness::query()->find($item['new_product']['thickness_id'] ?? null);
+                    $total = '0.000';
+                    foreach ($rows as $index => &$row) {
+                        try {
+                            $row['initial_meters'] = filled($row['initial_meters'] ?? null) ? $quantity->exact((string) $row['initial_meters'])
+                                : $quantity->metersFromWeightExact((string) ($row['initial_kg'] ?? '0'), $thickness?->kg_per_meter, $thickness?->kg_to_meter_factor);
+                        } catch (\InvalidArgumentException $exception) {
+                            throw \Illuminate\Validation\ValidationException::withMessages(['items' => $exception->getMessage()]);
+                        }
+                        if ((int) $row['branch_id'] !== $this->integer('branch_id') || $quantity->compareExact($row['initial_meters'], '0') <= 0) {
+                            throw \Illuminate\Validation\ValidationException::withMessages(['items' => 'Cada lote de compra debe tener cantidad positiva y pertenecer a la sucursal de la compra.']);
+                        }
+                        $total = $quantity->addExact($total, $row['initial_meters']);
+                    }
+                    unset($row);
+                    $item['new_product']['lot_registrations'] = $rows;
+                    $item['meters'] = $total;
+                    $item['display_quantity'] = $total;
+                    $item['calculation_mode'] = 'direct';
+
+                    return $item;
+                }
                 $mode = $item['calculation_mode'] ?? 'direct';
                 $product = $products->get($item['product_id'] ?? null);
+                $lotPolicy = app(LotTrackingPolicy::class);
+                if ($product && $lotPolicy->required($product, $lotPolicy->activeConfiguration())) {
+                    $quantity = app(InventoryQuantityService::class);
+                    try {
+                        $base = (string) ($item['meters'] ?? '');
+                        if ($base === '' && $mode === 'weight' && filled($item['kilograms'] ?? null)) {
+                            $item['meters'] = null;
+                            return $item;
+                        }
+                        if ($base === '' || ($mode === 'direct' && filled($item['display_quantity'] ?? null))
+                            || ($mode === 'length' && filled($item['base_quantity'] ?? $item['length'] ?? null))) {
+                            $display = (string) ($item['display_quantity'] ?? '0');
+                            $factor = '1';
+                            if ($mode === 'length') {
+                                $factor = (string) ($item['base_quantity'] ?? $item['length'] ?? '0');
+                            } elseif ($mode === 'weight') {
+                                $display = (string) ($item['base_quantity'] ?? $item['display_quantity'] ?? '0');
+                            } elseif (filled($item['display_unit_label'] ?? null) && $item['display_unit_label'] !== $product->base_unit) {
+                                $conversion = $product->unitConversions->first(fn ($row) =>
+                                    $row->is_active && $row->unit?->symbol === $item['display_unit_label']);
+                                if (! $conversion) throw new \InvalidArgumentException('La unidad no tiene una conversión activa.');
+                                $factor = (string) $conversion->factor_to_base;
+                            }
+                            $base = $quantity->multiplyExact($display, $factor);
+                        }
+                        $item['meters'] = $quantity->exact($base);
+                    } catch (\InvalidArgumentException) {
+                        $item['meters'] = 'invalid';
+                    }
+                    $item['display_quantity'] ??= $item['meters'];
+
+                    return $item;
+                }
 
                 if ($mode === 'weight' && blank($item['meters'] ?? null)) {
                     $item['meters'] = $this->positiveNumber($item['base_quantity'] ?? null)
@@ -96,6 +167,7 @@ class StorePurchaseRequest extends FormRequest
     public function rules(): array
     {
         return [
+            ...\App\Modules\Inventory\Support\LotRegistrationPayload::rules('items.*.new_product.lot_registrations'),
             'branch_id' => ['required', 'integer', 'exists:branches,id'],
             'supplier_id' => ['nullable', 'integer', 'exists:suppliers,id'],
             'document_number' => ['exclude'],
@@ -135,7 +207,7 @@ class StorePurchaseRequest extends FormRequest
             'items.*.new_product.branch_ids' => ['nullable', 'array'],
             'items.*.new_product.branch_ids.*' => ['integer', 'exists:branches,id'],
             'items.*.weight_unit' => ['nullable', 'in:kg,ton'],
-            'items.*.kilograms' => ['nullable', 'numeric', 'gt:0', 'max:999999999999.999'],
+            'items.*.kilograms' => ['nullable', 'numeric', 'gt:0', 'max:999999999999.999', 'regex:/^\d+(?:\.\d+)?$/D'],
             'items.*.meters' => ['nullable', 'numeric', 'gt:0', 'max:999999999999.999'],
             'items.*.display_quantity' => ['nullable', 'numeric', 'gt:0', 'max:999999999999.999'],
             'items.*.display_unit_label' => ['nullable', 'string', 'max:24'],
@@ -148,6 +220,9 @@ class StorePurchaseRequest extends FormRequest
             'items.*.item_attributes.*.value' => ['nullable', 'string', 'max:120'],
             'items.*.item_attributes.*.unit' => ['nullable', 'string', 'max:24'],
             'items.*.unit_cost' => ['required', 'numeric', 'gte:0', 'max:999999999999.9999'],
+            'items.*.lot_id' => ['nullable', 'integer', 'exists:product_coils,id'],
+            'items.*.new_lot_code' => ['nullable', 'string', 'max:80', 'regex:/^[A-Z0-9-]+$/D', 'regex:/[A-Z0-9]/'],
+            'items.*.new_product.requires_lot' => ['nullable', 'boolean'],
             'items.*.lot_number' => ['nullable', 'string', 'max:80'],
             'items.*.coil_barcode' => ['nullable', 'string', 'max:80', 'distinct', 'unique:product_coils,barcode'],
             'items.*.description' => ['nullable', 'string', 'max:255'],
@@ -205,6 +280,9 @@ class StorePurchaseRequest extends FormRequest
             }
 
             $items = collect($this->input('items', []));
+            if ($items->sum(fn (array $item) => max(1, count($item['new_product']['lot_registrations'] ?? []))) > 200) {
+                $validator->errors()->add('items', 'La compra admite como máximo 200 líneas, incluyendo sus lotes iniciales.');
+            }
             $workflow = app(PurchaseWorkflowPolicy::class);
 
             if ($workflow->supplierRequired() && ! $this->filled('supplier_id')) {
@@ -218,7 +296,7 @@ class StorePurchaseRequest extends FormRequest
             $products = Product::query()
                 ->with('thickness:id')
                 ->whereIn('id', $items->pluck('product_id')->filter()->unique()->values())
-                ->get(['id', 'thickness_id', 'base_unit', 'allowed_units', 'inventory_tracking_mode'])
+                ->get(['id', 'thickness_id', 'base_unit', 'allowed_units', 'inventory_tracking_mode', 'is_inventory_item', 'requires_lot'])
                 ->keyBy('id');
 
             foreach ($items as $index => $item) {
@@ -245,6 +323,9 @@ class StorePurchaseRequest extends FormRequest
                 }
 
                 if ($hasNewProduct) {
+                    if (! empty($newProduct['lot_registrations']) && ! ($newProduct['requires_lot'] ?? false)) {
+                        $validator->errors()->add("items.{$index}.new_product.requires_lot", 'Activa el control de lotes para registrar las bobinas iniciales.');
+                    }
                     $category = ProductCategory::query()->find($newProduct['product_category_id'] ?? null);
                     $unit = ProductUnit::query()->find($newProduct['product_unit_id'] ?? ($category?->default_unit_id ?? null));
 
@@ -292,6 +373,17 @@ class StorePurchaseRequest extends FormRequest
 
                 if (! $product) {
                     continue;
+                }
+
+                $lotPolicy = app(LotTrackingPolicy::class);
+                $managed = $lotPolicy->required($product, $lotPolicy->activeConfiguration());
+                $hasLot = filled($item['lot_id'] ?? null);
+                $hasNewLot = filled($item['new_lot_code'] ?? null);
+                if ($managed && $this->input('status') === 'received' && $hasLot === $hasNewLot) {
+                    $validator->errors()->add("items.{$index}.lot_id", 'Elige un lote existente o un código nuevo.');
+                }
+                if (! $managed && ($hasLot || $hasNewLot)) {
+                    $validator->errors()->add("items.{$index}.lot_id", 'El producto no tiene control de lotes activo.');
                 }
 
                 if (blank($item['meters'] ?? null) && blank($item['kilograms'] ?? null)) {

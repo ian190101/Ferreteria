@@ -20,6 +20,12 @@ class RecipeInventoryService
     public function consumeForOrder(KitchenOrder $order, int $userId): void
     {
         $order->loadMissing(['items.recipe.items.ingredient']);
+        $lotPolicy = app(\App\Modules\Inventory\Services\LotTrackingPolicy::class);
+        $lotPolicy->lockRule();
+        foreach ($order->items->flatMap(fn ($item) => $item->recipe?->items->pluck('ingredient') ?? collect())
+            ->filter()->unique('id') as $ingredient) {
+            $lotPolicy->assertAlternativeWriterAllowed($ingredient);
+        }
 
         foreach ($order->items as $orderItem) {
             if (! $orderItem->recipe) {

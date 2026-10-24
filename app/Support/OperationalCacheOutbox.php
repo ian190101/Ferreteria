@@ -28,10 +28,13 @@ final class OperationalCacheOutbox
             if (! $entry) {
                 return true;
             }
-            if (in_array($entry->scope, ['operational', 'recovery'], true)) {
+            if (in_array($entry->scope, ['operational', 'recovery', 'business_profile', 'lot_inventory'], true)) {
                 UiCatalogCache::forgetProductCatalogs();
                 UiCatalogCache::forgetSalesCatalogs();
                 SystemCacheInvalidator::bumpOperational();
+            }
+            if (in_array($entry->scope, ['business_profile', 'lot_inventory'], true)) {
+                AuthSessionCache::bump();
             }
             if ($entry->scope === 'recovery') {
                 AuthSessionCache::bump();

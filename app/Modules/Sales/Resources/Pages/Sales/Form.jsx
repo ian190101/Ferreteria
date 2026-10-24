@@ -8,11 +8,14 @@ import { Head, Link, useForm, usePage } from '@inertiajs/react';
 import { decimalStep, useDecimalFormatter } from '@/Utils/formatters';
 import { infoAction } from '@/Utils/alerts';
 import { useState } from 'react';
+import LotSelector from '../../../../Inventory/Resources/Components/LotSelector';
+import UnitConversionGuide from '../../../../Inventory/Resources/Components/UnitConversionGuide';
 
 const DEFAULT_ITEM = {
     product_category_id: '',
     product_id: '',
     product_coil_id: '',
+    lot_id: '',
     description: '',
     unit_label: 'M',
     display_quantity: '1',
@@ -102,6 +105,7 @@ export default function Form({
             product_category_id: product?.product_category_id ?? item.product_category_id,
             product_id: value,
             product_coil_id: '',
+            lot_id: '',
             description: product?.name ?? item.description,
             unit_label: productUnitSymbol(product),
             display_unit_label: productUnitSymbol(product),
@@ -121,6 +125,7 @@ export default function Form({
             product_category_id: value,
             product_id: '',
             product_coil_id: '',
+            lot_id: '',
             description: '',
             display_unit_label: '',
             item_attributes: [],
@@ -221,7 +226,7 @@ export default function Form({
         event.preventDefault();
         transform((payload) => ({
             ...payload,
-            items: payload.items.map((item) => prepareSaleItem(item, products, decimalFormat, units)),
+            items: payload.items.map((item) => prepareSaleItem(item, products, decimalFormat, units, workflow.lotTrackingEnabled)),
         }));
         post(route('sales.store'), {
             preserveScroll: true,
@@ -300,7 +305,7 @@ export default function Form({
                             <FormField label="Numero" name="receipt_number" value={data.receipt_number} onChange={(event) => setData('receipt_number', event.target.value)} error={errors.receipt_number} placeholder={nextPreview(sequencePreviews, data.branch_id, data.document_type)} />
                             <p className="mt-1 text-xs text-slate-500">Vacio usa automatico: {nextPreview(sequencePreviews, data.branch_id, data.document_type)}</p>
                         </div>
-                        <SelectField label="Sucursal" name="branch_id" value={data.branch_id} onChange={(event) => setData('branch_id', event.target.value)} error={errors.branch_id} helpTitle="Sucursal de venta" helpTooltip="La venta queda registrada en esta sucursal. Para usuarios que no son superadministradores, la sucursal tambien define si se requiere caja abierta." helpText="La sucursal define el punto de venta, la numeracion del documento, el stock disponible y la caja que se usara.">
+                        <SelectField label="Sucursal" name="branch_id" value={data.branch_id} onChange={(event) => setData((current) => ({ ...current, branch_id: event.target.value, source_quotation_id: '', items: current.items.map((item) => ({ ...item, lot_id: '', product_coil_id: '' })) }))} error={errors.branch_id} helpTitle="Sucursal de venta" helpTooltip="La venta queda registrada en esta sucursal. Para usuarios que no son superadministradores, la sucursal tambien define si se requiere caja abierta." helpText="La sucursal define el punto de venta, la numeracion del documento, el stock disponible y la caja que se usara.">
                             {branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
                         </SelectField>
                         <SelectField label="Tipo de venta" name="sale_type_id" value={data.sale_type_id} onChange={(event) => setData('sale_type_id', event.target.value)} error={errors.sale_type_id}>
@@ -381,7 +386,7 @@ export default function Form({
                                         <option value="">Seleccionar</option>
                                         {productsForCategory(products, item.product_category_id, data.branch_id).map((product) => <option key={product.id} value={product.id}>{product.name} ({itemDescriptor(product)})</option>)}
                                     </SelectField>
-                                    {documentType === 'sale_note' && product?.inventory_tracking_mode === 'coil' ? (
+                                    {workflow.lotTrackingEnabled && product?.requires_lot ? <LotSelector productId={item.product_id} branchId={data.branch_id} context={documentType === 'quotation' ? 'quotation' : 'sale'} value={item.lot_id} selectedLabel={item.lot_code_snapshot} onChange={(value) => updateItem(index, 'lot_id', value)} error={errors[`items.${index}.lot_id`]} unit={product?.base_unit ?? 'unidad'} /> : documentType === 'sale_note' && product?.inventory_tracking_mode === 'coil' ? (
                                         <SelectField label="Lote/unidad fisica" name={`items.${index}.product_coil_id`} value={item.product_coil_id} onChange={(event) => updateItem(index, 'product_coil_id', event.target.value)} error={errors[`items.${index}.product_coil_id`]} helpTitle="Lote o unidad fisica" helpTooltip="Se usa para productos que se venden por una pieza fisica identificable: bobinas, rollos, lotes con vencimiento o materiales que se cortan por partes." helpText="Obligatorio solo si el producto se controla por lote, rollo, bobina o unidad fisica.">
                                             <option value="">Seleccionar</option>
                                             {availableCoils(coils, data.branch_id, item.product_id).map((coil) => (
@@ -408,10 +413,11 @@ export default function Form({
                                         ))}
                                     </SelectField>
                                     <SelectField label="Calculo opcional" name={`items.${index}.quantity_mode`} value={item.quantity_mode ?? 'direct'} onChange={(event) => updateItem(index, 'quantity_mode', event.target.value)} helpTitle="Calculo de cantidad" helpTooltip="Sin calculo: 3 bolsas. Cantidad x largo: 10 calaminas de 5 m = 50 m. Peso a metros: convierte kg o toneladas usando el espesor configurado." helpText="Sin calculo usa la cantidad directa. Cantidad x largo sirve para hojas/piezas por medida. Peso a metros convierte kg o toneladas segun el espesor.">
-                                        <option value="direct">Sin calculo</option>
+                                        <option value="direct">Cantidad en la unidad seleccionada</option>
                                         <option value="length">Cantidad x largo</option>
                                         <option value="weight">Peso a metros</option>
                                     </SelectField>
+                                    {product ? <div className="sm:col-span-6"><UnitConversionGuide product={product} unit={item.display_unit_label} mode={item.quantity_mode} direction="salida" /></div> : null}
                                     {item.quantity_mode === 'weight' ? (
                                         <>
                                             <FormField label="Peso" name={`items.${index}.weight`} type="number" step={decimalStep(decimalFormat.decimalsFor('weight'))} value={item.weight} placeholder={decimalFormat.fixed(0, 'weight')} onChange={(event) => updateItem(index, 'weight', event.target.value)} />
@@ -440,14 +446,14 @@ export default function Form({
                                         </div>
                                     ) : null}
                                     <SelectField label="Precio en" name={`items.${index}.price_mode`} value={canOverridePrices ? (item.price_mode ?? 'meter') : 'meter'} onChange={(event) => updateItem(index, 'price_mode', event.target.value)} disabled={!canOverridePrices}>
-                                        <option value="meter">{item.quantity_mode === 'direct' ? 'Precio por unidad' : 'Precio por metro'}</option>
+                                        <option value="meter">{`Precio por ${productUnitSymbol(product)} (unidad base)`}</option>
                                         <option value="ton">Precio por tonelada</option>
                                     </SelectField>
                                     {canOverridePrices && item.price_mode === 'ton' ? (
                                         <FormField label="Precio/TON (Bs.)" name={`items.${index}.price_per_ton`} type="number" step={decimalStep(decimalFormat.decimalsFor('money'))} value={item.price_per_ton} placeholder={`Bs. ${decimalFormat.money(0)}`} onChange={(event) => updateItem(index, 'price_per_ton', event.target.value)} />
                                     ) : (
                                         <FormField
-                                            label={item.quantity_mode === 'direct' ? 'Precio/unidad' : 'Precio/metro'}
+                                            label={`Precio/${productUnitSymbol(product)} (Bs.)`}
                                             name={`items.${index}.unit_price`}
                                             type="number"
                                             step={decimalStep(decimalFormat.decimalsFor('cost'))}
@@ -463,9 +469,9 @@ export default function Form({
                                     ) : null}
                                     <FormField label="Desc." name={`items.${index}.discount_amount`} type="number" step={decimalStep(decimalFormat.decimalsFor('money'))} value={item.discount_amount} onChange={(event) => updateItem(index, 'discount_amount', event.target.value)} error={errors[`items.${index}.discount_amount`]} required />
                                     <div className="rounded-md border border-slate-200 bg-slate-50 px-4 py-3 text-sm dark:border-slate-800 dark:bg-slate-950 sm:col-span-6">
-                                        <p className="text-slate-500 dark:text-slate-400">{item.quantity_mode === 'direct' ? 'Cantidad' : 'Equivalente'}: <span className="font-semibold text-emerald-600">{item.quantity_mode === 'direct' ? formatDocumentQuantity(summary.meters, item, product, units, decimalFormat) : `${decimalFormat.measure(summary.meters)} m`}</span></p>
+                                        <p className="text-slate-500 dark:text-slate-400">Cantidad equivalente para inventario: <span className="font-semibold text-emerald-600">{decimalFormat.format(summary.meters, quantityKind(product))} {productUnitSymbol(product)}</span></p>
                                         <p className="mt-1 text-slate-500 dark:text-slate-400">Subtotal: <span className="font-semibold text-slate-950 dark:text-slate-50">Bs {decimalFormat.money(summary.total)}</span></p>
-                                        {item.quantity_mode === 'weight' && !product?.thickness?.kg_per_meter ? (
+                                        {item.quantity_mode === 'weight' && !(Number(product?.thickness?.kg_per_meter) > 0 || product?.requires_lot && Number(product?.thickness?.kg_to_meter_factor) > 0) ? (
                                             <p className="mt-1 text-xs text-red-600">Este producto necesita espesor con kg/m para convertir peso a metros.</p>
                                         ) : null}
                                     </div>
@@ -493,13 +499,14 @@ export default function Form({
     );
 }
 
-function prepareSaleItem(item, products, decimalFormat, units) {
+function prepareSaleItem(item, products, decimalFormat, units, lotTrackingEnabled) {
     const product = selectedProduct(products, item);
     const summary = saleItemSummary(item, product);
 
     return {
         product_id: item.product_id,
         product_coil_id: item.product_coil_id,
+        lot_id: lotTrackingEnabled && product?.requires_lot ? item.lot_id : undefined,
         description: item.description,
         unit_label: productUnitSymbol(product),
         display_quantity: item.quantity_mode === 'weight'
@@ -508,6 +515,9 @@ function prepareSaleItem(item, products, decimalFormat, units) {
         display_unit_label: item.display_unit_label || productUnitSymbol(product),
         item_attributes: normalizedItemAttributes(item, product),
         calculation_mode: item.quantity_mode || 'direct',
+        base_quantity: lotTrackingEnabled && product?.requires_lot && item.quantity_mode === 'length' ? item.meters : undefined,
+        entered_weight: lotTrackingEnabled && product?.requires_lot && item.quantity_mode === 'weight' ? item.weight : undefined,
+        weight_unit: item.weight_unit,
         meters: item.quantity_mode === 'weight'
             ? (summary.meters ? decimalFormat.fixed(summary.meters, 'measure') : '')
             : (summary.meters ? decimalFormat.fixed(summary.meters, item.quantity_mode === 'direct' ? quantityKindForItem(item, product, units) : 'measure') : item.display_quantity),
@@ -528,6 +538,8 @@ function saleItemFromQuotation(item, products, canOverridePrices) {
         product_category_id: product?.product_category_id ?? '',
         product_id: item.product_id ?? '',
         product_coil_id: item.product_coil_id ?? '',
+        lot_id: item.product_coil_id ?? '',
+        lot_code_snapshot: item.lot_code_snapshot ?? item.coil?.lot_code ?? '',
         description: item.description ?? product?.name ?? '',
         unit_label: item.unit_label ?? productUnitSymbol(product),
         display_quantity: item.display_quantity ?? item.meters ?? '1',
@@ -595,7 +607,7 @@ function saleItemSummary(item, product) {
     const kgPerMeter = Number(product?.thickness?.kg_per_meter ?? 0);
     const discount = Number(item.discount_amount || 0);
     const meters = item.quantity_mode === 'weight'
-        ? metersFromWeight(item.weight, item.weight_unit, kgPerMeter)
+        ? metersFromWeight(item.weight, item.weight_unit, kgPerMeter, product?.requires_lot ? product?.thickness?.kg_to_meter_factor : null)
         : baseQuantityFromItem(item, product);
     const tons = kgPerMeter && meters ? (meters * kgPerMeter) / 1000 : weightInKg(item.weight, item.weight_unit) / 1000;
     const lineBeforeDiscount = item.price_mode === 'ton'
@@ -740,7 +752,7 @@ function documentUnits(units, product) {
         .filter((conversion) => conversion.is_active !== false)
         .map((conversion) => conversion.unit?.symbol)
         .filter(Boolean);
-    const allowedSymbols = conversionSymbols.length
+    const allowedSymbols = product?.requires_lot || conversionSymbols.length
         ? [productSymbol, ...conversionSymbols]
         : (product?.allowed_units?.length ? product.allowed_units : [productSymbol]);
     const selected = units.filter((unit) => allowedSymbols.includes(unit.symbol));
@@ -760,7 +772,7 @@ function unitFactorToBase(symbol, product) {
     const conversion = (product?.unit_conversions ?? product?.unitConversions ?? [])
         .find((row) => row.is_active !== false && row.unit?.symbol === symbol);
 
-    return Number(conversion?.factor_to_base || 1);
+    return conversion ? Number(conversion.factor_to_base) : product?.requires_lot ? 0 : 1;
 }
 
 function attributeUnit(attribute) {
@@ -802,6 +814,10 @@ function mergeDuplicateItems(items, changedIndex, products, itemMergePolicy = {}
 
 function canMergeChangedItem(existing, changed, existingProduct, changedProduct, itemMergePolicy = {}) {
     const rule = itemMergePolicy.rule ?? 'same_product_unit_and_measure';
+
+    if (String(existing.lot_id ?? '') !== String(changed.lot_id ?? '')) {
+        return false;
+    }
 
     if (rule === 'never') {
         return false;
@@ -911,10 +927,10 @@ function storedLengthPerUnit(item) {
     return total > 0 && quantity > 0 ? String(total / quantity) : '';
 }
 
-function metersFromWeight(weight, unit, kgPerMeter) {
+function metersFromWeight(weight, unit, kgPerMeter, metersPerKg = null) {
     const kg = weightInKg(weight, unit);
 
-    return kg > 0 && kgPerMeter > 0 ? kg / kgPerMeter : 0;
+    return kg > 0 ? kgPerMeter > 0 ? kg / kgPerMeter : kg * Number(metersPerKg || 0) : 0;
 }
 
 function weightInKg(weight, unit) {

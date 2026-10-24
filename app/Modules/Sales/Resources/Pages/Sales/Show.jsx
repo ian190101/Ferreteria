@@ -182,6 +182,7 @@ export default function Show({ sale, template, documentPolicy = {}, billingPolic
                     <Link href={route('sales.index')} className="rounded-md border border-slate-300 px-4 py-2 text-sm dark:border-slate-700">Volver</Link>
                 </div>
 
+                {sale.items.some((item) => item.lot?.lot_code && item.lot?.status === 'depleted' && !item.lot?.voided_at) ? <p role="status" className="print-hidden mb-4 rounded-lg border border-amber-400 bg-amber-50 p-3 text-sm font-semibold text-amber-950">⚠ LOTE EN 0 (AGOTADO): {sale.items.filter((item) => item.lot?.lot_code && item.lot?.status === 'depleted' && !item.lot?.voided_at).map((item) => item.lot.lot_code).filter((code, index, codes) => codes.indexOf(code) === index).join(', ')}. Selecciona otro lote para una nueva salida.</p> : null}
                 {sale.siat_invoices?.length ? (
                     <div className="print-hidden mx-auto mb-4 max-w-4xl rounded-2xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm text-indigo-900 dark:border-indigo-900/70 dark:bg-indigo-950/30 dark:text-indigo-100">
                         <p className="font-semibold">Facturacion SIAT</p>
@@ -486,7 +487,7 @@ function itemColumnValue(key, item, index, decimalFormat) {
     const values = {
         item_number: index + 1,
         item_description: <ItemDescription item={item} decimalFormat={decimalFormat} />,
-        item_lot: item.coil?.lot_number ?? '-',
+        item_lot: item.lot_code_snapshot ?? item.lot?.lot_code ?? item.coil?.lot_number ?? '-',
         item_model: item.product?.sku ?? '-',
         item_unit: itemUnit,
         item_quantity: decimalFormat.format(item.display_quantity ?? 1, precisionKindForUnit(itemUnit)),

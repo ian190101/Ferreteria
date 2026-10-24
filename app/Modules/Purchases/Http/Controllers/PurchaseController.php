@@ -106,18 +106,51 @@ class PurchaseController extends Controller
     public function store(StorePurchaseRequest $request): RedirectResponse
     {
         $purchase = DB::transaction(function () use ($request) {
+            $lotPolicy = app(\App\Modules\Inventory\Services\LotTrackingPolicy::class);
+            $lotPolicy->lockRule();
+            $lotConfiguration = $lotPolicy->persistedConfiguration();
             $branchId = $request->integer('branch_id');
             $validatedItems = collect($request->validated('items'))
-                ->map(fn (array $item) => $this->resolvePurchaseProduct($item, $branchId));
+                ->flatMap(function (array $item) use ($branchId): array {
+                    $item = $this->resolvePurchaseProduct($item, $branchId);
+                    $rows = $item['new_product']['lot_registrations'] ?? [];
+                    if ($rows === []) return [$item];
+
+                    // El alta rápida crea el catálogo una vez; cada bobina entra solo por su detalle de compra.
+                    return array_map(fn (array $row) => array_replace($item, [
+                        'meters' => $row['initial_meters'], 'display_quantity' => $row['initial_meters'],
+                        'display_unit_label' => $item['new_product']['base_unit'] ?? 'm', 'calculation_mode' => 'direct',
+                        'kilograms' => $row['initial_kg'] ?? null, 'weight_unit' => 'kg',
+                        'new_lot_code' => $row['lot_code'], 'lot_id' => null, 'coil_barcode' => $row['barcode'] ?? null,
+                    ]), $rows);
+                });
             $products = Product::query()
                 ->with(['thickness', 'unit:id,symbol'])
                 ->whereIn('id', $validatedItems->pluck('product_id')->unique()->values())
-                ->get(['id', 'thickness_id', 'product_category_id', 'product_unit_id', 'name', 'base_unit', 'allowed_units', 'inventory_tracking_mode', 'attributes', 'custom_attributes'])
+                ->get(['id', 'thickness_id', 'product_category_id', 'product_unit_id', 'name', 'base_unit', 'allowed_units', 'inventory_tracking_mode', 'is_inventory_item', 'requires_lot', 'attributes', 'custom_attributes'])
                 ->keyBy('id');
             $this->ensureProductsEnabledForBranch($validatedItems->pluck('product_id')->all(), $branchId);
 
-            $items = $validatedItems->map(function (array $item) use ($products) {
+            $items = $validatedItems->map(function (array $item) use ($products, $lotPolicy, $lotConfiguration) {
                 $product = $products->get($item['product_id']);
+                if ($lotPolicy->required($product, $lotConfiguration)) {
+                    $quantity = app(\App\Modules\Inventory\Services\InventoryQuantityService::class);
+                    $item['kilograms'] = filled($item['kilograms'] ?? null)
+                        ? $quantity->multiplyExact((string) $item['kilograms'], ($item['weight_unit'] ?? 'kg') === 'ton' ? '1000' : '1') : null;
+                    $item['meters'] = filled($item['meters'] ?? null)
+                        ? $quantity->exact((string) $item['meters'])
+                        : $quantity->metersFromWeightExact((string) $item['kilograms'], $product->thickness?->kg_per_meter, $product->thickness?->kg_to_meter_factor);
+                    $item['unit_cost'] = $quantity->exact((string) $item['unit_cost'], 4);
+                    $item['conversion_factor'] = $product->thickness?->kg_to_meter_factor;
+                    $item['display_quantity'] = $item['display_quantity'] ?? $item['meters'];
+                    $item['display_unit_label'] = $item['display_unit_label'] ?? $product->unit?->symbol ?? $product->base_unit ?? 'unidad';
+                    $item['item_attributes'] = $this->purchaseItemAttributes($product, $item['item_attributes'] ?? []);
+                    $item['calculation_mode'] = $item['calculation_mode'] ?? 'direct';
+                    $item['description'] = ($item['description'] ?? null) ?: $product->name;
+                    $item['line_total'] = $quantity->multiplyExact($item['meters'], $item['unit_cost'], 2);
+
+                    return $item;
+                }
                 $kilograms = $this->normalizeKilograms($item);
                 $meters = filled($item['meters'] ?? null) ? (float) $item['meters'] : null;
                 $kgPerMeter = $product->thickness?->kg_per_meter;
@@ -147,24 +180,56 @@ class PurchaseController extends Controller
                 return $item;
             });
 
+            $total = $items->reduce(fn (string $sum, array $item) => bcadd($sum, (string) $item['line_total'], 2), '0.00');
             $purchase = Purchase::query()->create([
                 'branch_id' => $request->integer('branch_id'),
                 'supplier_id' => $request->input('supplier_id'),
                 'user_id' => $request->user()->id,
                 'document_number' => app(PurchaseNumberService::class)->next($branchId),
                 'purchase_date' => now()->toDateString(),
-                'total_amount' => $items->sum('line_total'),
+                'total_amount' => $total,
                 'paid_amount' => 0,
-                'balance_due' => $items->sum('line_total'),
-                'payment_status' => $items->sum('line_total') > 0 ? 'unpaid' : 'paid',
+                'balance_due' => $total,
+                'payment_status' => bccomp($total, '0', 2) > 0 ? 'unpaid' : 'paid',
                 'status' => $request->string('status')->toString(),
             ]);
+
+            if ($purchase->status === 'received') {
+                $plan = $items->filter(fn (array $item) => $lotPolicy->required($products->get($item['product_id']), $lotConfiguration))
+                    ->map(fn (array $item) => [
+                        'product_id' => (int) $item['product_id'],
+                        'branch_id' => (int) $purchase->branch_id,
+                        'lot_id' => $item['lot_id'] ?? null,
+                    ])->all();
+                if ($plan !== []) {
+                    app(\App\Modules\Inventory\Services\LotInventoryService::class)->lockBatch($plan, true);
+                }
+            }
 
             foreach ($items as $item) {
                 $product = $products->get($item['product_id']);
                 $coil = null;
 
                 $product->update(['purchase_price' => $item['unit_cost']]);
+
+                if ($request->string('status')->toString() === 'received'
+                    && $lotPolicy->required($product, $lotConfiguration)) {
+                    $purchaseItem = $purchase->items()->create([
+                        'product_id' => $product->id,
+                        'display_quantity' => $item['display_quantity'],
+                        'display_unit_label' => $item['display_unit_label'],
+                        'item_attributes' => $item['item_attributes'],
+                        'calculation_mode' => $item['calculation_mode'],
+                        'kilograms' => $item['kilograms'],
+                        'meters' => $item['meters'],
+                        'unit_cost' => $item['unit_cost'],
+                        'conversion_factor' => $item['conversion_factor'],
+                        'description' => $item['description'],
+                    ]);
+                    app(\App\Modules\Purchases\Services\PurchaseReceiptService::class)
+                        ->receiveManaged($purchaseItem, $item, (int) $purchase->branch_id, (int) $request->user()->id);
+                    continue;
+                }
 
                 if ($request->string('status')->toString() === 'received') {
                     if ($product->inventory_tracking_mode === Product::TRACKING_COIL) {
@@ -230,7 +295,7 @@ class PurchaseController extends Controller
         $purchase->setAttribute('can_void', app(PurchaseVoidAuthorization::class)->allows(request()->user(), $purchase));
 
         return Inertia::render('Purchases/Show', [
-            'purchase' => $purchase->load(['branch:id,name', 'supplier:id,name', 'user:id,name', 'items.product:id,name,sku,inventory_tracking_mode', 'items.coil:id,barcode,lot_number,available_meters']),
+            'purchase' => $purchase->load(['branch:id,name', 'supplier:id,name', 'user:id,name', 'items.product:id,name,sku,inventory_tracking_mode', 'items.coil:id,barcode,lot_number,available_meters', 'items.lot:id,lot_code']),
         ]);
     }
 
@@ -345,6 +410,9 @@ class PurchaseController extends Controller
                 ->all()
             : [$baseUnit];
 
+        $requiresLot = (bool) ($payload['requires_lot'] ?? false);
+        app(\App\Modules\Inventory\Services\ProductInventoryConfigurationService::class)
+            ->validateCreate(['requires_lot' => $requiresLot, 'is_inventory_item' => true]);
         $product = Product::query()->create([
             'thickness_id' => $payload['thickness_id'] ?? null,
             'product_category_id' => $category->id,
@@ -355,6 +423,8 @@ class PurchaseController extends Controller
             'barcode' => filled($payload['barcode'] ?? null) ? $payload['barcode'] : ProductCodeGenerator::barcode(),
             'inventory_tracking_mode' => in_array($tracking, [Product::TRACKING_GLOBAL, Product::TRACKING_COIL], true) ? $tracking : Product::TRACKING_GLOBAL,
             'base_unit' => $baseUnit,
+            'is_inventory_item' => true,
+            'requires_lot' => $requiresLot,
             'attributes' => $payload['attributes'] ?? [],
             'custom_attributes' => $this->normalizeProductCustomAttributes($payload['custom_attributes'] ?? []),
             'allowed_units' => $allowedUnits,
@@ -371,7 +441,7 @@ class PurchaseController extends Controller
 
         $item['product_id'] = $product->id;
         $item['display_unit_label'] = $item['display_unit_label'] ?: $baseUnit;
-        $item['description'] = $item['description'] ?: $product->name;
+        $item['description'] = ($item['description'] ?? null) ?: $product->name;
 
         return $item;
     }

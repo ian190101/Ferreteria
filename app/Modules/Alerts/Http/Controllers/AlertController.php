@@ -48,6 +48,7 @@ class AlertController extends Controller
         $branchIds = $user->isSuperAdministrator() ? [] : ($user->accessibleBranchIds() ?: [-1]);
 
         return collect()
+            ->merge($this->can($user, 'inventory.products.view', 'inventory') ? $this->depletedLotAlerts($branchIds) : [])
             ->merge($this->can($user, 'inventory.products.view', 'inventory') ? $this->lowStockAlerts($branchIds) : [])
             ->merge($this->can($user, 'payments.view', 'sales_notes') ? $this->receivableAlerts($branchIds) : [])
             ->merge($this->can($user, 'payment-promises.view', 'payment_promises') ? $this->paymentPromiseAlerts($branchIds) : [])
@@ -81,6 +82,21 @@ class AlertController extends Controller
                 'branch' => $stock->branch?->name,
                 'sort_at' => $stock->updated_at?->toISOString(),
                 'source_url' => route('inventory.products.index', ['search' => $stock->product?->sku]),
+            ]);
+    }
+
+    private function depletedLotAlerts(array $branchIds): Collection
+    {
+        return ProductCoil::query()->with(['branch:id,name', 'product:id,name'])
+            ->whereNotNull('lot_code')->whereNull('voided_at')->where('status', 'depleted')->where('available_meters', '=', '0.000')
+            ->when($branchIds !== [], fn ($query) => $query->whereIn('branch_id', $branchIds))
+            ->orderByDesc('updated_at')->limit(100)->get()
+            ->map(fn (ProductCoil $lot) => [
+                'id' => 'depleted-lot-'.$lot->id, 'type' => 'depleted_lot', 'severity' => 'warning',
+                'title' => 'Lote en 0 (Agotado)',
+                'message' => $lot->product?->name.' · lote '.$lot->lot_code.' sin existencias. Admite reingreso por compra; no puede venderse.',
+                'branch' => $lot->branch?->name, 'sort_at' => $lot->updated_at?->toISOString(),
+                'source_url' => route('inventory.lots.index', ['product' => $lot->product_id, 'branch_id' => $lot->branch_id]),
             ]);
     }
 
@@ -179,6 +195,7 @@ class AlertController extends Controller
     private function coilAlerts(array $branchIds): Collection
     {
         return ProductCoil::query()
+            ->whereNull('lot_code')
             ->with(['branch:id,name', 'product:id,name,sku'])
             ->where('status', 'depleted')
             ->when($branchIds !== [], fn ($query) => $query->whereIn('branch_id', $branchIds))
@@ -281,6 +298,7 @@ class AlertController extends Controller
             $this->can($request->user(), 'customer-qr-orders.view', 'customer_qr_ordering') ? 'customer_qr_order' : null,
             $this->can($request->user(), 'customers.view', 'customers') ? 'customer_follow_up' : null,
             $this->can($request->user(), 'inventory.coils.manage', 'inventory_lots') ? 'depleted_coil' : null,
+            $this->can($request->user(), 'inventory.products.view', 'inventory') ? 'depleted_lot' : null,
         ])->filter()->values()->all();
     }
 

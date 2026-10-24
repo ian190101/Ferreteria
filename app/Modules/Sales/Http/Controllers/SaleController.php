@@ -117,6 +117,9 @@ class SaleController extends Controller
         $this->requireApprovalForRequestedDiscounts($request);
 
         $sale = DB::transaction(function () use ($request) {
+            $lotPolicy = app(\App\Modules\Inventory\Services\LotTrackingPolicy::class);
+            $lotPolicy->lockRule();
+            $lotConfiguration = $lotPolicy->persistedConfiguration();
             if ($request->input('document_type') === 'sale_note') {
                 \App\Modules\Cash\Support\CashSessionGuard::lockRequiredOpenSession($request->user(), $request->integer('branch_id'));
             }
@@ -135,13 +138,14 @@ class SaleController extends Controller
             $products = Product::query()
                 ->with(['unit:id,symbol', 'productCategory:id,name'])
                 ->whereIn('id', $validatedItems->pluck('product_id')->unique()->values())
-                ->get(['id', 'product_category_id', 'product_unit_id', 'name', 'sale_price', 'allowed_units', 'attributes', 'custom_attributes', 'inventory_tracking_mode', 'item_type', 'is_inventory_item', 'service_type_id'])
+                ->get(['id', 'product_category_id', 'product_unit_id', 'name', 'sale_price', 'allowed_units', 'attributes', 'custom_attributes', 'inventory_tracking_mode', 'item_type', 'is_inventory_item', 'requires_lot', 'service_type_id'])
                 ->keyBy('id');
+            $hasManaged = $products->contains(fn (Product $product) => $lotPolicy->required($product, $lotConfiguration));
 
             $grossTotal = '0';
             $discountTotalExact = '0';
             $totalExact = '0';
-            $items = $validatedItems->map(function (array $item) use ($commercialPolicy, $canOverridePrices, $products, $request, $customer, &$grossTotal, &$discountTotalExact, &$totalExact) {
+            $items = $validatedItems->map(function (array $item) use ($commercialPolicy, $canOverridePrices, $products, $request, $customer, $hasManaged, $lotPolicy, $lotConfiguration, &$grossTotal, &$discountTotalExact, &$totalExact) {
                 $product = $products->get($item['product_id']);
 
                 $item['display_quantity'] = $item['display_quantity'] ?? 1;
@@ -150,21 +154,25 @@ class SaleController extends Controller
                 $item['calculation_mode'] = $item['calculation_mode'] ?? 'direct';
                 $item['unit_price'] = $canOverridePrices
                     ? $item['unit_price']
-                    : ($product ? $commercialPolicy->priceFor($product, $request->integer('branch_id'), $customer?->id) : 0);
+                    : ($product ? ($hasManaged
+                        ? $commercialPolicy->priceForExact($product, $request->integer('branch_id'), $customer?->id)
+                        : $commercialPolicy->priceFor($product, $request->integer('branch_id'), $customer?->id)) : 0);
                 $quantity = Decimal::round((string) $item['meters'], 3);
                 $unitPrice = Decimal::round((string) $item['unit_price'], 4);
                 $discountExact = Decimal::round((string) $item['discount_amount'], 2);
                 $grossExact = bcmul($quantity, $unitPrice, 7);
-                $lineGross = (float) $grossExact;
-                $discount = (float) $discountExact;
+                $lineGross = $hasManaged ? null : (float) $grossExact;
+                $discount = $hasManaged ? null : (float) $discountExact;
 
-                if ($discount > 0 && ! $commercialPolicy->canApplyDiscount($request->user())) {
+                if (bccomp($discountExact, '0', 2) > 0 && ! $commercialPolicy->canApplyDiscount($request->user())) {
                     throw ValidationException::withMessages([
                         'items' => 'La politica comercial actual no permite aplicar descuentos con este usuario.',
                     ]);
                 }
 
-                if ($discount > 0 && $commercialPolicy->discountExceedsLimit($lineGross, $discount)) {
+                if (bccomp($discountExact, '0', 2) > 0 && ($hasManaged
+                    ? $commercialPolicy->discountExceedsLimitExact($grossExact, $discountExact)
+                    : $commercialPolicy->discountExceedsLimit($lineGross, $discount))) {
                     throw ValidationException::withMessages([
                         'items' => 'El descuento supera el limite configurado para este perfil de negocio.',
                     ]);
@@ -177,6 +185,15 @@ class SaleController extends Controller
                 $item['unit_price'] = $unitPrice;
                 $item['discount_amount'] = $discountExact;
                 $item['total'] = Decimal::round(bcsub($grossExact, $discountExact, 7), 2);
+                if ($lotPolicy->required($product, $lotConfiguration)) {
+                    $lot = ProductCoil::query()->whereKey($item['lot_id'] ?? null)->firstOrFail();
+                    if ($lot->product_id !== $product->id || $lot->branch_id !== $request->integer('branch_id')
+                        || $lot->isVoided() || $lot->trashed()) {
+                        throw ValidationException::withMessages(['lot_id' => 'El lote ya no corresponde al producto o sucursal.']);
+                    }
+                    $item['lot_code_snapshot'] = $lot->lot_code;
+                }
+                $item = app(\App\Modules\Inventory\Support\LotPayloadMapper::class)->toDatabase($item);
                 $grossTotal = bcadd($grossTotal, $grossExact, 7);
                 $discountTotalExact = bcadd($discountTotalExact, $discountExact, 2);
                 $totalExact = bcadd($totalExact, $item['total'], 2);
@@ -212,7 +229,11 @@ class SaleController extends Controller
                 $advancePercentage = (string) $advanceOption->percentage;
                 $advanceAmount = Decimal::round(bcdiv(bcmul($total, $advancePercentage, 8), '100', 8), 2);
             }
-            $commercialPolicy->assertCreditAllowed($customer, $total);
+            if ($hasManaged) {
+                $commercialPolicy->assertCreditAllowedExact($customer, $total);
+            } else {
+                $commercialPolicy->assertCreditAllowed($customer, $total);
+            }
 
             $sourceQuotation = $request->filled('source_quotation_id')
                 ? Sale::query()
@@ -232,6 +253,15 @@ class SaleController extends Controller
                 throw ValidationException::withMessages([
                     'source_quotation_id' => 'La cotización ya no está vigente para esta sucursal.',
                 ]);
+            }
+            if ($sourceQuotation && $hasManaged) {
+                $expected = $sourceQuotation->items->map(fn (SaleItem $item) =>
+                    implode(':', [$item->product_id, $item->product_coil_id, $item->unit_label, $item->meters]))->sort()->values()->all();
+                $received = $items->map(fn (array $item) =>
+                    implode(':', [$item['product_id'], $item['product_coil_id'] ?? '', $item['unit_label'], $item['meters']]))->sort()->values()->all();
+                if ($expected !== $received) {
+                    throw ValidationException::withMessages(['source_quotation_id' => 'Las líneas y lotes deben coincidir exactamente con la cotización.']);
+                }
             }
 
             $sale = Sale::query()->create([
@@ -257,7 +287,26 @@ class SaleController extends Controller
             ]);
 
             $sale->items()->createMany($items->all());
-            $sale->load('items.product:id,inventory_tracking_mode,item_type,is_inventory_item,product_category_id');
+            $sale->load('items.product:id,inventory_tracking_mode,item_type,is_inventory_item,requires_lot,product_category_id');
+
+            if ($sale->document_type === 'quotation' && $lotPolicy->reserveOnQuotation($lotConfiguration)) {
+                $plan = $sale->items->filter(fn (SaleItem $item) => $lotPolicy->required($item->product, $lotConfiguration))
+                    ->map(fn (SaleItem $item) => [
+                        'product_id' => (int) $item->product_id,
+                        'branch_id' => (int) $sale->branch_id,
+                        'lot_id' => (int) $item->product_coil_id,
+                    ])->all();
+                if ($plan !== []) {
+                    app(\App\Modules\Inventory\Services\LotInventoryService::class)->lockBatch($plan);
+                }
+                foreach ($sale->items as $item) {
+                    if ($lotPolicy->required($item->product, $lotConfiguration)) {
+                        app(\App\Modules\Inventory\Services\InventoryReservationService::class)->reserve(
+                            (int) $item->product_coil_id, (int) $sale->id, (int) $item->id,
+                            (string) $item->meters, (int) $request->user()->id);
+                    }
+                }
+            }
 
             if ($sale->document_type === 'sale_note') {
                 event(new SaleNoteIssued(
@@ -279,7 +328,8 @@ class SaleController extends Controller
 
         $this->issueFiscalInvoiceIfRequired($sale, $request->user()->id, afterQuotationConversion: false);
 
-        return redirect()->route('sales.show', $sale)->with('success', 'Documento generado correctamente.');
+        return redirect()->route('sales.show', $sale)->with('success', 'Documento generado correctamente.')
+            ->with('warning', app(\App\Modules\Inventory\Services\LotDepletionNotice::class)->forSale($sale));
     }
 
     private function requireApprovalForRequestedDiscounts(StoreSaleDocumentRequest $request): void
@@ -288,17 +338,42 @@ class SaleController extends Controller
         $items = collect($request->validated('items'));
         $products = Product::query()
             ->whereIn('id', $items->pluck('product_id')->unique()->values())
-            ->get(['id', 'sale_price'])
+            ->get(['id', 'sale_price', 'is_inventory_item', 'requires_lot'])
             ->keyBy('id');
 
         foreach ($items as $item) {
+            $product = $products->get($item['product_id']);
+            $lotPolicy = app(\App\Modules\Inventory\Services\LotTrackingPolicy::class);
+            if ($product && $lotPolicy->required($product, $lotPolicy->activeConfiguration())) {
+                $discountExact = Decimal::round((string) ($item['discount_amount'] ?? '0'), 2);
+                if (bccomp($discountExact, '0', 2) <= 0) {
+                    continue;
+                }
+                $priceExact = $request->user()->can('sales.prices.override')
+                    ? (string) ($item['unit_price'] ?? '0')
+                    : app(CommercialPolicy::class)->priceForExact($product, $request->integer('branch_id'),
+                        $request->filled('customer_id') ? $request->integer('customer_id') : null);
+                $grossExact = bcmul((string) ($item['meters'] ?? '0'), $priceExact, 8);
+                if (! $commercialPolicy->discountExceedsLimitExact($grossExact, $discountExact)) {
+                    continue;
+                }
+                $percentExact = bccomp($grossExact, '0', 8) > 0
+                    ? Decimal::round(bcdiv(bcmul($discountExact, '100', 8), $grossExact, 8), 2)
+                    : '0.00';
+                app(SalesApprovalGate::class)->requireForHighDiscount(
+                    user: $request->user(), branchId: $request->integer('branch_id'),
+                    discountPercent: $percentExact,
+                    payload: ['product_id' => $item['product_id'], 'line_gross' => $grossExact,
+                        'discount_amount' => $discountExact, 'document_type' => $request->string('document_type')->toString()],
+                );
+                continue;
+            }
             $discount = (float) ($item['discount_amount'] ?? 0);
 
             if ($discount <= 0) {
                 continue;
             }
 
-            $product = $products->get($item['product_id']);
             $unitPrice = $request->user()->can('sales.prices.override')
                 ? (float) ($item['unit_price'] ?? 0)
                 : (float) ($product?->sale_price ?? 0);
@@ -333,9 +408,10 @@ class SaleController extends Controller
             'saleType:id,name',
             'currency:id,name,code,symbol,exchange_rate_to_bob',
             'advanceOption:id,name,type,percentage,amount',
-            'items.product:id,name,sku,inventory_tracking_mode,item_type,is_inventory_item,service_type_id,base_unit,product_unit_id',
+            'items.product:id,name,sku,inventory_tracking_mode,item_type,is_inventory_item,requires_lot,service_type_id,base_unit,product_unit_id',
             'items.product.unit:id,name,symbol',
             'items.coil:id,barcode,lot_number,available_meters,status',
+            'items.lot:id,lot_code,initial_kg,available_meters,status,voided_at',
             'items.deliveryItems:id,sale_item_id,meters,display_quantity,display_unit_label',
             'payments' => fn ($query) => $query->withCashContext(),
             'payments.method:id,name',
@@ -358,9 +434,12 @@ class SaleController extends Controller
         abort_unless(BranchAccess::canAccess($request->user(), (int) $sale->branch_id), 403);
 
         $newSale = DB::transaction(function () use ($request, $sale) {
+            $lotPolicy = app(\App\Modules\Inventory\Services\LotTrackingPolicy::class);
+            $lotPolicy->lockRule();
+            $lotConfiguration = $lotPolicy->persistedConfiguration();
             \App\Modules\Cash\Support\CashSessionGuard::lockRequiredOpenSession($request->user(), (int) $sale->branch_id);
             $quotation = Sale::query()
-                ->with(['items.product:id,inventory_tracking_mode,item_type,is_inventory_item,product_category_id'])
+                ->with(['items.product:id,inventory_tracking_mode,item_type,is_inventory_item,requires_lot,product_category_id'])
                 ->lockForUpdate()
                 ->findOrFail($sale->id);
 
@@ -371,6 +450,11 @@ class SaleController extends Controller
             }
 
             $autoSelectedCoils = [];
+            foreach ($quotation->items as $index => $item) {
+                if ($lotPolicy->required($item->product, $lotConfiguration) && ! $item->product_coil_id) {
+                    throw ValidationException::withMessages(["items.{$index}.lot_id" => 'La cotización debe conservar un lote explícito antes de convertirse.']);
+                }
+            }
             $usedMetersByCoil = [];
             $coilProductIds = $quotation->items
                 ->filter(fn (SaleItem $item) => $item->product->is_inventory_item && $item->product->inventory_tracking_mode === Product::TRACKING_COIL && ! $item->product_coil_id)
@@ -383,6 +467,10 @@ class SaleController extends Controller
 
             foreach ($quotation->items as $index => $item) {
                 if (! $item->product->is_inventory_item) {
+                    continue;
+                }
+
+                if ($lotPolicy->required($item->product, $lotConfiguration)) {
                     continue;
                 }
 
@@ -439,6 +527,7 @@ class SaleController extends Controller
             $newSale->items()->createMany($quotation->items->map(fn (SaleItem $item) => [
                 'product_id' => $item->product_id,
                 'product_coil_id' => $item->product_coil_id ?: ($autoSelectedCoils[$item->id] ?? null),
+                'lot_code_snapshot' => $item->lot_code_snapshot,
                 'description' => $item->description,
                 'unit_label' => $item->unit_label,
                 'display_quantity' => $item->display_quantity,
@@ -450,7 +539,7 @@ class SaleController extends Controller
                 'discount_amount' => $item->discount_amount,
                 'total' => $item->total,
             ])->all());
-            $newSale->load('items.product:id,inventory_tracking_mode,item_type,is_inventory_item,product_category_id');
+            $newSale->load('items.product:id,inventory_tracking_mode,item_type,is_inventory_item,requires_lot,product_category_id');
 
             event(new SaleNoteIssued(
                 saleId: (int) $newSale->id,
@@ -463,7 +552,8 @@ class SaleController extends Controller
 
         $this->issueFiscalInvoiceIfRequired($newSale, $request->user()->id, afterQuotationConversion: true);
 
-        return redirect()->route('sales.show', $newSale)->with('success', 'Cotizacion convertida en nota de venta.');
+        return redirect()->route('sales.show', $newSale)->with('success', 'Cotizacion convertida en nota de venta.')
+            ->with('warning', app(\App\Modules\Inventory\Services\LotDepletionNotice::class)->forSale($newSale));
     }
 
     private function issueFiscalInvoiceIfRequired(Sale $sale, int $userId, bool $afterQuotationConversion): void
@@ -494,13 +584,30 @@ class SaleController extends Controller
         app(SalesApprovalGate::class)->requireForVoid($sale, $request->user(), $request->string('reason')->toString());
 
         DB::transaction(function () use ($request, $sale, $inventory) {
+            $lotPolicy = app(\App\Modules\Inventory\Services\LotTrackingPolicy::class);
+            $lotPolicy->lockRule();
+            $lotPolicy->persistedConfiguration();
             $sale = Sale::query()
                 ->with([
                     'items.deliveryItems:id,sale_item_id',
-                    'items.product:id,inventory_tracking_mode,item_type,is_inventory_item,product_category_id',
+                    'items.product:id,inventory_tracking_mode,item_type,is_inventory_item,requires_lot,product_category_id',
                 ])
                 ->lockForUpdate()
                 ->findOrFail($sale->id);
+            if ($sale->status === 'void' || $sale->payments()->orderBy('id')->lockForUpdate()->get()->isNotEmpty()) {
+                throw ValidationException::withMessages(['sale' => 'El documento ya está anulado o conserva pagos activos.']);
+            }
+            if ($sale->document_type === 'quotation' && $sale->status === 'converted') {
+                throw ValidationException::withMessages(['sale' => 'La cotización ya fue convertida. Gestiona la anulación desde su nota de venta para conservar los compromisos.']);
+            }
+            $plan = $sale->items->whereNotNull('lot_code_snapshot')->map(fn (SaleItem $item) => [
+                'product_id' => (int) $item->product_id, 'branch_id' => (int) $sale->branch_id,
+                'lot_id' => (int) $item->product_coil_id,
+            ])->all();
+            if ($plan !== []) {
+                app(\App\Modules\Inventory\Services\LotInventoryService::class)->lockBatch($plan);
+            }
+            app(\App\Modules\Inventory\Services\InventoryReservationService::class)->releaseForDocument($sale);
             $internalNotes = trim(implode("\n", array_filter([
                 $sale->internal_notes,
                 'Anulado por '.$request->user()->name.': '.$request->string('reason')->toString(),
@@ -990,11 +1097,15 @@ class SaleController extends Controller
 
     private function ensureStockPolicyAllowsSale(array $items, $products, int $branchId, $user, CommercialPolicy $policy): void
     {
+        $lotPolicy = app(\App\Modules\Inventory\Services\LotTrackingPolicy::class);
+        $lotConfiguration = $lotPolicy->persistedConfiguration();
         $requiredByProduct = collect($items)
-            ->filter(function ($item) use ($products) {
+            ->filter(function ($item) use ($products, $lotPolicy, $lotConfiguration) {
                 $product = $products->get((int) $item['product_id']);
 
-                return $product?->is_inventory_item && $product->inventory_tracking_mode !== Product::TRACKING_COIL;
+                return $product?->is_inventory_item
+                    && ! $lotPolicy->required($product, $lotConfiguration)
+                    && $product->inventory_tracking_mode !== Product::TRACKING_COIL;
             })
             ->groupBy('product_id')
             ->map(fn ($group) => round((float) $group->sum('meters'), 3));

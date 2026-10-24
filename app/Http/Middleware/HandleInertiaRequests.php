@@ -43,6 +43,10 @@ class HandleInertiaRequests extends Middleware
             'decimalPrecision' => DecimalPrecision::config(),
             'sandboxMode' => $this->sandboxMode($request),
             'systemError' => Inertia::always(fn () => $request->hasSession() ? $request->session()->get('system_error') : null),
+            'flash' => Inertia::always(fn () => [
+                'success' => $request->hasSession() ? $request->session()->get('success') : null,
+                'warning' => $request->hasSession() ? $request->session()->get('warning') : null,
+            ]),
         ];
     }
 

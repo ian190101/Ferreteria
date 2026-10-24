@@ -70,6 +70,7 @@ class PaymentController extends Controller
     public function store(StoreSalePaymentRequest $request, BankReconciliationService $banks, SaleInventoryService $inventory, SalesWorkflowPolicy $workflow, FinancialLedgerService $ledger): RedirectResponse
     {
         $payment = DB::transaction(function () use ($request, $banks, $inventory, $workflow, $ledger) {
+            app(\App\Modules\Inventory\Services\LotTrackingPolicy::class)->lockRule();
             $sale = Sale::query()->lockForUpdate()->findOrFail($request->integer('sale_id'));
             abort_unless(BranchAccess::canAccess($request->user(), (int) $sale->branch_id), 403);
             \App\Modules\Cash\Support\CashSessionGuard::lockRequiredOpenSession($request->user(), (int) $sale->branch_id);
@@ -93,15 +94,16 @@ class PaymentController extends Controller
             $ledger->bumpFinancialCaches();
 
             if ($workflow->shouldDiscountInventoryOnPayment()) {
-                $sale->load('items.product:id,inventory_tracking_mode,item_type,is_inventory_item,product_category_id');
+                $sale->load('items.product:id,inventory_tracking_mode,item_type,is_inventory_item,requires_lot,product_category_id');
                 $inventory->decrementForSale($sale, (int) $request->user()->id);
             }
 
-            return $payment;
+            return $payment->setRelation('sale', $sale);
         });
 
         return redirect()
             ->back()
+            ->with('warning', app(\App\Modules\Inventory\Services\LotDepletionNotice::class)->forSale($payment->sale))
             ->with('success', "Pago {$payment->id} registrado correctamente."
                 .($payment->cash_register_session_id ? '' : ' Cobro realizado sin caja abierta; disponible en Pagos y en el flujo de cobros de Caja.'));
     }

@@ -6,6 +6,7 @@ import SelectField from '../../../../Shared/Resources/Components/SelectField';
 import { Head, Link, router, useForm } from '@inertiajs/react';
 
 const typeLabels = {
+    depleted_lot: 'Lote en 0 (Agotado)',
     low_stock: 'Stock bajo',
     receivable: 'Cuenta por cobrar',
     payment_promise: 'Promesa de pago',

@@ -158,6 +158,10 @@ class ActiveBusinessProfile
             'modules' => $payload['modules'] ?? [],
             'capabilities' => $payload['capabilities'] ?? [],
             'featureFlags' => $payload['feature_flags'] ?? [],
+            'lotTracking' => [
+                'enabled' => app(\App\Modules\Inventory\Services\LotTrackingPolicy::class)->enabled($configuration),
+                'reserveOnQuotation' => app(\App\Modules\Inventory\Services\LotTrackingPolicy::class)->reserveOnQuotation($configuration),
+            ],
             'preview' => $payload['preview'] ?? ['active' => false],
         ];
     }

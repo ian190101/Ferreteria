@@ -9,6 +9,8 @@ use App\Modules\Inventory\Models\Product;
 use App\Modules\Inventory\Models\ProductBranchStock;
 use App\Modules\Inventory\Models\ProductCoil;
 use App\Modules\Inventory\Services\InventoryQuantityService;
+use App\Modules\Inventory\Services\InventoryReservationService;
+use App\Modules\Inventory\Services\LotTrackingPolicy;
 use App\Modules\Sales\Models\Sale;
 use App\Support\BranchAccess;
 use App\Support\UiCatalogCache;
@@ -24,7 +26,7 @@ class InventoryReservationController extends Controller
     public function index(Request $request): Response
     {
         $reservations = InventoryReservation::query()
-            ->with(['branch:id,name', 'product:id,name,sku,inventory_tracking_mode', 'coil:id,barcode,lot_number', 'sale:id,receipt_number', 'consumedSale:id,receipt_number', 'user:id,name'])
+            ->with(['branch:id,name', 'product:id,name,sku,inventory_tracking_mode,requires_lot', 'coil:id,barcode,lot_number', 'lot:id,lot_code', 'sale:id,receipt_number', 'consumedSale:id,receipt_number', 'user:id,name'])
             ->when(true, fn ($query) => BranchAccess::apply($query, $request->user()))
             ->when($request->filled('branch_id'), fn ($query) => $query->where('branch_id', $request->integer('branch_id')))
             ->when($request->filled('status'), fn ($query) => $query->where('status', $request->string('status')->toString()))
@@ -50,6 +52,11 @@ class InventoryReservationController extends Controller
                 ->latest('sold_at')
                 ->limit(100)
                 ->get(['id', 'branch_id', 'receipt_number', 'customer_name']),
+            'quotationItems' => \App\Modules\Sales\Models\SaleItem::query()
+                ->whereHas('sale', fn ($query) => BranchAccess::apply($query->where('document_type', 'quotation')
+                    ->where('status', 'quoted'), $request->user()))
+                ->with('sale:id,receipt_number')
+                ->latest('id')->limit(500)->get(['id', 'sale_id', 'product_id', 'product_coil_id', 'meters']),
             'filters' => $request->only(['branch_id', 'status', 'product_id', 'per_page']),
             'statuses' => [
                 InventoryReservation::STATUS_ACTIVE,
@@ -59,9 +66,19 @@ class InventoryReservationController extends Controller
         ]);
     }
 
-    public function store(StoreInventoryReservationRequest $request, InventoryQuantityService $quantities): RedirectResponse
+    public function store(StoreInventoryReservationRequest $request, InventoryQuantityService $quantities,
+        LotTrackingPolicy $lotPolicy, InventoryReservationService $managedReservations): RedirectResponse
     {
-        DB::transaction(function () use ($request, $quantities) {
+        DB::transaction(function () use ($request, $quantities, $lotPolicy, $managedReservations) {
+            $lotPolicy->lockRule();
+            $configuration = $lotPolicy->persistedConfiguration();
+            $managedProduct = Product::query()->findOrFail($request->integer('product_id'));
+            if ($lotPolicy->required($managedProduct, $configuration)) {
+                $managedReservations->reserve($request->integer('lot_id'), $request->integer('sale_id'),
+                    $request->integer('sale_item_id'), (string) $request->input('meters'), $request->user()->id);
+
+                return;
+            }
             $product = Product::query()->lockForUpdate()->findOrFail($request->integer('product_id'));
             $meters = round((float) $request->input('meters'), 3);
             $coilId = $request->filled('product_coil_id') ? $request->integer('product_coil_id') : null;
@@ -115,12 +132,20 @@ class InventoryReservationController extends Controller
         return redirect()->route('inventory.reservations.index')->with('success', 'Reserva registrada correctamente.');
     }
 
-    public function release(Request $request, InventoryReservation $reservation, InventoryQuantityService $quantities): RedirectResponse
+    public function release(Request $request, InventoryReservation $reservation, InventoryQuantityService $quantities,
+        LotTrackingPolicy $lotPolicy, InventoryReservationService $managedReservations): RedirectResponse
     {
         abort_unless($request->user()?->can('inventory.reservations.manage'), 403);
         abort_unless(BranchAccess::canAccess($request->user(), (int) $reservation->branch_id), 403);
 
-        DB::transaction(function () use ($reservation, $quantities) {
+        DB::transaction(function () use ($reservation, $quantities, $lotPolicy, $managedReservations) {
+            $lotPolicy->lockRule();
+            if ($reservation->product_coil_id && ProductCoil::query()->whereKey($reservation->product_coil_id)
+                ->whereNotNull('lot_code')->exists()) {
+                $managedReservations->release($reservation);
+
+                return;
+            }
             $reservation = InventoryReservation::query()->lockForUpdate()->findOrFail($reservation->id);
 
             if ($reservation->status !== InventoryReservation::STATUS_ACTIVE) {

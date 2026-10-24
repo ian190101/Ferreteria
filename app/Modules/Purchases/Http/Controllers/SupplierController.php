@@ -94,7 +94,7 @@ class SupplierController extends Controller
                 ->paginate($perPage, ['*'], 'purchases_page')
                 ->withQueryString(),
             'items' => (clone $itemsBase)
-                ->with(['purchase:id,document_number,purchase_date,status,supplier_id', 'product:id,name,sku'])
+                ->with(['purchase:id,document_number,purchase_date,status,supplier_id', 'product:id,name,sku', 'lot:id,lot_code'])
                 ->latest('id')
                 ->paginate($perPage, ['*'], 'items_page')
                 ->withQueryString(),

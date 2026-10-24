@@ -3,11 +3,12 @@
 namespace App\Modules\Purchases\Services;
 
 use App\Modules\Inventory\Services\ProductWorkflowPolicy;
+use App\Modules\Inventory\Services\LotTrackingPolicy;
 use App\Modules\SystemSuperadmin\Services\ActiveBusinessProfile;
 
 class PurchaseWorkflowPolicy
 {
-    public function __construct(private readonly ProductWorkflowPolicy $products)
+    public function __construct(private readonly ProductWorkflowPolicy $products, private readonly LotTrackingPolicy $lots)
     {
     }
 
@@ -65,6 +66,7 @@ class PurchaseWorkflowPolicy
             'registerExpenseWhenPaid' => $this->registerExpenseWhenPaid(),
             'purchaseStockModeChoiceEnabled' => $this->purchaseStockModeChoiceEnabled(),
             'productPolicy' => $this->products->summary(),
+            'lotTrackingEnabled' => $this->lots->enabled($this->lots->activeConfiguration()),
         ];
     }
 }

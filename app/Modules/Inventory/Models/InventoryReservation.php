@@ -23,6 +23,9 @@ class InventoryReservation extends AuditableModel
         'branch_id',
         'product_id',
         'product_coil_id',
+        'sale_item_id',
+        'committed_sale_item_id',
+        'remaining_meters',
         'sale_id',
         'customer_qr_order_id',
         'consumed_sale_id',
@@ -38,6 +41,7 @@ class InventoryReservation extends AuditableModel
 
     protected $casts = [
         'meters' => 'decimal:3',
+        'remaining_meters' => 'decimal:3',
         'expires_at' => 'datetime',
         'released_at' => 'datetime',
         'consumed_at' => 'datetime',
@@ -54,6 +58,11 @@ class InventoryReservation extends AuditableModel
     }
 
     public function coil(): BelongsTo
+    {
+        return $this->belongsTo(ProductCoil::class, 'product_coil_id');
+    }
+
+    public function lot(): BelongsTo
     {
         return $this->belongsTo(ProductCoil::class, 'product_coil_id');
     }

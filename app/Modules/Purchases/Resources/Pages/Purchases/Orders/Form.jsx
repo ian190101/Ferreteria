@@ -5,6 +5,7 @@ import ModuleHeader from '../../../../../Shared/Resources/Components/ModuleHeade
 import SelectField from '../../../../../Shared/Resources/Components/SelectField';
 import { decimalStep, useDecimalFormatter } from '@/Utils/formatters';
 import { Head, Link, useForm } from '@inertiajs/react';
+import PurchaseLotChoice, { normalizeLotCode } from '../../../Components/PurchaseLotChoice';
 
 const DEFAULT_ITEM = {
     product_id: '',
@@ -15,11 +16,14 @@ const DEFAULT_ITEM = {
     cost_per_ton: '',
     unit_cost: '0',
     lot_number: '',
+    lot_id: '',
+    new_lot_code: '',
+    lot_mode: 'new',
     coil_barcode: '',
     description: '',
 };
 
-export default function Form({ branches, suppliers, products }) {
+export default function Form({ branches, suppliers, products, lotTrackingEnabled = false }) {
     const decimalFormat = useDecimalFormatter('purchases');
     const { data, setData, post, processing, errors, transform } = useForm({
         branch_id: branches[0]?.id ?? '',
@@ -34,7 +38,7 @@ export default function Form({ branches, suppliers, products }) {
 
     const productMap = new Map(products.map((product) => [String(product.id), product]));
     const updateItem = (index, field, value) => {
-        setData('items', data.items.map((item, itemIndex) => (itemIndex === index ? { ...item, [field]: value } : item)));
+        setData('items', data.items.map((item, itemIndex) => (itemIndex === index ? { ...item, [field]: value, ...(field === 'product_id' ? { lot_id: '', new_lot_code: '' } : {}) } : item)));
     };
     const addItem = () => setData('items', [...data.items, { ...DEFAULT_ITEM }]);
     const removeItem = (index) => setData('items', data.items.filter((_, itemIndex) => itemIndex !== index));
@@ -51,7 +55,7 @@ export default function Form({ branches, suppliers, products }) {
         event.preventDefault();
         transform((payload) => ({
             ...payload,
-            items: payload.items.map((item) => preparePurchaseItem(item, products, decimalFormat)),
+            items: payload.items.map((item) => preparePurchaseItem(item, products, decimalFormat, lotTrackingEnabled)),
         }));
         post(route('purchases.orders.store'), { preserveScroll: true });
     };
@@ -66,7 +70,7 @@ export default function Form({ branches, suppliers, products }) {
                 <form onSubmit={submit} className="space-y-6">
                     <div className="grid gap-5 rounded-lg border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:grid-cols-4">
                         <FormField label="Nro. orden" name="order_number" value={data.order_number} onChange={(event) => setData('order_number', event.target.value)} error={errors.order_number} required />
-                        <SelectField label="Sucursal" name="branch_id" value={data.branch_id} onChange={(event) => setData('branch_id', event.target.value)} error={errors.branch_id}>
+                        <SelectField label="Sucursal" name="branch_id" value={data.branch_id} onChange={(event) => setData((current) => ({ ...current, branch_id: event.target.value, items: current.items.map((item) => ({ ...item, lot_id: '', new_lot_code: '' })) }))} error={errors.branch_id}>
                             {branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
                         </SelectField>
                         <SelectField label="Proveedor" name="supplier_id" value={data.supplier_id} onChange={(event) => setData('supplier_id', event.target.value)} error={errors.supplier_id}>
@@ -117,8 +121,7 @@ export default function Form({ branches, suppliers, products }) {
                                         ) : (
                                             <FormField label="Costo/metro" name={`items.${index}.unit_cost`} type="number" step={decimalStep(decimalFormat.decimalsFor('cost'))} value={item.unit_cost} onChange={(event) => updateItem(index, 'unit_cost', event.target.value)} error={errors[`items.${index}.unit_cost`]} required />
                                         )}
-                                        <FormField label="Lote" name={`items.${index}.lot_number`} value={item.lot_number} onChange={(event) => updateItem(index, 'lot_number', event.target.value)} error={errors[`items.${index}.lot_number`]} />
-                                        <FormField label="Barcode bobina" name={`items.${index}.coil_barcode`} value={item.coil_barcode} disabled={!isCoil} onChange={(event) => updateItem(index, 'coil_barcode', event.target.value)} error={errors[`items.${index}.coil_barcode`]} />
+                                        {lotTrackingEnabled && product?.requires_lot ? <div className="sm:col-span-2"><PurchaseLotChoice productId={product.id} branchId={data.branch_id} item={item} index={index} errors={errors} onChange={(patch) => setData('items', data.items.map((entry, itemIndex) => itemIndex === index ? { ...entry, ...patch } : entry))} /></div> : <><FormField label="Lote" name={`items.${index}.lot_number`} value={item.lot_number} onChange={(event) => updateItem(index, 'lot_number', event.target.value)} error={errors[`items.${index}.lot_number`]} /><FormField label="Barcode bobina" name={`items.${index}.coil_barcode`} value={item.coil_barcode} disabled={!isCoil} onChange={(event) => updateItem(index, 'coil_barcode', event.target.value)} error={errors[`items.${index}.coil_barcode`]} /></>}
                                         <div className="sm:col-span-7">
                                             <div className="mb-3 rounded-md border border-slate-200 bg-slate-50 px-4 py-3 text-sm dark:border-slate-800 dark:bg-slate-950">
                                                 <p className="text-slate-500 dark:text-slate-400">Equivalente: <span className="font-semibold text-emerald-600">{decimalFormat.measure(summary.meters)} m</span></p>
@@ -143,7 +146,7 @@ export default function Form({ branches, suppliers, products }) {
     );
 }
 
-function preparePurchaseItem(item, products, decimalFormat) {
+function preparePurchaseItem(item, products, decimalFormat, lotTrackingEnabled) {
     const product = products.find((product) => String(product.id) === String(item.product_id));
     const summary = purchaseItemSummary(item, product);
 
@@ -155,6 +158,8 @@ function preparePurchaseItem(item, products, decimalFormat) {
         unit_cost: summary.unitCost ? decimalFormat.fixed(summary.unitCost, 'cost') : item.unit_cost,
         lot_number: item.lot_number,
         coil_barcode: item.coil_barcode,
+        lot_id: lotTrackingEnabled && product?.requires_lot && item.lot_mode === 'existing' ? item.lot_id : undefined,
+        new_lot_code: lotTrackingEnabled && product?.requires_lot && item.lot_mode !== 'existing' ? normalizeLotCode(item.new_lot_code) : undefined,
         description: item.description,
     };
 }

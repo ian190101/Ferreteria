@@ -18,6 +18,11 @@ class ServiceOrderInventoryService
     public function consumeMaterials(ServiceOrder $order, int $userId): void
     {
         $order->loadMissing('items.product');
+        $lotPolicy = app(\App\Modules\Inventory\Services\LotTrackingPolicy::class);
+        $lotPolicy->lockRule();
+        foreach ($order->items->where('discount_inventory', true)->pluck('product')->filter()->unique('id') as $product) {
+            $lotPolicy->assertAlternativeWriterAllowed($product);
+        }
 
         foreach ($order->items->where('discount_inventory', true) as $item) {
             $quantity = (float) $item->quantity;

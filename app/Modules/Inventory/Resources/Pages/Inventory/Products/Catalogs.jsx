@@ -112,6 +112,16 @@ export default function Catalogs({ categories, units, thicknesses = [] }) {
                     </Link>
                 </div>
 
+                <section aria-label="Configurar unidades y metros" className="mb-6 space-y-2 rounded-lg border border-sky-200 bg-sky-50 p-4 text-sm text-sky-950 dark:border-sky-800 dark:bg-sky-950/40 dark:text-sky-100">
+                    <h3 className="font-semibold">Cómo configurar unidades y metros para todos los productos</h3>
+                    <p><strong>Unidades:</strong> crea los nombres y símbolos que se usarán (m, kg, plancha, etc.). Crear una unidad no define cuánto mide.</p>
+                    <p><strong>Espesores:</strong> registra cuántos kg pesa un metro. Ejemplo: 2.5 kg/m → 125 kg ÷ 2.5 = 50 m. El factor inverso expresa m/kg y se calcula automáticamente.</p>
+                    <p><strong>Categorías:</strong> agrupan productos y sugieren su unidad base, espesor requerido y rastreo al crear o cambiar la categoría de un producto. Revisa esas sugerencias antes de guardar; cambiar la configuración de la categoría no modifica automáticamente los productos ya registrados.</p>
+                    <p><strong>Rastreo de la categoría:</strong> el stock por sucursal indica cuánto tienes en cada tienda o almacén. El rastreo por lote agrega la identificación de cada bobina dentro de esa sucursal. Ejemplo: Sucursal Central tiene 3000 m, repartidos entre el lote A con 1000 m y el lote B con 2000 m; el total sigue siendo 3000 m.</p>
+                    <p><strong>Activar los códigos de lote:</strong> «Rastreo adicional por defecto» es una sugerencia del rastreo anterior. Elegir «por lote» en la categoría no marca automáticamente «Este producto maneja lotes». Activa ese checkbox en cada producto para usar la nueva gestión de códigos, entradas y salidas por lote.</p>
+                    <p><strong>En cada producto:</strong> elige su unidad base; para stock por metraje usa Metro (m). Asocia el espesor y configura las equivalencias comerciales: por ejemplo, 1 plancha de largo fijo = 3 m. Para largos variables, indica Cantidad × largo en la compra o venta.</p>
+                    <p><strong>Compras y lotes:</strong> captura una fila por bobina, con código y cantidad entrante. Si ya conoces los metros, ingrésalos directamente y registra los kg como referencia. Al recibir la compra, el stock entra una sola vez.</p>
+                </section>
                 <div className="grid gap-6 xl:grid-cols-3">
                     <Panel title={editingUnit ? 'Editar unidad' : 'Nueva unidad'}>
                         <form onSubmit={submitUnit} className="grid gap-4 sm:grid-cols-2">
@@ -151,7 +161,7 @@ export default function Catalogs({ categories, units, thicknesses = [] }) {
                             <FormField label="Milimetros" name="millimeters" type="number" step={decimalStep(decimalFormat.decimalsFor('measure'))} value={thicknessForm.data.millimeters} onChange={(event) => thicknessForm.setData('millimeters', event.target.value)} error={thicknessForm.errors.millimeters} required />
                             <FormField label="Kg por metro" name="kg_per_meter" type="number" step={decimalStep(decimalFormat.decimalsFor('exchange_rate'))} value={thicknessForm.data.kg_per_meter} onChange={(event) => thicknessForm.setData('kg_per_meter', event.target.value)} error={thicknessForm.errors.kg_per_meter} required />
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Factor kg a metros</label>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Metros por kilogramo (m/kg)</label>
                                 <div className="mt-1 flex min-h-10 items-center rounded-2xl border border-slate-200 bg-slate-50 px-3 text-sm font-semibold text-slate-700 dark:border-white/10 dark:bg-white/5 dark:text-slate-200">
                                     {conversionFactor(thicknessForm.data.kg_per_meter, decimalFormat)}
                                 </div>
@@ -167,7 +177,7 @@ export default function Catalogs({ categories, units, thicknesses = [] }) {
                         </form>
 
                         <SimpleTable
-                            headers={['Espesor', 'Kg/m', 'Factor', 'Uso', 'Estado', '']}
+                            headers={['Espesor', 'Kg/m', 'm/kg', 'Uso', 'Estado', '']}
                             rows={thicknesses.map((thickness) => [
                                 `${thickness.name} (${decimalFormat.measure(thickness.millimeters)} mm)`,
                                 decimalFormat.exchangeRate(thickness.kg_per_meter),

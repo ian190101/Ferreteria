@@ -6,6 +6,8 @@ use App\Modules\SystemSuperadmin\Services\ActiveBusinessProfile;
 
 class ProductWorkflowPolicy
 {
+    public function __construct(private readonly LotTrackingPolicy $lots) {}
+
     public function catalogMode(): string
     {
         return (string) (ActiveBusinessProfile::payload()['products']['catalog_mode'] ?? 'mixed_inventory');
@@ -43,10 +45,7 @@ class ProductWorkflowPolicy
 
     public function lotsEnabled(): bool
     {
-        $payload = ActiveBusinessProfile::payload();
-
-        return (bool) ($payload['capabilities']['uses_lots'] ?? false)
-            || (bool) ($payload['inventory']['lot_tracking_optional'] ?? false);
+        return $this->lots->enabled($this->lots->activeConfiguration());
     }
 
     public function expirationDatesEnabled(): bool

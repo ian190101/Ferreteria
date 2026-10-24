@@ -4,6 +4,8 @@ import ContextHelp from '../../../../../Shared/Resources/Components/ContextHelp'
 import { decimalStep } from '@/Utils/formatters';
 import { useState } from 'react';
 import ProductAdditionalDetails from './ProductAdditionalDetails';
+import LotRegistrationFields, { newLotRow } from '../../../Components/LotRegistrationFields';
+import { usePage } from '@inertiajs/react';
 
 export function buildProductFormData({ product = null, categories = [], units = [], branches = [] }) {
     const initialBranchIds = (product?.branch_stocks ?? product?.branchStocks ?? [])
@@ -42,6 +44,7 @@ export function buildProductFormData({ product = null, categories = [], units = 
         attributes: product?.attributes ?? {},
         catalog_settings: product?.catalog_settings ?? {},
         requires_lot: product?.requires_lot ?? false,
+        lot_registrations: [],
         requires_expiration_date: product?.requires_expiration_date ?? false,
         is_rentable: product?.is_rentable ?? false,
         custom_attributes: normalizeCustomAttributes(product?.custom_attributes ?? []),
@@ -58,7 +61,9 @@ export function buildProductFormData({ product = null, categories = [], units = 
     };
 }
 
-export default function ProductFormFields({ data, setData, errors = {}, thicknesses = [], categories = [], units = [], branches = [], attributeDefinitions = [], serviceTypes = [], decimalFormat, compact = false, productPolicy = {} }) {
+export default function ProductFormFields({ data, setData, errors = {}, thicknesses = [], categories = [], units = [], branches = [], attributeDefinitions = [], serviceTypes = [], decimalFormat, compact = false, productPolicy = {}, lotBranchId = null, lockLotBranch = false, lotEntryContext = 'inventory' }) {
+    const page = usePage();
+    const activeBranchId = lotBranchId ?? page.props.auth?.user?.branch_id ?? branches[0]?.id ?? '';
     const selectedCategory = categories.find((category) => Number(category.id) === Number(data.product_category_id));
     const selectedUnit = units.find((unit) => Number(unit.id) === Number(data.product_unit_id));
     const profit = Math.max(Number(data.sale_price || 0) - Number(data.purchase_price || 0), 0);
@@ -187,7 +192,7 @@ export default function ProductFormFields({ data, setData, errors = {}, thicknes
             is_prepared: isPrepared,
             is_digital: itemType === 'digital',
             is_rentable: itemType === 'rental',
-            requires_lot: itemType === 'rental' ? true : data.requires_lot,
+            requires_lot: productPolicy.lotsEnabled ? data.requires_lot : false,
         });
     };
     const addImage = () => setData('images', [
@@ -228,7 +233,7 @@ export default function ProductFormFields({ data, setData, errors = {}, thicknes
                 ))}
             </SelectField>
             <CatalogBehavior data={data} setData={setData} errors={errors} productPolicy={productPolicy} serviceTypes={serviceTypes} selectItemType={selectItemType} />
-            <CatalogTraceability data={data} setData={setData} errors={errors} productPolicy={productPolicy} />
+            <CatalogTraceability data={data} setData={setData} errors={errors} productPolicy={productPolicy} branches={branches} activeBranchId={activeBranchId} lockLotBranch={lockLotBranch} lotEntryContext={lotEntryContext} />
             <GeneratedField label="SKU" name="sku" value={data.sku} onChange={(event) => setData('sku', event.target.value)} error={errors.sku} onGenerate={generateSku} />
             <GeneratedField label={productPolicy.barcodeRequired ? 'Barcode *' : 'Barcode'} name="barcode" value={data.barcode} onChange={(event) => setData('barcode', event.target.value)} error={errors.barcode} onGenerate={generateBarcode} />
             {productPolicy.imagesEnabled ? (
@@ -245,7 +250,7 @@ export default function ProductFormFields({ data, setData, errors = {}, thicknes
                     </option>
                 ))}
             </SelectField>
-            <InventoryControl data={data} setData={setData} errors={errors} />
+            <InventoryControl data={data} setData={setData} errors={errors} managedLots={productPolicy.lotsEnabled && data.requires_lot} />
             <SelectField label="Unidad base" name="product_unit_id" value={data.product_unit_id} onChange={(event) => selectUnit(event.target.value)} error={errors.product_unit_id} helpTitle="Unidad base" helpTooltip="Es la unidad principal del inventario. El stock se guarda en esta unidad. Otras unidades como caja, bolsa o kilo pueden venderse si configuras su equivalencia hacia la unidad base." required>
                 <option value="">Seleccione unidad</option>
                 {units.map((unit) => (
@@ -254,6 +259,11 @@ export default function ProductFormFields({ data, setData, errors = {}, thicknes
                     </option>
                 ))}
             </SelectField>
+            <div className="rounded-md border border-sky-200 bg-sky-50 p-3 text-sm text-sky-950 dark:border-sky-800 dark:bg-sky-950/40 dark:text-sky-100 sm:col-span-2">
+                <p className="font-semibold">1. Unidad base → 2. Equivalencias o espesor → 3. Lotes y cantidades</p>
+                <p className="mt-1">El stock del producto y sus lotes se guarda en {selectedUnit?.symbol ?? data.base_unit}. Para controlar metros elige Metro (m). Las equivalencias convierten unidades comerciales de largo fijo; el espesor convierte kg a metros. Si ya conoces los metros, ingrésalos directamente y conserva el peso como referencia.</p>
+                <p className="mt-1">La categoría propone una unidad inicial: comprueba que sea la que necesitas antes de registrar existencias. Con historial de lotes, cambiarla requiere una migración de cantidades.</p>
+            </div>
             {productPolicy.unitEquivalencesEnabled === false ? (
                 <div className="sm:col-span-2 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-100">
                     Las equivalencias de unidades estan desactivadas para este perfil de negocio. El producto se comprara y vendera solo en su unidad base.
@@ -471,7 +481,12 @@ function ProductVariants({ data, errors, addVariant, updateVariant, updateVarian
     );
 }
 
-function InventoryControl({ data, setData, errors }) {
+function InventoryControl({ data, setData, errors, managedLots = false }) {
+    if (managedLots) return <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-950 dark:border-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-100 sm:col-span-2">
+        <h3 className="font-semibold">Control por sucursal y lote activo</h3>
+        <p className="mt-1">Cada entrada y salida identifica el lote. Su saldo forma parte del stock total de la sucursal; no se registra una segunda cantidad de stock general. El checkbox «Este producto maneja lotes» gobierna este control.</p>
+        {errors.inventory_tracking_mode ? <p className="mt-1 text-red-700">{errors.inventory_tracking_mode}</p> : null}
+    </div>;
     return (
         <div className="sm:col-span-2">
             <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950/40">
@@ -518,7 +533,7 @@ function InventoryControl({ data, setData, errors }) {
     );
 }
 
-function CatalogTraceability({ data, setData, errors, productPolicy }) {
+function CatalogTraceability({ data, setData, errors, productPolicy, branches, activeBranchId, lockLotBranch, lotEntryContext }) {
     return (
         <div className="sm:col-span-2">
             <div className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-950/40">
@@ -529,10 +544,11 @@ function CatalogTraceability({ data, setData, errors, productPolicy }) {
                     </ContextHelp>
                 </div>
                 <div className="mt-4 grid gap-3 md:grid-cols-3">
-                    <ToggleOption label="Requiere lote/unidad" checked={data.requires_lot} onChange={(value) => setData('requires_lot', value)} disabled={!productPolicy.lotsEnabled} />
+                    {productPolicy.lotsEnabled ? <ToggleOption label="Este producto maneja lotes" checked={data.requires_lot} onChange={(value) => setData({ ...data, requires_lot: value, lot_registrations: value ? (data.lot_registrations?.length ? data.lot_registrations : [newLotRow(activeBranchId)]) : [] })} /> : null}
                     <ToggleOption label="Requiere vencimiento" checked={data.requires_expiration_date} onChange={(value) => setData('requires_expiration_date', value)} disabled={!productPolicy.expirationDatesEnabled} />
                     <ToggleOption label="Alquilable" checked={data.is_rentable} onChange={(value) => setData('is_rentable', value)} disabled={!productPolicy.rentalsEnabled} />
                 </div>
+                {productPolicy.lotsEnabled && data.requires_lot ? <LotRegistrationFields rows={data.lot_registrations ?? []} onChange={(rows) => setData('lot_registrations', rows)} branches={data.branch_scope === 'specific' ? branches.filter((branch) => data.branch_ids?.map(String).includes(String(branch.id))) : branches} defaultBranchId={activeBranchId} errors={errors} lockBranch={lockLotBranch} baseUnit={data.base_unit} entryContext={lotEntryContext} /> : null}
                 <div className="mt-4">
                     <ProductAdditionalDetails settings={data.catalog_settings ?? {}} onChange={(settings) => setData('catalog_settings', settings)} errors={errors} />
                     {errors.requires_lot ? <p className="mt-1 text-sm text-red-600">{errors.requires_lot}</p> : null}
@@ -554,16 +570,17 @@ function AllowedUnits({ data, units, selectedUnit, errors, toggleAllowedUnit }) 
                         Marca las unidades en las que este producto puede comprarse, venderse o cotizarse. La unidad base siempre queda habilitada. Si agregas otra unidad, configura su equivalencia para que el stock se descuente correctamente.
                     </ContextHelp>
                 </div>
-                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">La unidad base siempre queda habilitada. Agrega otras formas comerciales como caja, unidad, kg, bolsa o paquete.</p>
+                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Marcar una unidad la habilita, pero no define su equivalencia. Para cada unidad adicional configura abajo cuántos {selectedUnit?.symbol ?? data.base_unit} representa. Peso a metros usa el espesor y se elige por separado en la compra o venta.</p>
                 <div className="mt-3 grid gap-2 sm:grid-cols-3">
                     {units.map((unit) => {
                         const isBase = unit.symbol === (selectedUnit?.symbol ?? data.base_unit);
                         const checked = (data.allowed_units ?? []).includes(unit.symbol) || isBase;
+                        const missingConversion = checked && !isBase && !(data.unit_conversions ?? []).some((row) => Number(row.product_unit_id) === Number(unit.id) && row.is_active !== false && Number(row.factor_to_base) > 0);
 
                         return (
                             <label key={unit.id} className="flex items-center gap-3 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm dark:border-slate-800 dark:bg-slate-900">
                                 <input type="checkbox" checked={checked} disabled={isBase} onChange={() => toggleAllowedUnit(unit.symbol)} className="h-4 w-4 rounded border-slate-300 text-brand-primary focus:ring-brand-primary disabled:opacity-60" />
-                                <span>{unit.name} ({unit.symbol}){isBase ? ' - base' : ''}</span>
+                                <span>{unit.name} ({unit.symbol}){isBase ? ' - base' : ''}{missingConversion ? <span className="block text-xs font-semibold text-amber-800 dark:text-amber-200">Falta equivalencia para cantidad directa</span> : null}</span>
                             </label>
                         );
                     })}
@@ -586,7 +603,7 @@ function UnitConversions({ data, units, selectedUnit, errors, addUnitConversion,
                                 Indica cuanto representa una unidad comercial en la unidad base. Ejemplo: si la unidad base es unidad y vendes por caja, configura 1 caja = 12 unidades. Asi el sistema descuenta 12 del stock al vender una caja.
                             </ContextHelp>
                         </div>
-                        <p className="text-xs text-slate-500 dark:text-slate-400">Define cuanto descuenta del stock base cada unidad comercial. Ejemplo: 1 caja = 12 {selectedUnit?.symbol ?? data.base_unit}.</p>
+                        <p className="text-xs text-slate-500 dark:text-slate-400">Define la entrada o salida en la unidad base. {data.base_unit === 'm' ? 'Ejemplo: 1 plancha de largo fijo = 3 m; comprar 10 planchas ingresa 30 m y vender 2 descuenta 6 m. Para largos variables usa Cantidad × largo en el documento.' : `Ejemplo: 1 caja = 12 ${selectedUnit?.symbol ?? data.base_unit}. Para controlar calaminas por metraje, elige Metro (m) como unidad base antes de registrar existencias.`}</p>
                     </div>
                     <button type="button" onClick={addUnitConversion} className="rounded-md border border-brand-primary px-3 py-2 text-sm font-semibold text-brand-primary">
                         Agregar equivalencia
@@ -611,7 +628,7 @@ function UnitConversions({ data, units, selectedUnit, errors, addUnitConversion,
                     </div>
                 ) : (
                     <p className="mt-4 rounded-lg border border-dashed border-slate-300 px-4 py-3 text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
-                        Sin equivalencias adicionales. La venta o compra en unidad base descuenta 1 a 1.
+                        Sin equivalencias adicionales. Compra o vende directamente en {selectedUnit?.symbol ?? data.base_unit}. Para otra unidad, agrega su equivalencia; habilitarla por sí sola no convierte cantidades.
                     </p>
                 )}
             </div>

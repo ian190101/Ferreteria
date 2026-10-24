@@ -6,7 +6,8 @@ import FormField from '../../../../../Shared/Resources/Components/FormField';
 import ModuleHeader from '../../../../../Shared/Resources/Components/ModuleHeader';
 import Pagination from '../../../../../Shared/Resources/Components/Pagination';
 import SelectField from '../../../../../Shared/Resources/Components/SelectField';
-import { Head, router, usePage } from '@inertiajs/react';
+import { Head, Link, router, usePage } from '@inertiajs/react';
+import ProductLotsPanel from '../../../Components/ProductLotsPanel';
 import { useDecimalFormatter } from '@/Utils/formatters';
 import { useEffect, useRef, useState } from 'react';
 
@@ -94,7 +95,7 @@ export default function Index({ products, branches = [], filters = {} }) {
                     </div>
                 </div>
 
-                <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+                <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
                     <table className="min-w-full divide-y divide-slate-200 text-sm dark:divide-slate-800">
                         <thead className="bg-slate-100 text-left text-slate-600 dark:bg-slate-800 dark:text-slate-300">
                             <tr>
@@ -129,6 +130,7 @@ export default function Index({ products, branches = [], filters = {} }) {
                                             <div>
                                                 <p className="font-medium text-slate-900 dark:text-slate-100">{product.name}</p>
                                                 {product.active_variants_count ? <p className="text-xs text-slate-500">{product.active_variants_count} variantes activas</p> : null}
+                                                {product.requires_lot || product.lots_count > 0 ? <ProductLotPreview product={product} /> : null}
                                             </div>
                                         </div>
                                     </td>
@@ -143,12 +145,13 @@ export default function Index({ products, branches = [], filters = {} }) {
                                     <td className="px-4 py-3 text-right">Bs {decimalFormat.cost(product.purchase_price ?? 0)}</td>
                                     <td className="px-4 py-3 text-right">Bs {decimalFormat.money(product.sale_price ?? 0)}</td>
                                     <td className="px-4 py-3 text-right font-semibold text-emerald-600">Bs {decimalFormat.money(Math.max(Number(product.sale_price ?? 0) - Number(product.purchase_price ?? 0), 0))}</td>
-                                    <td className="px-4 py-3">{product.inventory_tracking_mode === 'coil' ? 'Con lote/unidad fisica' : 'Sin lote/unidad fisica'}</td>
+                                    <td className="px-4 py-3">{product.requires_lot ? 'Control por lotes' : product.inventory_tracking_mode === 'coil' ? 'Con lote/unidad fisica' : 'Stock general'}</td>
                                     <td className="px-4 py-3">{product.thickness?.name ?? 'Sin espesor'}</td>
                                     {canManage ? (
                                         <td className="px-4 py-3">
                                             <div className="flex items-center gap-2">
                                                 <IconButton href={route('inventory.products.edit', product.id)} icon="edit" label="Editar" />
+                                                <IconButton href={route('inventory.lots.index', { product: product.id })} icon="barcode" label="Gestionar lotes" />
                                                 {canPrintBarcode ? <IconButton href={route('inventory.products.barcode-label.show', product.id)} icon="barcode" label="Imprimir barcode" /> : null}
                                                 <IconButton
                                                 icon="power"
@@ -209,4 +212,25 @@ function unitLabel(unit) {
         galon: 'Galon',
         rollo: 'Rollo',
     }[unit] ?? (unit || '-');
+}
+
+function ProductLotPreview({ product }) {
+    const [overview, setOverview] = useState(null);
+    const [error, setError] = useState('');
+    const [loading, setLoading] = useState(false);
+    const load = async (url = route('inventory.lots.index', product.id)) => {
+        setLoading(true);
+        setError('');
+        try {
+            const response = await fetch(url, { credentials: 'same-origin', headers: { Accept: 'application/json' } });
+            if (!response.ok) throw new Error('No se pudo consultar el desglose de lotes.');
+            setOverview(await response.json());
+        } catch (cause) { setError(cause.message); } finally { setLoading(false); }
+    };
+    return <details className="mt-2" onToggle={(event) => { if (event.currentTarget.open && !overview && !loading) load(); }}>
+        <summary className="cursor-pointer text-sm font-semibold text-brand-primary">{product.lots_count ?? 0} lotes: {product.stocked_lots_count ?? 0} con stock{product.depleted_lots_count > 0 ? <span className="ml-2 rounded bg-amber-100 px-2 py-1 text-xs text-amber-900">⚠ {product.depleted_lots_count} lotes en 0</span> : null}</summary>
+        {loading ? <p role="status">Consultando lotes…</p> : null}
+        {error ? <p role="alert" className="text-red-600">{error} <button type="button" onClick={() => load()}>Reintentar</button></p> : null}
+        {overview ? <ProductLotsPanel overview={overview} onPage={load} /> : <Link href={route('inventory.lots.index', product.id)} className="text-sm text-brand-primary">Gestionar lotes</Link>}
+    </details>;
 }

@@ -29,6 +29,23 @@ class BusinessProfileActivationChecklist
             $blockers[] = $this->item('compatibility', 'Compatibilidad del perfil', $error);
         }
 
+        $lotPolicy = app(\App\Modules\Inventory\Services\LotTrackingPolicy::class);
+        if ($lotPolicy->enabled($configuration)) {
+            $unidentified = \App\Modules\Inventory\Models\ProductBranchStock::query()
+                ->join('products', 'products.id', '=', 'product_branch_stocks.product_id')
+                ->where('products.requires_lot', true)
+                ->where('product_branch_stocks.available_meters', '>', 0)
+                ->whereNotExists(fn ($query) => $query->selectRaw('1')->from('product_coils')
+                    ->whereColumn('product_coils.product_id', 'products.id')
+                    ->whereColumn('product_coils.branch_id', 'product_branch_stocks.branch_id')
+                    ->whereNotNull('product_coils.lot_code'))
+                ->limit(10)->get(['products.name', 'product_branch_stocks.branch_id']);
+            foreach ($unidentified as $row) {
+                $blockers[] = $this->item('lot_stock', 'Stock sin lote',
+                    "{$row->name} en sucursal {$row->branch_id} tiene saldo sin lote identificado.");
+            }
+        }
+
         foreach ($requirements as $requirement) {
             $result = $this->checkRequirement((string) $requirement, $configuration);
 

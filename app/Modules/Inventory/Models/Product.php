@@ -105,6 +105,11 @@ class Product extends AuditableModel
         return $this->hasMany(ProductCoil::class);
     }
 
+    public function lots(): HasMany
+    {
+        return $this->hasMany(ProductCoil::class);
+    }
+
     public function unitConversions(): HasMany
     {
         return $this->hasMany(ProductUnitConversion::class);

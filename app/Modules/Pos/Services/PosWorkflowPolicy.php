@@ -2,13 +2,14 @@
 
 namespace App\Modules\Pos\Services;
 
+use App\Modules\Inventory\Services\LotTrackingPolicy;
 use App\Modules\SystemSuperadmin\Services\ActiveBusinessProfile;
 
 class PosWorkflowPolicy
 {
     private array $payload;
 
-    public function __construct()
+    public function __construct(private readonly LotTrackingPolicy $lots)
     {
         $this->payload = ActiveBusinessProfile::payload();
     }
@@ -250,6 +251,7 @@ class PosWorkflowPolicy
             'supportsServices' => $this->supportsServices(),
             'requiresCustomer' => $this->requiresCustomer(),
             'manualSelectionAllowed' => $this->manualSelectionAllowed(),
+            'lotTrackingEnabled' => $this->lots->enabled($this->lots->activeConfiguration()),
         ];
     }
 }

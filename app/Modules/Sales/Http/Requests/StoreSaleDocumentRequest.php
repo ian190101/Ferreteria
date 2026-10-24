@@ -9,6 +9,8 @@ use App\Modules\Inventory\Models\Product;
 use App\Modules\Inventory\Models\ProductBranchStock;
 use App\Modules\Inventory\Models\ProductCoil;
 use App\Modules\Inventory\Services\ProductWorkflowPolicy;
+use App\Modules\Inventory\Services\InventoryQuantityService;
+use App\Modules\Inventory\Services\LotTrackingPolicy;
 use App\Modules\Payments\Models\PaymentMethod;
 use App\Modules\Pos\Services\PosWorkflowPolicy;
 use App\Modules\Sales\Models\AdvanceOption;
@@ -41,6 +43,8 @@ class StoreSaleDocumentRequest extends FormRequest
             'items.*.display_quantity' => ['nullable', 'numeric'],
             'items.*.base_quantity' => ['nullable', 'numeric'],
             'items.*.length' => ['nullable', 'numeric'],
+            'items.*.entered_weight' => ['nullable', 'regex:/^\d+(?:\.\d+)?$/D', 'numeric', 'max:999999999999.999'],
+            'items.*.weight_unit' => ['nullable', 'in:kg,ton'],
         ])->validate();
 
         \Illuminate\Support\Facades\Validator::make($this->all(), [
@@ -55,15 +59,32 @@ class StoreSaleDocumentRequest extends FormRequest
         ])->validate();
 
         $products = Product::query()
-            ->with('unitConversions.unit:id,symbol')
+            ->with(['unitConversions.unit:id,symbol', 'thickness'])
             ->whereIn('id', collect($this->input('items', []))->pluck('product_id')->filter()->unique()->values())
-            ->get(['id', 'base_unit'])
+            ->get(['id', 'base_unit', 'thickness_id', 'is_inventory_item', 'requires_lot'])
             ->keyBy('id');
 
         $items = collect($this->input('items', []))
             ->map(function (array $item) use ($products): array {
                 $mode = $item['calculation_mode'] ?? 'direct';
                 $product = $products->get($item['product_id'] ?? null);
+                $policy = app(LotTrackingPolicy::class);
+                $managed = $product && $policy->required($product, $policy->activeConfiguration());
+                $exact = app(InventoryQuantityService::class);
+
+                if ($managed && $mode === 'weight' && filled($item['entered_weight'] ?? null)) {
+                    try {
+                        $kg = $exact->multiplyExact((string) $item['entered_weight'], ($item['weight_unit'] ?? 'kg') === 'ton' ? '1000' : '1');
+                        $item['meters'] = $exact->metersFromWeightExact($kg, $product->thickness?->kg_per_meter, $product->thickness?->kg_to_meter_factor);
+                        $item['display_quantity'] = $item['meters'];
+                    } catch (\InvalidArgumentException $exception) {
+                        throw \Illuminate\Validation\ValidationException::withMessages(['items' => $exception->getMessage()]);
+                    }
+                }
+
+                if ($managed && $mode === 'length' && filled($item['base_quantity'] ?? $item['length'] ?? null)) {
+                    $item['meters'] = $exact->multiplyExact((string) ($item['display_quantity'] ?? '0'), (string) ($item['base_quantity'] ?? $item['length']));
+                }
 
                 if ($mode === 'weight' && blank($item['meters'] ?? null)) {
                     $quantity = $this->positiveDecimal($item['base_quantity'] ?? null)
@@ -84,7 +105,7 @@ class StoreSaleDocumentRequest extends FormRequest
                 if ($mode === 'direct' && filled($item['display_quantity'] ?? null)) {
                     $quantity = $this->positiveDecimal($item['display_quantity']);
                     if ($quantity) {
-                        $item['meters'] = Decimal::round(bcmul($quantity, $this->unitFactorToBaseExact($product, $item['display_unit_label'] ?? $item['unit_label'] ?? null), 12), 3);
+                        $item['meters'] = $exact->multiplyExact($quantity, $this->unitFactorToBaseExact($product, $item['display_unit_label'] ?? $item['unit_label'] ?? null));
                     }
                 }
 
@@ -112,6 +133,10 @@ class StoreSaleDocumentRequest extends FormRequest
 
         $conversion = $product->unitConversions
             ->first(fn ($row) => $row->is_active && $row->unit?->symbol === $unitSymbol);
+        $policy = app(LotTrackingPolicy::class);
+        if (! $conversion && $policy->required($product, $policy->activeConfiguration())) {
+            throw \Illuminate\Validation\ValidationException::withMessages(['items' => 'La unidad seleccionada no tiene una conversión activa a la unidad base del producto.']);
+        }
 
         return $conversion ? (string) $conversion->factor_to_base : '1';
     }
@@ -175,6 +200,7 @@ class StoreSaleDocumentRequest extends FormRequest
             'items.*' => ['array'],
             'items.*.product_id' => ['required', 'integer', 'exists:products,id'],
             'items.*.product_coil_id' => ['nullable', 'integer', 'exists:product_coils,id'],
+            'items.*.lot_id' => ['nullable', 'integer', 'exists:product_coils,id'],
             'items.*.description' => ['required', 'string', 'max:255'],
             'items.*.unit_label' => ['required', 'string', 'max:16'],
             'items.*.display_quantity' => ['nullable', 'numeric', 'gt:0', 'max:999999999999.999'],
@@ -300,13 +326,14 @@ class StoreSaleDocumentRequest extends FormRequest
                 }
 
                 $posTotal = $this->requestedDocumentTotal();
-                $posPayment = (float) $this->input('pos_payment_amount', 0);
+                $posPayment = Decimal::round((string) $this->input('pos_payment_amount', 0), 2);
 
-                if ($this->filled('pos_payment_amount') && ! $posPolicy->allowsPartialBalance() && abs($posPayment - $posTotal) > 0.01) {
+                if ($this->filled('pos_payment_amount') && ! $posPolicy->allowsPartialBalance()
+                    && bccomp($posPayment, $posTotal, 2) !== 0) {
                     $validator->errors()->add('pos_payment_amount', 'Este perfil POS exige cobrar el total completo en un solo cierre.');
                 }
 
-                if ($this->filled('pos_payment_amount') && $posPayment > ($posTotal + 0.01)) {
+                if ($this->filled('pos_payment_amount') && bccomp($posPayment, $posTotal, 2) > 0) {
                     $validator->errors()->add('pos_payment_amount', 'El cobro POS no puede superar el total del documento.');
                 }
             }
@@ -331,8 +358,10 @@ class StoreSaleDocumentRequest extends FormRequest
             $productIds = $items->pluck('product_id')->filter()->unique()->values();
             $products = Product::query()
                 ->whereIn('id', $productIds)
-                ->get(['id', 'base_unit', 'allowed_units', 'inventory_tracking_mode', 'item_type', 'is_inventory_item', 'is_sellable', 'is_active'])
+                ->get(['id', 'base_unit', 'allowed_units', 'inventory_tracking_mode', 'item_type', 'is_inventory_item', 'requires_lot', 'is_sellable', 'is_active'])
                 ->keyBy('id');
+
+            $this->validateManagedLots($validator, $items, $products);
 
             $sourceQuotation = $this->filled('source_quotation_id')
                 ? Sale::query()->find($this->integer('source_quotation_id'))
@@ -445,6 +474,11 @@ class StoreSaleDocumentRequest extends FormRequest
                     continue;
                 }
 
+                $lotPolicy = app(LotTrackingPolicy::class);
+                if ($lotPolicy->required($product, $lotPolicy->activeConfiguration())) {
+                    continue;
+                }
+
                 $meters = round((float) ($item['meters'] ?? 0), 3);
 
                 if ($product->inventory_tracking_mode === Product::TRACKING_COIL) {
@@ -519,13 +553,72 @@ class StoreSaleDocumentRequest extends FormRequest
         });
     }
 
-    private function requestedDocumentTotal(): float
+    private function requestedDocumentTotal(): string
     {
-        return round(collect($this->input('items', []))->sum(function (array $item): float {
-            $gross = (float) ($item['meters'] ?? 0) * (float) ($item['unit_price'] ?? 0);
-            $discount = (float) ($item['discount_amount'] ?? 0);
+        return collect($this->input('items', []))->reduce(function (string $total, array $item): string {
+            $gross = bcmul((string) ($item['meters'] ?? '0'), (string) ($item['unit_price'] ?? '0'), 8);
+            $net = bcsub($gross, (string) ($item['discount_amount'] ?? '0'), 8);
 
-            return max($gross - $discount, 0);
-        }), 2);
+            return bcadd($total, Decimal::round(bccomp($net, '0', 8) < 0 ? '0' : $net, 2), 2);
+        }, '0.00');
+    }
+
+    private function validateManagedLots($validator, $items, $products): void
+    {
+        $policy = app(LotTrackingPolicy::class);
+        $configuration = $policy->activeConfiguration();
+        $quantities = app(InventoryQuantityService::class);
+        $totals = [];
+        $lotIds = [];
+        foreach ($items as $index => $item) {
+            $product = $products->get($item['product_id'] ?? null);
+            if (! $product) {
+                continue;
+            }
+            $managed = $policy->required($product, $configuration);
+            $lotId = $item['lot_id'] ?? null;
+            if (! $managed) {
+                if ($lotId !== null) {
+                    $validator->errors()->add("items.{$index}.lot_id", 'El producto no tiene control de lotes activo.');
+                }
+                continue;
+            }
+            if ($lotId === null || ($item['product_coil_id'] ?? $lotId) != $lotId) {
+                $validator->errors()->add("items.{$index}.lot_id", 'Selecciona una identidad de lote válida.');
+                continue;
+            }
+            try {
+                $amount = $quantities->exact((string) ($item['meters'] ?? '0'));
+                if ($quantities->compareExact($amount, '0') <= 0) {
+                    throw new \InvalidArgumentException('Cantidad inválida.');
+                }
+                $totals[$lotId] = $quantities->addExact($totals[$lotId] ?? '0.000', $amount);
+                $lotIds[$lotId] = [(int) $product->id, $index];
+            } catch (\InvalidArgumentException) {
+                $validator->errors()->add("items.{$index}.meters", 'Cantidad decimal inválida.');
+            }
+        }
+
+        if ($lotIds === []) {
+            return;
+        }
+        $lots = ProductCoil::query()->whereIn('id', array_keys($lotIds))->get()->keyBy('id');
+        $reserved = InventoryReservation::query()->whereIn('product_coil_id', array_keys($lotIds))
+            ->where('status', InventoryReservation::STATUS_ACTIVE)
+            ->selectRaw('product_coil_id, SUM(remaining_meters) AS total')
+            ->groupBy('product_coil_id')->pluck('total', 'product_coil_id');
+        foreach ($lotIds as $lotId => [$productId, $index]) {
+            $lot = $lots->get($lotId);
+            if (! $lot || $lot->product_id !== $productId
+                || $lot->branch_id !== $this->integer('branch_id')
+                || $lot->isVoided() || $lot->trashed() || $lot->status !== 'available') {
+                $validator->errors()->add("items.{$index}.lot_id", 'El lote no está activo para este producto y sucursal.');
+                continue;
+            }
+            $free = $quantities->subtractExact((string) $lot->available_meters, (string) ($reserved[$lotId] ?? '0.000'));
+            if ($quantities->compareExact($free, $totals[$lotId]) < 0) {
+                $validator->errors()->add("items.{$index}.lot_id", 'El lote no tiene saldo libre suficiente.');
+            }
+        }
     }
 }

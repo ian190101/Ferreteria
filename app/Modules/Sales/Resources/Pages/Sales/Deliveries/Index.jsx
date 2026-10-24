@@ -450,7 +450,7 @@ export default function Index({ deliveries, branches, sales, saleItems, drivers 
                                             </div>
                                             {selectedItem ? (
                                                 <p className="text-xs text-slate-500 dark:text-slate-400 sm:col-span-4">
-                                                    Pendiente: {quantityLabel(selectedItem.pending_quantity, selectedItem.display_unit_label, decimalFormat)} ({decimalFormat.measure(selectedItem.pending_meters)} base). Entregado: {quantityLabel(selectedItem.delivered_quantity, selectedItem.display_unit_label, decimalFormat)}. Devuelto: {quantityLabel(selectedItem.returned_quantity, selectedItem.display_unit_label, decimalFormat)}. Origen: {selectedItem.coil?.barcode ?? 'Stock global'}.
+                                                    Pendiente: {quantityLabel(selectedItem.pending_quantity, selectedItem.display_unit_label, decimalFormat)} ({decimalFormat.measure(selectedItem.pending_meters)} base). Entregado: {quantityLabel(selectedItem.delivered_quantity, selectedItem.display_unit_label, decimalFormat)}. Devuelto: {quantityLabel(selectedItem.returned_quantity, selectedItem.display_unit_label, decimalFormat)}. Lote: {selectedItem.lot_code_snapshot ?? selectedItem.lot?.lot_code ?? selectedItem.coil?.barcode ?? 'Stock global'}.
                                                 </p>
                                             ) : null}
                                         </div>
@@ -595,7 +595,7 @@ export default function Index({ deliveries, branches, sales, saleItems, drivers 
                                     <td className="px-4 py-3">
                                         {delivery.items.map((item) => (
                                             <p key={item.id} className="text-xs">
-                                                {item.product?.name ?? '-'} - {quantityLabel(item.display_quantity || item.meters, item.display_unit_label || 'base', decimalFormat)} {item.coil ? `(${item.coil.barcode})` : '(global)'}
+                                                {item.product?.name ?? '-'} - {quantityLabel(item.display_quantity || item.meters, item.display_unit_label || 'base', decimalFormat)} ({item.lot_code_snapshot ?? item.lot?.lot_code ?? item.coil?.barcode ?? 'global'})
                                             </p>
                                         ))}
                                     </td>
@@ -635,7 +635,7 @@ function itemForRow(availableItems, row) {
 }
 
 function itemOptionLabel(item, decimalFormat) {
-    return `${item.product?.name ?? item.description} - ${quantityLabel(item.pending_quantity, item.display_unit_label, decimalFormat)} pend.`;
+    return `${item.product?.name ?? item.description} - ${quantityLabel(item.pending_quantity, item.display_unit_label, decimalFormat)} pend. - lote ${item.lot_code_snapshot ?? item.lot?.lot_code ?? item.coil?.barcode ?? 'global'}`;
 }
 
 function quantityLabel(quantity, unit, decimalFormat) {

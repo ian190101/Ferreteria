@@ -62,11 +62,17 @@ class ProductionOrderController extends Controller
     public function store(StoreProductionOrderRequest $request, InventoryQuantityService $quantities): RedirectResponse
     {
         DB::transaction(function () use ($request, $quantities) {
+            $lotPolicy = app(\App\Modules\Inventory\Services\LotTrackingPolicy::class);
+            $lotPolicy->lockRule();
             $formula = $request->filled('production_formula_id')
                 ? ProductionFormula::query()->with(['items.inputProduct', 'stages', 'outputProduct'])->findOrFail($request->integer('production_formula_id'))
                 : null;
             $inputProduct = $formula?->items->first()?->inputProduct ?? Product::query()->findOrFail($request->integer('input_product_id'));
             $outputProduct = $formula?->outputProduct ?? Product::query()->findOrFail($request->integer('output_product_id'));
+            foreach (($formula?->items->pluck('inputProduct') ?? collect())->push($inputProduct)->push($outputProduct)
+                ->filter()->unique('id') as $affectedProduct) {
+                $lotPolicy->assertAlternativeWriterAllowed($affectedProduct);
+            }
             $outputMeters = Decimal::round((string) $request->input('output_meters'), 3);
             if (bccomp($outputMeters, '0', 3) <= 0) {
                 throw \Illuminate\Validation\ValidationException::withMessages(['output_meters' => 'La producción debe ser mayor que cero.']);

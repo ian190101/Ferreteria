@@ -38,6 +38,12 @@ Artisan::command('production:invalidate-caches', function (OperationalCacheOutbo
 
 app(Schedule::class)->command('production:invalidate-caches')->everyMinute();
 
+Artisan::command('inventory:expire-lot-reservations', function (\App\Modules\Inventory\Services\InventoryReservationService $reservations) {
+    $this->info('Reservas de lote vencidas: '.$reservations->expireDue());
+});
+
+app(Schedule::class)->command('inventory:expire-lot-reservations')->everyMinute()->withoutOverlapping();
+
 Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
 })->purpose('Display an inspiring quote');

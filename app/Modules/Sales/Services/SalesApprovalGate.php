@@ -13,7 +13,7 @@ class SalesApprovalGate
     {
     }
 
-    public function requireForHighDiscount(User $user, int $branchId, float $discountPercent, array $payload = []): void
+    public function requireForHighDiscount(User $user, int $branchId, string|float $discountPercent, array $payload = []): void
     {
         $rule = $this->approvals->requiredRule('sale', 'high_discount', [
             'branch_id' => $branchId,

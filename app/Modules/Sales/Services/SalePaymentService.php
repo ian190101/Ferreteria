@@ -49,7 +49,7 @@ class SalePaymentService
         $this->banks->recordSalePayment($payment);
 
         if ($this->workflow->shouldDiscountInventoryOnPayment()) {
-            $sale->load('items.product:id,inventory_tracking_mode,item_type,is_inventory_item,product_category_id');
+            $sale->load('items.product:id,inventory_tracking_mode,item_type,is_inventory_item,requires_lot,product_category_id');
             $this->inventory->decrementForSale($sale, $userId);
         }
     }

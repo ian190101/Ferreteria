@@ -3,11 +3,11 @@
 namespace App\Modules\Inventory\Models;
 
 use App\Modules\Branches\Models\Branch;
+use App\Modules\Shared\Models\AuditableModel;
 use Illuminate\Database\Eloquent\Casts\Attribute;
-use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-class ProductBranchStock extends Model
+class ProductBranchStock extends AuditableModel
 {
     protected $fillable = [
         'branch_id',

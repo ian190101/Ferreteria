@@ -49,7 +49,45 @@ class InventoryAdjustmentController extends Controller
     public function store(StoreInventoryAdjustmentRequest $request, InventoryQuantityService $quantities): RedirectResponse
     {
         DB::transaction(function () use ($request, $quantities) {
+            $lotPolicy = app(\App\Modules\Inventory\Services\LotTrackingPolicy::class);
+            $lotPolicy->lockRule();
+            $configuration = $lotPolicy->persistedConfiguration();
             $product = Product::query()->findOrFail($request->integer('product_id'));
+            if ($lotPolicy->required($product, $configuration)) {
+                $quantity = $quantities->exact((string) $request->input('meters'));
+                $deltaExact = $request->input('type') === InventoryAdjustment::TYPE_DECREASE ? '-'.$quantity : $quantity;
+                $lotId = (int) $request->input('lot_id');
+                app(\App\Modules\Inventory\Services\LotInventoryService::class)->lockBatch([[
+                    'product_id' => (int) $product->id, 'branch_id' => $request->integer('branch_id'), 'lot_id' => $lotId,
+                ]]);
+                $lot = ProductCoil::query()->findOrFail($lotId);
+                if ($lot->isVoided() && ($request->input('type') !== InventoryAdjustment::TYPE_DECREASE
+                    || ! app(\App\Modules\Inventory\Services\LotAuthorization::class)->canManage($request->user(), $lot))) {
+                    abort(403);
+                }
+                $stock = ProductBranchStock::query()->where('branch_id', $request->integer('branch_id'))
+                    ->where('product_id', $product->id)->firstOrFail();
+                $adjustment = InventoryAdjustment::query()->create([
+                    'branch_id' => $request->integer('branch_id'),
+                    'product_id' => $product->id,
+                    'product_coil_id' => $lotId,
+                    'user_id' => $request->user()->id,
+                    'adjustment_number' => $request->string('adjustment_number')->toString(),
+                    'type' => $request->string('type')->toString(),
+                    'meters_delta' => $deltaExact,
+                    'meters_before' => $stock->available_meters,
+                    'meters_after' => $quantities->addExact((string) $stock->available_meters, $deltaExact),
+                    'reason' => $request->string('reason')->toString(),
+                    'adjusted_at' => now(),
+                    'notes' => $request->string('notes')->toString() ?: null,
+                ]);
+                app(\App\Modules\Inventory\Services\LotInventoryService::class)->apply(
+                    (int) $product->id, $request->integer('branch_id'), $lotId, $deltaExact,
+                    'inventory_adjustment', $adjustment, 'lot-adjustment:'.$adjustment->id,
+                    (int) $request->user()->id, $lot->isVoided());
+                return;
+            }
+            $lotPolicy->assertAlternativeWriterAllowed($product);
             $meters = round((float) $request->input('meters'), 3);
             $delta = $request->input('type') === InventoryAdjustment::TYPE_DECREASE ? -$meters : $meters;
 
@@ -88,7 +126,9 @@ class InventoryAdjustmentController extends Controller
             ]);
         });
 
-        return redirect()->route('inventory.adjustments.index')->with('success', 'Ajuste de inventario registrado correctamente.');
+        return redirect()->route('inventory.adjustments.index')->with('success', 'Ajuste de inventario registrado correctamente.')
+            ->with('warning', $request->input('type') === InventoryAdjustment::TYPE_DECREASE
+                ? app(\App\Modules\Inventory\Services\LotDepletionNotice::class)->forLots([(int) $request->input('lot_id')]) : null);
     }
 
     private function adjustCoil(int $coilId, float $delta): array

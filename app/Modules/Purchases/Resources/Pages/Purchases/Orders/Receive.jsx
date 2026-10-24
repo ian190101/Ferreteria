@@ -5,10 +5,11 @@ import ModuleHeader from '../../../../../Shared/Resources/Components/ModuleHeade
 import SelectField from '../../../../../Shared/Resources/Components/SelectField';
 import { decimalStep, useDecimalFormatter } from '@/Utils/formatters';
 import { Head, Link, useForm } from '@inertiajs/react';
+import PurchaseLotChoice, { normalizeLotCode } from '../../../Components/PurchaseLotChoice';
 
-export default function Receive({ order }) {
+export default function Receive({ order, lotTrackingEnabled = false }) {
     const decimalFormat = useDecimalFormatter('purchases');
-    const { data, setData, post, processing, errors } = useForm({
+    const { data, setData, post, processing, errors, transform } = useForm({
         received_at: new Date().toISOString().slice(0, 10),
         notes: '',
         items: order.items.map((item) => ({
@@ -17,15 +18,23 @@ export default function Receive({ order }) {
             weight_unit: 'kg',
             kilograms: '',
             coil_barcode: item.product?.inventory_tracking_mode === 'coil' ? item.coil_barcode ?? '' : '',
+            lot_id: item.product?.requires_lot ? item.product_coil_id ?? '' : '',
+            new_lot_code: item.product_coil_id ? '' : item.lot_number ?? '',
+            lot_mode: item.product_coil_id ? 'existing' : 'new',
         })),
     });
 
     const updateItem = (index, field, value) => {
         setData('items', data.items.map((item, itemIndex) => (itemIndex === index ? { ...item, [field]: value } : item)));
     };
+    const addAnotherLot = (index) => {
+        const source = data.items[index];
+        setData('items', [...data.items.slice(0, index + 1), { ...source, meters: '', kilograms: '', coil_barcode: '', lot_id: '', new_lot_code: '', lot_mode: 'new' }, ...data.items.slice(index + 1)]);
+    };
 
     const submit = (event) => {
         event.preventDefault();
+        transform((payload) => ({ ...payload, items: payload.items.map((item) => ({ ...item, new_lot_code: item.lot_mode === 'new' ? normalizeLotCode(item.new_lot_code) : '', lot_id: item.lot_mode === 'existing' ? item.lot_id : '' })) }));
         post(route('purchases.orders.receipts.store', order.id), { preserveScroll: true });
     };
 
@@ -60,29 +69,33 @@ export default function Receive({ order }) {
                                     <th className="px-4 py-3 text-right font-medium">Pedido</th>
                                     <th className="px-4 py-3 text-right font-medium">Recibido</th>
                                     <th className="px-4 py-3 text-right font-medium">Pendiente</th>
-                                    <th className="px-4 py-3 font-medium">Metros a recibir</th>
+                                    <th className="px-4 py-3 font-medium">Cantidad a recibir (unidad base)</th>
                                     <th className="px-4 py-3 font-medium">Peso</th>
                                     <th className="px-4 py-3 font-medium">Unidad</th>
                                     <th className="px-4 py-3 font-medium">Barcode bobina</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                                {order.items.map((item, index) => {
+                                {data.items.map((entry, index) => {
+                                    const item = order.items.find((row) => String(row.id) === String(entry.purchase_order_item_id));
                                     const pending = Math.max(Number(item.meters ?? 0) - Number(item.received_meters ?? 0), 0);
                                     const isCoil = item.product?.inventory_tracking_mode === 'coil';
 
                                     return (
-                                        <tr key={item.id} className={pending <= 0 ? 'bg-slate-50 opacity-70 dark:bg-slate-950' : ''}>
+                                        <tr key={`${item.id}-${index}`} className={pending <= 0 ? 'bg-slate-50 opacity-70 dark:bg-slate-950' : ''}>
                                             <td className="px-4 py-3">
                                                 <p className="font-semibold text-slate-900 dark:text-slate-100">{item.product?.name ?? '-'}</p>
                                                 <p className="text-xs text-slate-500">{item.product?.sku ?? ''}</p>
+                                                {lotTrackingEnabled && item.product?.requires_lot && pending > 0 ? <button type="button" onClick={() => addAnotherLot(index)} className="mt-3 text-left text-sm font-semibold text-brand-primary">+ Agregar otro lote de este producto</button> : null}
+                                                {data.items.filter((row) => row.purchase_order_item_id === item.id).length > 1 ? <button type="button" onClick={() => setData('items', data.items.filter((_, position) => position !== index))} className="mt-2 block text-sm text-red-700">Quitar línea de lote</button> : null}
                                             </td>
                                             <td className="px-4 py-3 text-right">{decimalFormat.measure(item.meters ?? 0)}</td>
                                             <td className="px-4 py-3 text-right">{decimalFormat.measure(item.received_meters ?? 0)}</td>
                                             <td className="px-4 py-3 text-right font-semibold">{decimalFormat.measure(pending)}</td>
                                             <td className="px-4 py-3">
                                                 <FormField
-                                                    label="Metros"
+                                                    label={`Cantidad (${item.product?.base_unit ?? 'm'})`}
+                                                    helpText={lotTrackingEnabled && item.product?.requires_lot ? 'Ingresa los metros conocidos. Si los omites, se calculan desde el peso y el espesor del producto.' : undefined}
                                                     name={`items.${index}.meters`}
                                                     type="number"
                                                     min="0"
@@ -96,7 +109,7 @@ export default function Receive({ order }) {
                                             </td>
                                             <td className="px-4 py-3">
                                                 <FormField
-                                                    label="Peso"
+                                                    label={lotTrackingEnabled && item.product?.requires_lot ? 'Peso (referencia si indicas metros)' : 'Peso de referencia'}
                                                     name={`items.${index}.kilograms`}
                                                     type="number"
                                                     min="0"
@@ -121,14 +134,14 @@ export default function Receive({ order }) {
                                                 </SelectField>
                                             </td>
                                             <td className="px-4 py-3">
-                                                <FormField
+                                                {lotTrackingEnabled && item.product?.requires_lot ? <PurchaseLotChoice productId={item.product_id} branchId={order.branch_id} unit={item.product?.base_unit ?? 'm'} context="receipt" item={data.items[index]} index={index} errors={errors} onChange={(patch) => setData('items', data.items.map((entry, itemIndex) => itemIndex === index ? { ...entry, ...patch } : entry))} /> : <FormField
                                                     label="Barcode bobina"
                                                     name={`items.${index}.coil_barcode`}
                                                     value={data.items[index]?.coil_barcode ?? ''}
                                                     disabled={!isCoil || pending <= 0}
                                                     onChange={(event) => updateItem(index, 'coil_barcode', event.target.value)}
                                                     error={errors[`items.${index}.coil_barcode`]}
-                                                />
+                                                />}
                                             </td>
                                         </tr>
                                     );

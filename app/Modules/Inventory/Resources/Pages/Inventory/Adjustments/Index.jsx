@@ -6,6 +6,7 @@ import Pagination from '../../../../../Shared/Resources/Components/Pagination';
 import SelectField from '../../../../../Shared/Resources/Components/SelectField';
 import { decimalStep, useDecimalFormatter } from '@/Utils/formatters';
 import { Head, router, useForm, usePage } from '@inertiajs/react';
+import LotSelector from '../../../Components/LotSelector';
 
 export default function Index({ adjustments, branches, products, coils, filters }) {
     const permissions = usePage().props.auth.permissions;
@@ -21,6 +22,7 @@ export default function Index({ adjustments, branches, products, coils, filters 
         branch_id: branches[0]?.id ?? '',
         product_id: products[0]?.id ?? '',
         product_coil_id: '',
+        lot_id: '',
         adjustment_number: '',
         type: 'increase',
         meters: '',
@@ -54,7 +56,7 @@ export default function Index({ adjustments, branches, products, coils, filters 
 
                 {canManage ? (
                     <form onSubmit={submitAdjustment} className="mb-6 grid gap-4 rounded-lg border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:grid-cols-2 lg:grid-cols-4">
-                        <SelectField label="Sucursal" name="branch_id" value={adjustmentForm.data.branch_id} onChange={(event) => adjustmentForm.setData('branch_id', event.target.value)} error={adjustmentForm.errors.branch_id} required>
+                        <SelectField label="Sucursal" name="branch_id" value={adjustmentForm.data.branch_id} onChange={(event) => adjustmentForm.setData((data) => ({ ...data, branch_id: event.target.value, lot_id: '', product_coil_id: '' }))} error={adjustmentForm.errors.branch_id} required>
                             {branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
                         </SelectField>
                         <FormField label="Numero" name="adjustment_number" value={adjustmentForm.data.adjustment_number} onChange={(event) => adjustmentForm.setData('adjustment_number', event.target.value)} error={adjustmentForm.errors.adjustment_number} required />
@@ -64,13 +66,14 @@ export default function Index({ adjustments, branches, products, coils, filters 
                         </SelectField>
                         <FormField label="Fecha" name="adjusted_at" value="Se registrara automaticamente al guardar" disabled className="mt-1 block w-full rounded-md border-gray-300 bg-slate-100 shadow-sm dark:border-gray-700 dark:bg-slate-800 dark:text-gray-300" error={adjustmentForm.errors.adjusted_at} />
 
-                        <SelectField label="Producto" name="product_id" value={adjustmentForm.data.product_id} onChange={(event) => adjustmentForm.setData('product_id', event.target.value)} error={adjustmentForm.errors.product_id} required>
+                        <SelectField label="Producto" name="product_id" value={adjustmentForm.data.product_id} onChange={(event) => adjustmentForm.setData((data) => ({ ...data, product_id: event.target.value, lot_id: '', product_coil_id: '' }))} error={adjustmentForm.errors.product_id} required>
                             {products.map((product) => <option key={product.id} value={product.id}>{product.name} ({product.inventory_tracking_mode === 'coil' ? 'Individual por lote/unidad' : 'Global por sucursal'})</option>)}
                         </SelectField>
-                        <SelectField label="Lote/unidad fisica" name="product_coil_id" value={adjustmentForm.data.product_coil_id} onChange={(event) => adjustmentForm.setData('product_coil_id', event.target.value)} error={adjustmentForm.errors.product_coil_id} disabled={selectedProduct?.inventory_tracking_mode !== 'coil'}>
+                        {selectedProduct?.requires_lot ? <LotSelector productId={adjustmentForm.data.product_id} branchId={adjustmentForm.data.branch_id} context="adjustment" value={adjustmentForm.data.lot_id} onChange={(value) => adjustmentForm.setData('lot_id', value)} error={adjustmentForm.errors.lot_id} /> : <SelectField label="Lote/unidad fisica" name="product_coil_id" value={adjustmentForm.data.product_coil_id} onChange={(event) => adjustmentForm.setData('product_coil_id', event.target.value)} error={adjustmentForm.errors.product_coil_id} disabled={selectedProduct?.inventory_tracking_mode !== 'coil'}>
                             <option value="">Sin lote/unidad</option>
                             {availableCoils.map((coil) => <option key={coil.id} value={coil.id}>{coil.barcode} - {decimalFormat.measure(coil.available_meters)} m</option>)}
-                        </SelectField>
+                        </SelectField>}
+                        {selectedProduct?.requires_lot ? <p className="text-xs text-amber-700 sm:col-span-2 lg:col-span-4">La disminución respeta el saldo reservado. Un lote anulado conserva su stock físico bloqueado.</p> : null}
                         <FormField label="Cantidad" name="meters" type="number" step={decimalStep(decimalFormat.decimalsFor('measure'))} min={decimalStep(decimalFormat.decimalsFor('measure'))} value={adjustmentForm.data.meters} onChange={(event) => adjustmentForm.setData('meters', event.target.value)} error={adjustmentForm.errors.meters} required />
                         <FormField label="Motivo" name="reason" value={adjustmentForm.data.reason} onChange={(event) => adjustmentForm.setData('reason', event.target.value)} error={adjustmentForm.errors.reason} required />
                         <div className="sm:col-span-2 lg:col-span-4">

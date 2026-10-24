@@ -6,8 +6,9 @@ import Pagination from '../../../../../Shared/Resources/Components/Pagination';
 import SelectField from '../../../../../Shared/Resources/Components/SelectField';
 import { decimalStep, useDecimalFormatter } from '@/Utils/formatters';
 import { Head, router, useForm, usePage } from '@inertiajs/react';
+import LotSelector from '../../../Components/LotSelector';
 
-export default function Index({ reservations, branches, products, coils, quotations, filters, statuses }) {
+export default function Index({ reservations, branches, products, coils, quotations, quotationItems = [], filters, statuses }) {
     const permissions = usePage().props.auth.permissions;
     const canManage = permissions.includes('inventory.reservations.manage');
     const decimalFormat = useDecimalFormatter('inventory');
@@ -21,7 +22,9 @@ export default function Index({ reservations, branches, products, coils, quotati
         branch_id: branches[0]?.id ?? '',
         product_id: products[0]?.id ?? '',
         product_coil_id: '',
+        lot_id: '',
         sale_id: '',
+        sale_item_id: '',
         meters: '',
         expires_at: '',
         reason: '',
@@ -41,7 +44,7 @@ export default function Index({ reservations, branches, products, coils, quotati
         event.preventDefault();
         reservationForm.post(route('inventory.reservations.store'), {
             preserveScroll: true,
-            onSuccess: () => reservationForm.reset('product_coil_id', 'sale_id', 'meters', 'expires_at', 'reason', 'notes'),
+            onSuccess: () => reservationForm.reset('product_coil_id', 'lot_id', 'sale_id', 'sale_item_id', 'meters', 'expires_at', 'reason', 'notes'),
         });
     };
 
@@ -54,20 +57,21 @@ export default function Index({ reservations, branches, products, coils, quotati
 
                 {canManage ? (
                     <form onSubmit={submitReservation} className="mb-6 grid gap-4 rounded-lg border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:grid-cols-2 lg:grid-cols-4">
-                        <SelectField label="Sucursal" name="branch_id" value={reservationForm.data.branch_id} onChange={(event) => reservationForm.setData('branch_id', event.target.value)} error={reservationForm.errors.branch_id} required>
+                        <SelectField label="Sucursal" name="branch_id" value={reservationForm.data.branch_id} onChange={(event) => reservationForm.setData((data) => ({ ...data, branch_id: event.target.value, lot_id: '', product_coil_id: '' }))} error={reservationForm.errors.branch_id} required>
                             {branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
                         </SelectField>
-                        <SelectField label="Producto" name="product_id" value={reservationForm.data.product_id} onChange={(event) => reservationForm.setData('product_id', event.target.value)} error={reservationForm.errors.product_id} required>
+                        <SelectField label="Producto" name="product_id" value={reservationForm.data.product_id} onChange={(event) => reservationForm.setData((data) => ({ ...data, product_id: event.target.value, lot_id: '', product_coil_id: '' }))} error={reservationForm.errors.product_id} required>
                             {products.map((product) => <option key={product.id} value={product.id}>{product.name} ({product.inventory_tracking_mode === 'coil' ? 'Individual por lote/unidad' : 'Global por sucursal'})</option>)}
                         </SelectField>
-                        <SelectField label="Lote/unidad fisica" name="product_coil_id" value={reservationForm.data.product_coil_id} onChange={(event) => reservationForm.setData('product_coil_id', event.target.value)} error={reservationForm.errors.product_coil_id} disabled={selectedProduct?.inventory_tracking_mode !== 'coil'}>
+                        {selectedProduct?.requires_lot ? <LotSelector productId={reservationForm.data.product_id} branchId={reservationForm.data.branch_id} context="reservation" value={reservationForm.data.lot_id} onChange={(value) => reservationForm.setData('lot_id', value)} error={reservationForm.errors.lot_id} /> : <SelectField label="Lote/unidad fisica" name="product_coil_id" value={reservationForm.data.product_coil_id} onChange={(event) => reservationForm.setData('product_coil_id', event.target.value)} error={reservationForm.errors.product_coil_id} disabled={selectedProduct?.inventory_tracking_mode !== 'coil'}>
                             <option value="">Sin lote/unidad</option>
                             {availableCoils.map((coil) => <option key={coil.id} value={coil.id}>{coil.barcode} - {decimalFormat.measure(coil.available_meters)} m</option>)}
-                        </SelectField>
+                        </SelectField>}
                         <SelectField label="Cotizacion" name="sale_id" value={reservationForm.data.sale_id} onChange={(event) => reservationForm.setData('sale_id', event.target.value)} error={reservationForm.errors.sale_id}>
                             <option value="">Sin cotizacion</option>
                             {availableQuotations.map((quotation) => <option key={quotation.id} value={quotation.id}>{quotation.receipt_number} · {quotation.customer_name ?? 'Cliente'}</option>)}
                         </SelectField>
+                        {selectedProduct?.requires_lot ? <SelectField label="Línea de cotización" name="sale_item_id" value={reservationForm.data.sale_item_id} onChange={(event) => reservationForm.setData('sale_item_id', event.target.value)} error={reservationForm.errors.sale_item_id} required><option value="">Selecciona una línea</option>{quotationItems.filter((item) => String(item.sale_id) === String(reservationForm.data.sale_id) && String(item.product_id) === String(reservationForm.data.product_id) && String(item.product_coil_id) === String(reservationForm.data.lot_id)).map((item) => <option key={item.id} value={item.id}>Línea {item.id} · {decimalFormat.measure(item.meters)} m</option>)}</SelectField> : null}
                         <FormField label="Cantidad" name="meters" type="number" step={decimalStep(decimalFormat.decimalsFor('measure'))} min={decimalStep(decimalFormat.decimalsFor('measure'))} value={reservationForm.data.meters} onChange={(event) => reservationForm.setData('meters', event.target.value)} error={reservationForm.errors.meters} required />
                         <FormField label="Expira" name="expires_at" type="datetime-local" value={reservationForm.data.expires_at} onChange={(event) => reservationForm.setData('expires_at', event.target.value)} error={reservationForm.errors.expires_at} />
                         <FormField label="Motivo" name="reason" value={reservationForm.data.reason} onChange={(event) => reservationForm.setData('reason', event.target.value)} error={reservationForm.errors.reason} />
@@ -122,11 +126,11 @@ export default function Index({ reservations, branches, products, coils, quotati
                                 <tr key={reservation.id}>
                                     <td className="px-4 py-3">
                                         <p className="font-medium">{reservation.product?.name ?? '-'}</p>
-                                        <p className="text-xs text-slate-500">{reservation.coil?.barcode ?? 'Global'}</p>
+                                        <p className="text-xs text-slate-500">{reservation.lot_code_snapshot ?? reservation.lot?.lot_code ?? reservation.coil?.barcode ?? 'Global'}</p>
                                     </td>
                                     <td className="px-4 py-3">{reservation.branch?.name ?? '-'}</td>
                                     <td className="px-4 py-3">{reservation.sale?.receipt_number ?? '-'}</td>
-                                    <td className="px-4 py-3 text-right">{decimalFormat.measure(reservation.meters ?? 0)} m</td>
+                                    <td className="px-4 py-3 text-right">{decimalFormat.measure(reservation.meters ?? 0)} m{reservation.remaining_meters !== null && reservation.remaining_meters !== undefined ? <p className="text-xs text-slate-500">Pendiente: {decimalFormat.measure(reservation.remaining_meters)} m</p> : null}</td>
                                     <td className="px-4 py-3">{statusLabel(reservation.status)}</td>
                                     <td className="whitespace-nowrap px-4 py-3">{formatDate(reservation.expires_at)}</td>
                                     <td className="px-4 py-3">{reservation.user?.name ?? '-'}</td>

@@ -2,6 +2,7 @@
 
 namespace App\Modules\Sales\Http\Requests;
 
+use App\Modules\Inventory\Services\InventoryQuantityService;
 use App\Modules\Sales\Models\Sale;
 use App\Modules\Sales\Models\SaleItem;
 use App\Modules\Sales\Models\SaleReturnItem;
@@ -56,12 +57,27 @@ class StoreSaleReturnRequest extends FormRequest
             $saleItems = SaleItem::query()
                 ->where('sale_id', $sale->id)
                 ->whereIn('id', $itemIds)
-                ->get(['id', 'meters'])
+                ->get(['id', 'meters', 'product_coil_id'])
                 ->keyBy('id');
+            $quantity = app(InventoryQuantityService::class);
 
             foreach ($this->input('items', []) as $index => $item) {
                 $itemId = (int) ($item['sale_item_id'] ?? 0);
-                $metersByItem[$itemId] = ($metersByItem[$itemId] ?? 0) + round((float) ($item['meters'] ?? 0), 3);
+                $saleItem = $saleItems->get($itemId);
+                if ($saleItem?->product_coil_id) {
+                    try {
+                        if (! is_numeric($item['meters'] ?? null)) {
+                            throw new \InvalidArgumentException();
+                        }
+                        $metersByItem[$itemId] = $quantity->addExact(
+                            (string) ($metersByItem[$itemId] ?? '0.000'), (string) $item['meters']);
+                    } catch (\InvalidArgumentException) {
+                        $validator->errors()->add("items.{$index}.meters", 'Ingrese un decimal válido sin notación exponencial.');
+                        $metersByItem[$itemId] = (string) ($metersByItem[$itemId] ?? '0.000');
+                    }
+                } else {
+                    $metersByItem[$itemId] = ($metersByItem[$itemId] ?? 0) + round((float) ($item['meters'] ?? 0), 3);
+                }
 
                 if (! $saleItems->has($itemId)) {
                     $validator->errors()->add("items.{$index}.sale_item_id", 'El item no pertenece a la nota seleccionada.');
@@ -81,10 +97,17 @@ class StoreSaleReturnRequest extends FormRequest
                     continue;
                 }
 
-                $returned = (float) ($returnedByItem[$itemId] ?? 0);
-                $availableToReturn = round((float) $saleItem->meters - $returned, 3);
+                if ($saleItem->product_coil_id) {
+                    $availableToReturn = $quantity->subtractExact((string) $saleItem->meters,
+                        (string) ($returnedByItem[$itemId] ?? '0.000'));
+                    $exceeded = $quantity->compareExact((string) $meters, $availableToReturn) > 0;
+                } else {
+                    $returned = (float) ($returnedByItem[$itemId] ?? 0);
+                    $availableToReturn = round((float) $saleItem->meters - $returned, 3);
+                    $exceeded = $meters > $availableToReturn;
+                }
 
-                if ($meters > $availableToReturn) {
+                if ($exceeded) {
                     $validator->errors()->add('items', 'La devolucion supera el metraje disponible de uno o mas items.');
                 }
             }

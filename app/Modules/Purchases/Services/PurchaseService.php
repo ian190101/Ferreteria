@@ -42,6 +42,8 @@ class PurchaseService
         }
 
         return DB::transaction(function () use ($purchase, $userId, $reason): Purchase {
+            app(\App\Modules\Inventory\Services\LotTrackingPolicy::class)->lockRule();
+            app(\App\Modules\Inventory\Services\LotTrackingPolicy::class)->persistedConfiguration();
             $purchase = Purchase::query()->lockForUpdate()->findOrFail($purchase->id);
             app(PurchaseVoidAuthorization::class)->authorize(User::query()->findOrFail($userId), $purchase);
             if (in_array($purchase->status, ['voided', 'void'], true)) {
@@ -60,7 +62,7 @@ class PurchaseService
                 ->orderBy('id')->lockForUpdate()->get();
             $receiptItems = PurchaseOrderReceiptItem::query()->whereIn('purchase_order_receipt_id', $receipts->modelKeys())
                 ->orderBy('id')->lockForUpdate()->get();
-            $purchase->setRelation('items', $purchase->items()->with('product')->orderBy('id')->lockForUpdate()->get());
+            $purchase->setRelation('items', $purchase->items()->with(['product', 'coil'])->orderBy('id')->lockForUpdate()->get());
             $purchase->setRelation('payments', $purchase->payments()->orderBy('id')->lockForUpdate()->get());
 
             if ($purchase->payments->contains(fn ($payment) => (int) $payment->branch_id !== (int) $purchase->branch_id)
@@ -79,7 +81,9 @@ class PurchaseService
                 $this->reject('Faltan órdenes o existen recepciones previamente anuladas.');
             }
 
-            $inventory = $purchase->status === 'received' ? $this->inventoryPlan($purchase) : [];
+            $managedItems = $purchase->status === 'received'
+                ? $purchase->items->filter(fn (PurchaseItem $item) => $item->coil?->lot_code !== null)
+                : collect();
             // Se bloquean también los movimientos bancarios antes del primer reverso.
             $bankTransactions = BankTransaction::query()->where('source_type', PurchasePayment::class)
                 ->whereIn('source_id', $purchase->payments->modelKeys())->orderBy('id')->lockForUpdate()->get();
@@ -89,6 +93,51 @@ class PurchaseService
             }
             if ($bankTransactions->where('status', BankTransaction::STATUS_REGISTERED)->groupBy('source_id')->contains(fn ($rows) => $rows->count() > 1)) {
                 $this->reject('Existen movimientos bancarios duplicados para un pago de la compra.');
+            }
+
+            $plan = $managedItems->map(fn (PurchaseItem $item) => [
+                'product_id' => (int) $item->product_id,
+                'branch_id' => (int) $purchase->branch_id,
+                'lot_id' => (int) $item->product_coil_id,
+            ])->all();
+            if ($plan !== []) {
+                app(\App\Modules\Inventory\Services\LotInventoryService::class)->lockBatch($plan);
+            }
+            $inventory = $purchase->status === 'received' ? $this->inventoryPlan($purchase) : [];
+            foreach ($managedItems as $item) {
+                $lot = $item->coil;
+                if ($lot->isVoided() || $lot->trashed() || $lot->branch_id !== $purchase->branch_id
+                    || $lot->product_id !== $item->product_id) {
+                    $this->reject('El lote de la compra está anulado o no pertenece a su producto y sucursal.');
+                }
+                $entry = InventoryMovement::query()->where('source_type', PurchaseItem::class)
+                    ->where('source_id', $item->id)->where('type', 'purchase_lot_entry')->first();
+                if (! $entry) {
+                    $this->reject('Falta el movimiento original de la entrada del lote.');
+                }
+                $subsequentOut = InventoryMovement::query()->where('product_coil_id', $lot->id)
+                    ->where('id', '>', $entry->id)->where('meters_delta', '<', 0)
+                    ->whereNull('reverses_movement_id')->where('type', '!=', 'purchase_lot_void')
+                    ->orderBy('id')->lockForUpdate()->get(['id', 'meters_delta']);
+                // Una restitución vinculada compensa la salida; una reposición de compra no lo hace.
+                $restored = InventoryMovement::query()->whereIn('reverses_movement_id', $subsequentOut->pluck('id'))
+                    ->where('meters_delta', '>', 0)->orderBy('id')->lockForUpdate()
+                    ->get(['reverses_movement_id', 'meters_delta'])->groupBy('reverses_movement_id');
+                foreach ($subsequentOut as $outflow) {
+                    $returned = ($restored[$outflow->id] ?? collect())->reduce(fn (string $sum, InventoryMovement $movement) =>
+                        $this->quantities->addExact($sum, (string) $movement->meters_delta), '0.000');
+                    if ($this->quantities->compareExact($returned, ltrim((string) $outflow->meters_delta, '-')) < 0) {
+                        $this->reject('El lote tiene salidas físicas posteriores aún no restituidas; no se puede revertir esta compra sin asignación por recepción.');
+                    }
+                }
+                if (InventoryReservation::query()->where('product_coil_id', $lot->id)
+                    ->where('status', InventoryReservation::STATUS_ACTIVE)->orderBy('id')->lockForUpdate()->get()->isNotEmpty()) {
+                    $this->reject('El lote tiene reservas o compromisos activos. Libéralos antes de anular la compra.');
+                }
+                app(\App\Modules\Inventory\Services\LotInventoryService::class)->apply(
+                    (int) $item->product_id, (int) $purchase->branch_id, (int) $lot->id,
+                    '-'.(string) $item->meters, 'purchase_lot_void', $item,
+                    'purchase-void:'.$item->id, $userId, false, (int) $entry->id);
             }
 
             foreach ($inventory as [$items, $resource]) {
@@ -157,6 +206,9 @@ class PurchaseService
         }
         $groups = [];
         foreach ($purchase->items as $item) {
+            if ($item->coil?->lot_code !== null) {
+                continue;
+            }
             if (! $item->product || (float) $item->meters <= 0) {
                 $this->reject('La compra contiene un producto faltante o una cantidad inválida.');
             }

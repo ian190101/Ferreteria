@@ -2,6 +2,7 @@
 
 namespace App\Modules\Sales\Http\Requests;
 
+use App\Modules\Inventory\Services\InventoryQuantityService;
 use App\Modules\Sales\Models\DeliveryNoteItem;
 use App\Modules\Sales\Models\DeliveryDriver;
 use App\Modules\Sales\Models\DeliveryTruck;
@@ -98,13 +99,24 @@ class StoreDeliveryNoteRequest extends FormRequest
             $saleItems = SaleItem::query()
                 ->where('sale_id', $sale->id)
                 ->whereIn('id', $itemIds)
-                ->get(['id', 'meters', 'display_quantity'])
+                ->get(['id', 'meters', 'display_quantity', 'product_coil_id'])
                 ->keyBy('id');
+            $quantity = app(InventoryQuantityService::class);
 
             foreach ($this->input('items', []) as $index => $item) {
                 $itemId = (int) ($item['sale_item_id'] ?? 0);
                 $saleItem = $saleItems->get($itemId);
-                $metersByItem[$itemId] = ($metersByItem[$itemId] ?? 0) + ($saleItem ? $this->quantityToBase($saleItem, $item) : 0);
+                if ($saleItem?->product_coil_id) {
+                    try {
+                        $metersByItem[$itemId] = $quantity->addExact(
+                            (string) ($metersByItem[$itemId] ?? '0.000'), $this->quantityToBaseExact($saleItem, $item, $quantity));
+                    } catch (\InvalidArgumentException) {
+                        $validator->errors()->add("items.{$index}.quantity", 'Ingrese un decimal válido sin notación exponencial.');
+                        $metersByItem[$itemId] = (string) ($metersByItem[$itemId] ?? '0.000');
+                    }
+                } else {
+                    $metersByItem[$itemId] = ($metersByItem[$itemId] ?? 0) + ($saleItem ? $this->quantityToBase($saleItem, $item) : 0);
+                }
 
                 if (blank($item['quantity'] ?? null) && blank($item['meters'] ?? null)) {
                     $validator->errors()->add("items.{$index}.quantity", 'Ingrese la cantidad a despachar.');
@@ -125,6 +137,8 @@ class StoreDeliveryNoteRequest extends FormRequest
                 ->selectRaw('sale_item_id, SUM(meters) as delivered_meters')
                 ->groupBy('sale_item_id')
                 ->pluck('delivered_meters', 'sale_item_id');
+            $inventory = app(\App\Modules\Sales\Services\SaleInventoryService::class);
+            $returnedAfterDelivery = $inventory->returnedDeliveryMetersByItem($saleItems->keys()->all());
 
             foreach ($metersByItem as $itemId => $meters) {
                 $saleItem = $saleItems->get($itemId);
@@ -133,11 +147,19 @@ class StoreDeliveryNoteRequest extends FormRequest
                     continue;
                 }
 
-                $returned = (float) ($returnedByItem[$itemId] ?? 0);
-                $delivered = (float) ($deliveredByItem[$itemId] ?? 0);
-                $availableToDeliver = max(round((float) $saleItem->meters - $returned - $delivered, 3), 0);
+                if ($saleItem->product_coil_id) {
+                    $availableToDeliver = $inventory->pendingDeliveryMeters($saleItem,
+                        (string) ($returnedByItem[$itemId] ?? '0.000'), (string) ($deliveredByItem[$itemId] ?? '0.000'),
+                        (string) ($returnedAfterDelivery[$itemId] ?? '0.000'));
+                    $exceeded = $quantity->compareExact((string) $meters, $availableToDeliver) > 0;
+                } else {
+                    $returned = (float) ($returnedByItem[$itemId] ?? 0);
+                    $delivered = (float) ($deliveredByItem[$itemId] ?? 0);
+                    $availableToDeliver = max(round((float) $saleItem->meters - $returned - $delivered, 3), 0);
+                    $exceeded = $meters > $availableToDeliver;
+                }
 
-                if ($meters > $availableToDeliver) {
+                if ($exceeded) {
                     $validator->errors()->add('items', 'El despacho supera el metraje pendiente de uno o mas items.');
                 }
             }
@@ -185,5 +207,23 @@ class StoreDeliveryNoteRequest extends FormRequest
         }
 
         return round($quantity * ((float) $saleItem->meters / $displayQuantity), 3);
+    }
+
+    private function quantityToBaseExact(SaleItem $saleItem, array $item, InventoryQuantityService $quantity): string
+    {
+        if (filled($item['meters'] ?? null)) {
+            return $quantity->exact((string) $item['meters']);
+        }
+
+        $amount = (string) ($item['quantity'] ?? '0');
+        $display = (string) ($saleItem->display_quantity ?? '0');
+        if (! is_numeric($amount) || ! is_numeric($display)) {
+            throw new \InvalidArgumentException();
+        }
+        if (bccomp($display, '0', 9) <= 0) {
+            return $quantity->exact($amount);
+        }
+
+        return $quantity->exact(bcmul($amount, bcdiv((string) $saleItem->meters, $display, 9), 9));
     }
 }

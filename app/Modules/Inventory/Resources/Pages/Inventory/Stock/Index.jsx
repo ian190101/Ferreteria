@@ -54,8 +54,10 @@ export default function Index({ globalStocks, coilStocks = [], coilSummary, bran
                         ) : coilSummary.map((coil) => (
                             <div key={coil.id} className="rounded-lg border border-slate-200 p-4 text-sm dark:border-slate-800">
                                 <p className="font-semibold text-slate-950 dark:text-white">{coil.product?.name ?? 'Producto'}</p>
-                                <p className="text-slate-500">{coil.branch?.name ?? '-'} / Lote {coil.lot_number ?? '-'}</p>
-                                <p className="mt-2 text-lg font-bold text-emerald-600">{formatStockQuantity(coil.available_meters ?? 0, unitLabel(coil.product), decimalFormat)} {unitLabel(coil.product)}</p>
+                                <p className="text-slate-500">{coil.branch?.name ?? '-'} / Lote {coil.lot_code ?? coil.lot_number ?? '-'}</p>
+                                {coil.lot_code && !coil.voided_at && /^0+(?:\.0+)?$/.test(String(coil.available_meters)) ? <p className="mt-2 rounded bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-900">⚠ LOTE EN 0 (AGOTADO)</p> : null}
+                                <p className="mt-2 text-lg font-bold text-emerald-600">Físico: {formatStockQuantity(coil.available_meters ?? 0, unitLabel(coil.product), decimalFormat)} {unitLabel(coil.product)}</p>
+                                {coil.product?.requires_lot ? <div className="mt-1 space-y-1 text-xs"><p>Reservado: {decimalFormat.measure(coil.reserved_meters ?? 0)} {unitLabel(coil.product)}</p><p>Libre: {decimalFormat.measure(coil.free_meters ?? 0)} {unitLabel(coil.product)}</p>{coil.status === 'voided' ? <p className="font-semibold text-amber-700">Bloqueado: {decimalFormat.measure(coil.available_meters ?? 0)} {unitLabel(coil.product)}</p> : null}</div> : null}
                                 <p className="text-xs text-slate-500">Codigo: {coil.barcode}</p>
                             </div>
                         ))}
@@ -110,7 +112,7 @@ function StockTable({ stocks, decimalFormat }) {
 function mergeStocks(globalStocks, coilStocks) {
     const coilKeys = new Set(coilStocks.map((stock) => stockKey(stock)));
     const filteredGlobal = globalStocks.filter((stock) => {
-        const isTrackedByCoils = stock.product?.inventory_tracking_mode === 'coil';
+        const isTrackedByCoils = stock.product?.inventory_tracking_mode === 'coil' || stock.product?.requires_lot;
         return !isTrackedByCoils || !coilKeys.has(stockKey(stock));
     });
 

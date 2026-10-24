@@ -28,10 +28,14 @@ class InventoryMovementController extends Controller
                 'meters_delta',
                 'meters_before',
                 'meters_after',
+                'lot_code_snapshot',
+                'lot_quantity_before',
+                'lot_quantity_after',
+                'reverses_movement_id',
                 'reason',
                 'created_at',
             ])
-            ->with(['branch:id,name', 'product:id,name,sku', 'coil:id,barcode,lot_number', 'user:id,name'])
+            ->with(['branch:id,name', 'product:id,name,sku,base_unit', 'coil:id,barcode,lot_number', 'lot:id,lot_code', 'user:id,name'])
             ->when(true, fn ($query) => BranchAccess::apply($query, $request->user()))
             ->when($request->filled('branch_id'), fn ($query) => $query->where('branch_id', $request->integer('branch_id')))
             ->when($request->filled('product_id'), fn ($query) => $query->where('product_id', $request->integer('product_id')))
@@ -50,10 +54,10 @@ class InventoryMovementController extends Controller
             'products' => Inertia::defer(fn () => UiCatalogCache::activeProductsForUser($request->user(), ['id', 'name', 'sku']), 'kardex-catalogs'),
             'coils' => Inertia::defer(fn () => Cache::remember('kardex-coils:v2:'.SystemCacheInvalidator::operationalVersion().":{$request->user()->id}", now()->addSeconds(60), fn () => ProductCoil::query()
                 ->when(true, fn ($query) => BranchAccess::apply($query, $request->user()))
-                ->where('status', 'available')
+                ->whereIn('status', ['available', 'depleted', 'voided'])
                 ->orderByDesc('id')
                 ->limit(500)
-                ->get(['id', 'branch_id', 'product_id', 'barcode', 'lot_number', 'available_meters'])), 'kardex-catalogs'),
+                ->get(['id', 'branch_id', 'product_id', 'barcode', 'lot_number', 'lot_code', 'available_meters'])), 'kardex-catalogs'),
             'types' => Inertia::defer(fn () => Cache::remember('kardex-types:v2:'.SystemCacheInvalidator::operationalVersion(), now()->addMinutes(10), fn () => InventoryMovement::query()->select('type')->distinct()->orderBy('type')->pluck('type')), 'kardex-catalogs'),
             'filters' => $request->only(['branch_id', 'product_id', 'product_coil_id', 'type', 'from', 'to', 'per_page']),
         ]);

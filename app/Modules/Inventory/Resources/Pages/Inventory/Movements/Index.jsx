@@ -48,7 +48,7 @@ export default function Index({ movements, branches = [], products = [], coils =
                     </SelectField>
                     <SelectField label="Lote/unidad fisica" name="product_coil_id" value={data.product_coil_id} onChange={(event) => setData('product_coil_id', event.target.value)}>
                         <option value="">Todas</option>
-                        {filteredCoils.map((coil) => <option key={coil.id} value={coil.id}>{coil.barcode} · {coil.lot_number}</option>)}
+                        {filteredCoils.map((coil) => <option key={coil.id} value={coil.id}>{coil.lot_code ?? coil.lot_number ?? coil.barcode ?? `Histórico #${coil.id}`}</option>)}
                     </SelectField>
                     <SelectField label="Tipo" name="type" value={data.type} onChange={(event) => setData('type', event.target.value)}>
                         <option value="">Todos</option>
@@ -91,12 +91,12 @@ export default function Index({ movements, branches = [], products = [], coils =
                                         <p>{movement.product?.name ?? '-'}</p>
                                         <p className="text-xs text-slate-500">{movement.product?.sku ?? '-'}</p>
                                     </td>
-                                    <td className="px-4 py-3">{movement.coil?.barcode ?? 'Global'}</td>
+                                    <td className="px-4 py-3">{movement.lot_code_snapshot ?? movement.lot?.lot_code ?? movement.coil?.barcode ?? 'Global'}{movement.lot_code_snapshot && movement.lot?.lot_code && movement.lot_code_snapshot !== movement.lot.lot_code ? <p className="text-xs text-slate-500">Actual: {movement.lot.lot_code}</p> : null}</td>
                                     <td className="px-4 py-3">{movement.branch?.name ?? '-'}</td>
                                     <td className="px-4 py-3">{movementType(movement.type)}</td>
-                                    <td className="px-4 py-3 text-right">{decimalFormat.measure(movement.meters_delta ?? 0)} m</td>
-                                    <td className="px-4 py-3 text-right">{decimalFormat.measure(movement.meters_before ?? 0)} m</td>
-                                    <td className="px-4 py-3 text-right">{decimalFormat.measure(movement.meters_after ?? 0)} m</td>
+                                    <td className="px-4 py-3 text-right">{decimalFormat.measure(movement.meters_delta ?? 0)} {movement.product?.base_unit ?? 'unidad'}</td>
+                                    <td className="px-4 py-3 text-right">{decimalFormat.measure(movement.meters_before ?? 0)} {movement.product?.base_unit ?? 'unidad'}{movement.lot_quantity_before !== null && movement.lot_quantity_before !== undefined ? <p className="text-xs text-slate-500">Lote: {decimalFormat.measure(movement.lot_quantity_before)} {movement.product?.base_unit ?? 'unidad'}</p> : null}</td>
+                                    <td className="px-4 py-3 text-right">{decimalFormat.measure(movement.meters_after ?? 0)} {movement.product?.base_unit ?? 'unidad'}{movement.lot_quantity_after !== null && movement.lot_quantity_after !== undefined ? <p className="text-xs text-slate-500">Lote: {decimalFormat.measure(movement.lot_quantity_after)} {movement.product?.base_unit ?? 'unidad'}</p> : null}</td>
                                     <td className="px-4 py-3">{movement.user?.name ?? '-'}</td>
                                     <td className="px-4 py-3">{movement.reason ?? '-'}</td>
                                 </tr>
@@ -115,6 +115,11 @@ export default function Index({ movements, branches = [], products = [], coils =
 
 function movementType(type) {
     const labels = {
+        initial_lot_entry: 'Ingreso inicial de lote',
+        purchase_lot_entry: 'Compra: ingreso al lote',
+        purchase_lot_void: 'Anulación de entrada de compra',
+        delivery_stock_out: 'Despacho: salida del lote',
+        lot_void_adjustment: 'Anulación del lote',
         coil_entry: 'Ingreso lote/unidad',
         inventory_adjustment: 'Ajuste inventario',
         production_input_coil: 'Produccion entrada lote/unidad',

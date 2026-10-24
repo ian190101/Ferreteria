@@ -31,6 +31,9 @@ class BulkImportService
         $stats = ['total_rows' => count($rows), 'created_rows' => 0, 'updated_rows' => 0, 'failed_rows' => 0, 'errors' => []];
 
         DB::transaction(function () use ($rows, $module, $branchId, &$stats) {
+            if ($module === 'products') {
+                app(\App\Modules\Inventory\Services\LotTrackingPolicy::class)->lockRule();
+            }
             foreach ($rows as $index => $row) {
                 try {
                     $result = match ($module) {
@@ -262,6 +265,10 @@ class BulkImportService
         }
 
         $sku = trim((string) ($row['sku'] ?? '')) ?: Str::upper(Str::slug(Str::limit($name, 20, ''), '-')).'-'.Str::upper(Str::random(4));
+        $existing = Product::query()->where('sku', $sku)->first();
+        if ($existing) {
+            app(\App\Modules\Inventory\Services\LotTrackingPolicy::class)->assertAlternativeWriterAllowed($existing);
+        }
         $unitSymbol = trim((string) ($row['unit'] ?? $row['unidad'] ?? 'unidad')) ?: 'unidad';
         $unit = ProductUnit::query()->firstOrCreate(
             ['symbol' => $unitSymbol],

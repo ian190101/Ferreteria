@@ -173,7 +173,7 @@ export default function Statement({ supplier, metrics, purchases, items, filters
                                             <p className="font-medium text-slate-900 dark:text-slate-100">{item.product?.name ?? item.description}</p>
                                             <p className="text-xs text-slate-500">{item.product?.sku ?? '-'}</p>
                                         </td>
-                                        <td className="px-4 py-3">{item.lot_number ?? item.coil_barcode ?? '-'}</td>
+                                        <td className="px-4 py-3">{item.lot_code_snapshot ?? item.lot_number ?? item.coil_barcode ?? '-'}{item.lot?.lot_code && item.lot_code_snapshot !== item.lot.lot_code ? <p className="text-xs text-slate-500">Actual: {item.lot.lot_code}</p> : null}</td>
                                         <td className="px-4 py-3 text-right">{number(item.kilograms)}</td>
                                         <td className="px-4 py-3 text-right">{number(item.meters)}</td>
                                         <td className="px-4 py-3 text-right">Bs {money(item.unit_cost)}</td>

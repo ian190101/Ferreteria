@@ -53,7 +53,9 @@ class InventoryTransferController extends Controller
     public function store(StoreInventoryTransferRequest $request, InventoryQuantityService $quantities): RedirectResponse
     {
         DB::transaction(function () use ($request, $quantities) {
+            app(\App\Modules\Inventory\Services\LotTrackingPolicy::class)->lockRule();
             $product = Product::query()->findOrFail($request->integer('product_id'));
+            app(\App\Modules\Inventory\Services\LotTrackingPolicy::class)->assertAlternativeWriterAllowed($product);
             $meters = round((float) $request->input('meters'), 3);
 
             $transfer = InventoryTransfer::query()->create([

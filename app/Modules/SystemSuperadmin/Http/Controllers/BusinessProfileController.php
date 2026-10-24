@@ -9,6 +9,7 @@ use App\Modules\SystemSuperadmin\Models\BusinessProfilePreset;
 use App\Modules\SystemSuperadmin\Models\BusinessProfileSandboxSession;
 use App\Modules\SystemSuperadmin\Models\BusinessProfileVersion;
 use App\Modules\SystemSuperadmin\Services\BusinessProfileActivationChecklist;
+use App\Modules\SystemSuperadmin\Services\BusinessLotRuleTransitionGuard;
 use App\Modules\SystemSuperadmin\Services\BusinessCapabilityCatalog;
 use App\Modules\SystemSuperadmin\Services\BusinessProfileCompatibilityValidator;
 use App\Modules\SystemSuperadmin\Services\BusinessProfileConfiguration;
@@ -18,6 +19,8 @@ use App\Modules\SystemSuperadmin\Services\BusinessProfileMigrationMapper;
 use App\Modules\SystemSuperadmin\Services\BusinessProfileSandboxService;
 use App\Modules\SystemSuperadmin\Services\BusinessPresetReadinessService;
 use App\Support\SystemCacheInvalidator;
+use App\Support\OperationalCacheOutbox;
+use App\Support\SystemRoles;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -239,6 +242,7 @@ class BusinessProfileController extends Controller
 
     public function saveAndApply(Request $request): RedirectResponse
     {
+        abort_unless($request->user()?->hasRole(SystemRoles::SYSTEM_SUPERADMIN), 403);
         $data = $this->validatedPayload($request);
         $force = $request->boolean('force', true);
 
@@ -269,6 +273,7 @@ class BusinessProfileController extends Controller
         }
 
         DB::transaction(function () use ($request, $data, $configuration) {
+            app(BusinessLotRuleTransitionGuard::class)->assertTransition($configuration);
             $activeProfile = BusinessProfile::query()
                 ->where('status', 'active')
                 ->lockForUpdate()
@@ -306,9 +311,9 @@ class BusinessProfileController extends Controller
                     'updated_by' => $request->user()->id,
                 ]);
             }
+            app(OperationalCacheOutbox::class)->schedule('business_profile');
         });
 
-        SystemCacheInvalidator::bumpOperational();
 
         $message = 'Perfil de negocio guardado y aplicado correctamente a produccion.';
         if (! $preflight['ready'] && count($preflight['blockers']) > 0) {
@@ -321,6 +326,7 @@ class BusinessProfileController extends Controller
 
     public function updateActiveProfile(Request $request): RedirectResponse
     {
+        abort_unless($request->user()?->hasRole(SystemRoles::SYSTEM_SUPERADMIN), 403);
         $activeProfile = BusinessProfile::query()
             ->where('status', 'active')
             ->latest('applied_at')
@@ -342,6 +348,9 @@ class BusinessProfileController extends Controller
         }
 
         DB::transaction(function () use ($request, $activeProfile, $data, $configuration) {
+            app(BusinessLotRuleTransitionGuard::class)->assertTransition($configuration);
+            $activeProfile = BusinessProfile::query()->where('status', 'active')
+                ->orderByDesc('applied_at')->orderByDesc('id')->lockForUpdate()->firstOrFail();
             BusinessProfileVersion::query()->create([
                 'business_profile_id' => $activeProfile->id,
                 'version_number' => $this->nextVersionNumber(),
@@ -359,15 +368,16 @@ class BusinessProfileController extends Controller
                 'applied_at' => now(),
                 'applied_by' => $request->user()->id,
             ]);
+            app(OperationalCacheOutbox::class)->schedule('business_profile');
         });
 
-        SystemCacheInvalidator::bumpOperational();
 
         return back()->with('success', 'Perfil activo actualizado correctamente.');
     }
 
     public function apply(Request $request, BusinessProfileDraft $draft): RedirectResponse
     {
+        abort_unless($request->user()?->hasRole(SystemRoles::SYSTEM_SUPERADMIN), 403);
         $force = $request->boolean('force', false);
 
         if ($draft->status === BusinessProfileDraftHistoryService::STATUS_ACTIVE_SNAPSHOT && ! $force) {
@@ -377,6 +387,8 @@ class BusinessProfileController extends Controller
         $this->validateDraftBeforeApply($draft, $force);
 
         DB::transaction(function () use ($request, $draft) {
+            $nextConfiguration = BusinessProfileConfiguration::normalized($draft->configuration ?? []);
+            app(BusinessLotRuleTransitionGuard::class)->assertTransition($nextConfiguration);
             $activeProfile = BusinessProfile::query()
                 ->where('status', 'active')
                 ->lockForUpdate()
@@ -403,7 +415,7 @@ class BusinessProfileController extends Controller
                 'name' => $draft->name,
                 'business_type' => $draft->business_type,
                 'status' => 'active',
-                'configuration' => BusinessProfileConfiguration::normalized($draft->configuration ?? []),
+                'configuration' => $nextConfiguration,
                 'applied_at' => now(),
                 'applied_by' => $request->user()->id,
             ]);
@@ -412,16 +424,19 @@ class BusinessProfileController extends Controller
                 'status' => 'applied',
                 'updated_by' => $request->user()->id,
             ]);
+            app(OperationalCacheOutbox::class)->schedule('business_profile');
         });
 
-        SystemCacheInvalidator::bumpOperational();
 
         return back()->with('success', 'Configuracion empresarial aplicada. Las futuras integraciones usaran este perfil activo.');
     }
 
     public function restore(Request $request, BusinessProfileVersion $version): RedirectResponse
     {
+        abort_unless($request->user()?->hasRole(SystemRoles::SYSTEM_SUPERADMIN), 403);
         DB::transaction(function () use ($request, $version) {
+            $nextConfiguration = BusinessProfileConfiguration::normalized($version->configuration ?? []);
+            app(BusinessLotRuleTransitionGuard::class)->assertTransition($nextConfiguration);
             $activeProfile = BusinessProfile::query()
                 ->where('status', 'active')
                 ->lockForUpdate()
@@ -438,13 +453,13 @@ class BusinessProfileController extends Controller
                 'name' => $version->name,
                 'business_type' => $version->business_type,
                 'status' => 'active',
-                'configuration' => BusinessProfileConfiguration::normalized($version->configuration ?? []),
+                'configuration' => $nextConfiguration,
                 'applied_at' => now(),
                 'applied_by' => $request->user()->id,
             ]);
+            app(OperationalCacheOutbox::class)->schedule('business_profile');
         });
 
-        SystemCacheInvalidator::bumpOperational();
 
         return back()->with('success', 'Configuracion anterior restaurada correctamente.');
     }
@@ -587,6 +602,7 @@ class BusinessProfileController extends Controller
             'configuration.sales.credit_limit_policy' => ['required', 'string', Rule::in(array_keys($options['creditLimitPolicies']))],
             'configuration.sales.default_credit_limit' => ['nullable', 'numeric', 'min:0', 'max:999999999999.99'],
             'configuration.sales.inventory_discount_timing' => ['required', 'string', Rule::in(array_keys($options['inventoryTimings']))],
+            'configuration.sales.reserve_lots_on_quotation' => ['sometimes', 'boolean'],
             'configuration.sales.item_merge_control_enabled' => ['boolean'],
             'configuration.sales.item_merge_rule' => ['required', 'string', Rule::in(array_keys($options['itemMergeRules']))],
             'configuration.sales.visible_columns' => ['nullable', 'array'],
@@ -770,6 +786,7 @@ class BusinessProfileController extends Controller
             'configuration.cash.bank_reconciliation' => ['boolean'],
             'configuration.cash.allow_offline_cash_sales' => ['boolean'],
             'configuration.inventory' => ['required', 'array'],
+            'configuration.inventory.lot_tracking_enabled' => ['sometimes', 'boolean'],
             'configuration.inventory.*' => ['boolean'],
             'configuration.ux' => ['required', 'array'],
             'configuration.ux.*' => ['boolean'],

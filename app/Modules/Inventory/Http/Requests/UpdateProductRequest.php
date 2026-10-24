@@ -25,6 +25,7 @@ class UpdateProductRequest extends FormRequest
         $productId = $this->route('product')?->id;
 
         return [
+            ...\App\Modules\Inventory\Support\LotRegistrationPayload::rules(),
             'thickness_id' => ['nullable', 'integer', 'exists:thicknesses,id'],
             'product_category_id' => ['required', 'integer', 'exists:product_categories,id'],
             'product_unit_id' => ['required', 'integer', 'exists:product_units,id'],
@@ -98,6 +99,9 @@ class UpdateProductRequest extends FormRequest
 
     protected function prepareForValidation(): void
     {
+        if ($this->has('lot_registrations')) {
+            $this->merge(['lot_registrations' => \App\Modules\Inventory\Support\LotRegistrationPayload::normalize($this->input('lot_registrations'))]);
+        }
         $productId = $this->route('product')?->id;
         $category = ProductCategory::query()
             ->with('defaultUnit:id,name,symbol')
@@ -122,7 +126,7 @@ class UpdateProductRequest extends FormRequest
             'preparation_minutes' => $this->filled('preparation_minutes') ? $this->integer('preparation_minutes') : null,
             'attributes' => $this->normalizedAttributes(),
             'catalog_settings' => $this->normalizedCatalogSettings(),
-            'requires_lot' => $this->boolean('requires_lot', $this->normalizedItemType() === 'rental'),
+            'requires_lot' => $this->boolean('requires_lot', (bool) $this->route('product')?->requires_lot),
             'requires_expiration_date' => $this->boolean('requires_expiration_date', false),
             'is_rentable' => $this->boolean('is_rentable', $this->normalizedItemType() === 'rental'),
             'custom_attributes' => $this->normalizedCustomAttributes(),
@@ -318,8 +322,11 @@ class UpdateProductRequest extends FormRequest
             $validator->errors()->add('item_type', 'Este perfil no permite productos alquilables.');
         }
 
-        if ($this->boolean('requires_lot') && ! $policy->lotsEnabled()) {
+        if ($this->boolean('requires_lot') && ! $policy->lotsEnabled() && ! $this->route('product')?->requires_lot) {
             $validator->errors()->add('requires_lot', 'El perfil no tiene activado el rastreo por lote o unidad fisica.');
+        }
+        if ($this->boolean('requires_lot') && ! $this->boolean('is_inventory_item')) {
+            $validator->errors()->add('requires_lot', 'Solo un producto inventariable puede manejar lotes.');
         }
 
         if ($this->boolean('requires_expiration_date') && ! $policy->expirationDatesEnabled()) {

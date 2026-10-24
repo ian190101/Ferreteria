@@ -4,16 +4,17 @@ namespace App\Modules\Purchases\Models;
 
 use App\Modules\Inventory\Models\Product;
 use App\Modules\Inventory\Models\ProductCoil;
-use Illuminate\Database\Eloquent\Model;
+use App\Modules\Shared\Models\AuditableModel;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-class PurchaseOrderReceiptItem extends Model
+class PurchaseOrderReceiptItem extends AuditableModel
 {
     protected $fillable = [
         'purchase_order_receipt_id',
         'purchase_order_item_id',
         'product_id',
         'product_coil_id',
+        'lot_code_snapshot',
         'coil_barcode',
         'kilograms',
         'meters',
@@ -44,6 +45,11 @@ class PurchaseOrderReceiptItem extends Model
     }
 
     public function coil(): BelongsTo
+    {
+        return $this->belongsTo(ProductCoil::class, 'product_coil_id');
+    }
+
+    public function lot(): BelongsTo
     {
         return $this->belongsTo(ProductCoil::class, 'product_coil_id');
     }

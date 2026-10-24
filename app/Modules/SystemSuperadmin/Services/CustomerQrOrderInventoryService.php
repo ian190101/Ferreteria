@@ -5,6 +5,7 @@ namespace App\Modules\SystemSuperadmin\Services;
 use App\Models\User;
 use App\Modules\Inventory\Models\InventoryReservation;
 use App\Modules\Inventory\Models\ProductBranchStock;
+use App\Modules\Inventory\Models\Product;
 use App\Modules\Inventory\Services\InventoryQuantityService;
 use App\Modules\SystemSuperadmin\Models\CustomerQrOrder;
 use Illuminate\Support\Facades\DB;
@@ -27,7 +28,10 @@ class CustomerQrOrderInventoryService
         }
 
         DB::transaction(function () use ($order, $user): void {
+            $lotPolicy = app(\App\Modules\Inventory\Services\LotTrackingPolicy::class);
+            $lotPolicy->lockRule();
             foreach ($this->inventoryQuantities($order) as $productId => $quantity) {
+                $lotPolicy->assertAlternativeWriterAllowed(Product::query()->findOrFail($productId));
                 $stock = ProductBranchStock::query()
                     ->where('branch_id', $order->branch_id)
                     ->where('product_id', $productId)
@@ -62,6 +66,7 @@ class CustomerQrOrderInventoryService
     public function release(CustomerQrOrder $order): void
     {
         DB::transaction(function () use ($order): void {
+            app(\App\Modules\Inventory\Services\LotTrackingPolicy::class)->lockRule();
             $reservations = $this->activeReservations($order);
 
             foreach ($reservations as $reservation) {
@@ -77,6 +82,7 @@ class CustomerQrOrderInventoryService
     public function consumeForSale(CustomerQrOrder $order, int $saleId): void
     {
         DB::transaction(function () use ($order, $saleId): void {
+            app(\App\Modules\Inventory\Services\LotTrackingPolicy::class)->lockRule();
             $reservations = $this->activeReservations($order);
 
             foreach ($reservations as $reservation) {

@@ -45,13 +45,30 @@ class ProductCoilController extends Controller
         return Inertia::render('Inventory/Coils/Form', [
             'branches' => UiCatalogCache::activeBranchesForUser(request()->user()),
             'products' => UiCatalogCache::activeCoilProductsForUser(request()->user()),
+            'lotTrackingEnabled' => app(\App\Modules\Inventory\Services\LotTrackingPolicy::class)
+                ->enabled(app(\App\Modules\Inventory\Services\LotTrackingPolicy::class)->activeConfiguration()),
         ]);
     }
 
     public function store(StoreProductCoilRequest $request): RedirectResponse
     {
         DB::transaction(function () use ($request) {
+            $lotPolicy = app(\App\Modules\Inventory\Services\LotTrackingPolicy::class);
+            $lotPolicy->lockRule();
+            $configuration = $lotPolicy->persistedConfiguration();
             $data = $request->validated();
+            $product = \App\Modules\Inventory\Models\Product::query()->findOrFail($request->integer('product_id'));
+            if ($lotPolicy->required($product, $configuration)) {
+                $lot = app(\App\Modules\Inventory\Services\ProductLotService::class)->create(
+                    $product, $request->integer('branch_id'), (string) ($data['new_lot_code'] ?? $data['lot_number'] ?? ''),
+                    $data['barcode'] ?? null, null, isset($data['initial_kg']) ? (string) $data['initial_kg'] : null);
+                app(\App\Modules\Inventory\Services\LotInventoryService::class)->apply(
+                    (int) $product->id, $request->integer('branch_id'), (int) $lot->id,
+                    (string) $data['initial_meters'], 'coil_entry', $lot,
+                    'coil-entry:'.$lot->id, (int) $request->user()->id);
+                return;
+            }
+            $lotPolicy->assertAlternativeWriterAllowed($product);
             $data['barcode'] = filled($data['barcode'] ?? null) ? $data['barcode'] : null;
             $data['lot_number'] = filled($data['lot_number'] ?? null) ? $data['lot_number'] : null;
             $data['available_meters'] = $data['initial_meters'];

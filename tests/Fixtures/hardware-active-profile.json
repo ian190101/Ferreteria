@@ -1,0 +1,373 @@
+{
+    "business_type": "hardware_store",
+    "configuration": {
+        "schema_version": 2,
+        "identity": {
+            "business_type": "hardware_store",
+            "commercial_name": "AROMA",
+            "specific_industry": null,
+            "uses_product_images": false,
+            "uses_product_variants": false,
+            "uses_branches": true,
+            "uses_pos_points": false,
+            "uses_internal_warehouses": false
+        },
+        "modules": {
+            "quotes": true,
+            "dashboard": true,
+            "alerts": true,
+            "sales_notes": true,
+            "pos": false,
+            "purchases": true,
+            "quick_purchases": false,
+            "cash": true,
+            "cash_flow": true,
+            "banks": true,
+            "billing": false,
+            "inventory": true,
+            "deliveries": true,
+            "customers": true,
+            "suppliers": true,
+            "expenses": true,
+            "returns": true,
+            "payment_promises": false,
+            "reports": true,
+            "exports": true,
+            "production": false,
+            "barcode_labels": true,
+            "workers": true,
+            "payroll": true,
+            "reservations": false,
+            "transfers": true,
+            "offline_pos": false,
+            "services": false,
+            "service_orders": false,
+            "restaurant_tables": false,
+            "kitchen_orders": false,
+            "recipes": false,
+            "combos": false,
+            "rentals": false,
+            "customer_qr_ordering": false,
+            "ai_assistant": false
+        },
+        "submodules": {
+            "sales_discounts": true,
+            "manual_price_change": true,
+            "advances": true,
+            "credit": true,
+            "tips": false,
+            "delivery": false,
+            "split_payments": false,
+            "thermal_printing": true,
+            "barcode_labels": true
+        },
+        "capabilities": {
+            "uses_inventory": true,
+            "uses_lots": true,
+            "uses_expiration_dates": false,
+            "uses_recipes": false,
+            "uses_production": false,
+            "uses_services": false,
+            "uses_service_orders": false,
+            "uses_reservations": false,
+            "uses_reservable_resources": false,
+            "uses_rentals": false,
+            "uses_tables": false,
+            "uses_waiters": false,
+            "uses_kitchen_orders": false,
+            "uses_tips": false,
+            "uses_split_payments": false,
+            "uses_delivery": true,
+            "requires_customer": true,
+            "allows_direct_sale": false,
+            "allows_quote_to_sale": true,
+            "uses_pos": false,
+            "uses_barcode_scanner": false,
+            "requires_cash_session": true,
+            "uses_cash": true,
+            "uses_cash_flow": true,
+            "uses_banks": true,
+            "uses_billing": false,
+            "uses_commissions": false,
+            "uses_custom_fields": false,
+            "uses_custom_statuses": false,
+            "uses_price_lists": false,
+            "uses_printer_profiles": false,
+            "uses_offline_pos": false,
+            "uses_dynamic_pos": false,
+            "uses_commercial_flow_rules": false,
+            "uses_dynamic_entities": false,
+            "uses_dynamic_fields": false,
+            "uses_dynamic_relationships": false,
+            "uses_dynamic_forms": false,
+            "uses_field_level_permissions": false,
+            "uses_attachments": false,
+            "uses_document_templates": false,
+            "uses_automation_rules": false,
+            "uses_approval_flows": false,
+            "uses_report_templates": false,
+            "uses_data_governance": false,
+            "uses_operational_traceability": false,
+            "uses_integrations": false,
+            "uses_advanced_multibranch": false,
+            "uses_health_records": false,
+            "uses_dental_chart": false,
+            "uses_loans": false,
+            "uses_guarantees": false,
+            "uses_projects": false,
+            "uses_construction_calculations": false,
+            "uses_formula_calculations": false,
+            "uses_vehicles": false,
+            "uses_equipment_repairs": false,
+            "uses_pet_records": false,
+            "uses_memberships": false,
+            "uses_courses": false,
+            "uses_customer_qr_ordering": false,
+            "uses_ai_assistant": false,
+            "uses_ai_internal_chat": false,
+            "uses_ai_customer_bot": false,
+            "uses_ai_owner_analytics": false,
+            "uses_ai_voice": false,
+            "uses_ai_exports": false,
+            "uses_ai_order_capture": false,
+            "uses_ai_external_api": false
+        },
+        "feature_flags": {
+            "business_profile_v2_core": true,
+            "dynamic_entities_engine": false,
+            "dynamic_fields_engine": false,
+            "dynamic_relationships_engine": false,
+            "dynamic_forms_engine": false,
+            "dynamic_workflows_engine": false,
+            "reservable_resources_engine": false,
+            "formula_engine": false,
+            "commercial_flow_engine": false,
+            "document_engine_v2": false,
+            "report_templates_engine": false,
+            "approval_engine": false,
+            "automation_engine": false,
+            "attachments_engine": false,
+            "field_permissions_engine": false,
+            "data_governance_engine": false,
+            "operational_traceability_engine": false,
+            "advanced_multibranch_engine": false,
+            "integrations_engine": false,
+            "customer_qr_ordering_engine": false,
+            "ai_assistant_engine": false
+        },
+        "sales": {
+            "workflow": "quotation_to_sale_note",
+            "quotation_mode": "required",
+            "document_main": "sale_note",
+            "quotation_label": "Cotizacion",
+            "sale_note_label": "Nota de venta",
+            "ticket_label": "Ticket POS",
+            "default_terms": "NOTA: NO SE ACEPTAN CAMBIOS NI DEVOLUCIONES.",
+            "terms_by_document": {
+                "quotation": "Cotizacion valida solo por el periodo acordado.",
+                "sale_note": "NOTA: NO SE ACEPTAN CAMBIOS NI DEVOLUCIONES.",
+                "ticket": "Gracias por su compra."
+            },
+            "customer_mode": "required",
+            "customer_required": true,
+            "allow_occasional_customer": true,
+            "allow_price_override": "permission",
+            "allow_negative_stock": false,
+            "negative_stock_policy": "never",
+            "negative_stock_roles": [],
+            "negative_stock_categories": [],
+            "price_policy": "base_price",
+            "discount_policy": "permission",
+            "max_discount_percent": 0,
+            "discount_roles": [],
+            "credit_limit_policy": "disabled",
+            "default_credit_limit": 0,
+            "inventory_discount_timing": "sale_note",
+            "reserve_lots_on_quotation": false,
+            "item_merge_control_enabled": true,
+            "item_merge_rule": "same_product_unit_and_measure",
+            "visible_columns": [
+                "description",
+                "model",
+                "quantity",
+                "unit",
+                "base",
+                "price",
+                "subtotal"
+            ],
+            "allowed_payment_methods": [
+                "cash",
+                "qr",
+                "transfer"
+            ],
+            "payment_methods_by_flow": {
+                "sales": [
+                    "cash",
+                    "qr",
+                    "transfer"
+                ],
+                "pos": [
+                    "cash",
+                    "qr"
+                ],
+                "collections": [
+                    "cash",
+                    "qr",
+                    "transfer"
+                ],
+                "purchases": [
+                    "cash",
+                    "qr",
+                    "transfer"
+                ],
+                "expenses": [
+                    "cash",
+                    "qr",
+                    "transfer"
+                ],
+                "payroll": [
+                    "cash",
+                    "qr",
+                    "transfer"
+                ]
+            }
+        },
+        "purchases": {
+            "workflow": "standard_purchase",
+            "barcode_entry": false,
+            "allow_create_product": true,
+            "supplier_mode": "optional",
+            "register_expense_when_paid": true,
+            "purchase_stock_mode_choice": true
+        },
+        "contacts": {
+            "customer_mode": "required",
+            "supplier_mode": "optional",
+            "multiple_contacts": false,
+            "multiple_addresses": false,
+            "delivery_address_mode": "optional",
+            "tax_data_required_for_billing": false
+        },
+        "deliveries": {
+            "mode": "optional",
+            "driver_required": false,
+            "truck_required": false
+        },
+        "banks": {
+            "reconciliation_mode": "automatic",
+            "require_branch_account": true
+        },
+        "finance": {
+            "accounting_mode": "cash_and_banks",
+            "uses_accounts_receivable": true,
+            "uses_accounts_payable": true,
+            "uses_cost_centers": false,
+            "profit_report_enabled": true,
+            "fiscal_report_enabled": false
+        },
+        "billing": {
+            "enabled": false,
+            "mode": "computerized_online",
+            "document_sector": "compra_venta",
+            "invoice_flow": "billing_disabled",
+            "issue_from": "sale_note",
+            "issue_timing": "automatic_after_quote_conversion",
+            "offline_behavior": "temporary_receipt",
+            "require_customer_tax_data": false,
+            "auto_request_cufd": false,
+            "daily_catalog_sync": false,
+            "allow_temporary_receipt": false,
+            "require_product_mapping": false,
+            "block_sale_if_invoice_fails": false
+        },
+        "products": {
+            "catalog_mode": "mixed_inventory",
+            "item_types": [
+                "physical",
+                "service"
+            ],
+            "images_enabled": false,
+            "gallery_enabled": false,
+            "variants_enabled": false,
+            "custom_fields_enabled": false,
+            "barcode_required": false,
+            "barcode_labels": true,
+            "unit_equivalences": true,
+            "allow_service_items": true,
+            "creation_context": "inventory_and_purchase"
+        },
+        "documents": {
+            "active": [
+                "quotation",
+                "sale_note",
+                "barcode_label"
+            ],
+            "numbering": {
+                "by_branch": true,
+                "by_pos_point": false,
+                "annual_reset": false,
+                "fiscal_separate": true
+            },
+            "templates": []
+        },
+        "approvals": {
+            "enabled": false,
+            "rules": []
+        },
+        "traceability": {
+            "enabled": true,
+            "capture_operational_responsibles": false,
+            "events": {
+                "created_by": true,
+                "prepared_by": false,
+                "delivered_by": true,
+                "charged_by": true,
+                "approved_by": true,
+                "voided_by": true,
+                "sensitive_field_changed_by": true
+            }
+        },
+        "policies": {
+            "data": {
+                "sensitive_fields": [
+                    "cost",
+                    "salary",
+                    "margin"
+                ],
+                "export_requires_permission": true,
+                "show_costs_permission": "inventory.products.manage",
+                "show_financial_reports_permission": "reports.view"
+            },
+            "voids_returns": {
+                "requires_permission": true,
+                "max_hours_after_sale": 24,
+                "return_stock": true,
+                "affects_cash": true,
+                "requires_reason": true,
+                "fiscal_credit_note": false
+            },
+            "degraded_mode": {
+                "inactive_modules_read_only_history": true,
+                "block_new_records": true,
+                "allow_historical_reports": true
+            }
+        },
+        "cash": {
+            "required_to_sell": true,
+            "scope": "user_branch",
+            "bank_reconciliation": true,
+            "allow_offline_cash_sales": false
+        },
+        "inventory": {
+            "always_by_branch": true,
+            "lot_tracking_optional": true,
+            "lot_tracking_enabled": true,
+            "unit_conversions": true
+        },
+        "human_resources": {
+            "workers_mode": "optional",
+            "payroll_enabled": true,
+            "salary_expense_integration": true
+        }
+    }
+}

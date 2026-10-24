@@ -3,15 +3,17 @@
 namespace App\Modules\Purchases\Models;
 
 use App\Modules\Inventory\Models\Product;
-use Illuminate\Database\Eloquent\Model;
+use App\Modules\Inventory\Models\ProductCoil;
+use App\Modules\Shared\Models\AuditableModel;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-class PurchaseOrderItem extends Model
+class PurchaseOrderItem extends AuditableModel
 {
     protected $fillable = [
         'purchase_order_id',
         'product_id',
+        'product_coil_id',
         'coil_barcode',
         'kilograms',
         'meters',
@@ -38,6 +40,11 @@ class PurchaseOrderItem extends Model
     public function product(): BelongsTo
     {
         return $this->belongsTo(Product::class);
+    }
+
+    public function lot(): BelongsTo
+    {
+        return $this->belongsTo(ProductCoil::class, 'product_coil_id');
     }
 
     public function receiptItems(): HasMany

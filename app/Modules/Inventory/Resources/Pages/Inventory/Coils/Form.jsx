@@ -6,13 +6,14 @@ import SelectField from '../../../../../Shared/Resources/Components/SelectField'
 import { Head, Link, useForm } from '@inertiajs/react';
 import { decimalStep, useDecimalFormatter } from '@/Utils/formatters';
 
-export default function Form({ branches, products }) {
+export default function Form({ branches, products, lotTrackingEnabled = false }) {
     const decimalFormat = useDecimalFormatter('inventory');
     const { data, setData, post, processing, errors } = useForm({
         branch_id: '',
         product_id: '',
         barcode: '',
         lot_number: '',
+        new_lot_code: '',
         initial_kg: '',
         initial_meters: '',
     });
@@ -22,6 +23,7 @@ export default function Form({ branches, products }) {
         post(route('inventory.coils.store'), { preserveScroll: true });
     };
     const selectedProduct = products.find((product) => String(product.id) === String(data.product_id));
+    const managed = lotTrackingEnabled && selectedProduct?.requires_lot;
     const selectedUnit = selectedProduct?.unit?.symbol ?? selectedProduct?.base_unit ?? 'unidad';
     const quantityKind = selectedUnit === 'm' ? 'measure' : ['kg', 'lb'].includes(String(selectedUnit).toLowerCase()) ? 'weight' : 'quantity';
 
@@ -30,7 +32,7 @@ export default function Form({ branches, products }) {
             <Head title="Nuevo lote/unidad fisica" />
 
             <section className="mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:px-8">
-                <ModuleHeader title="Nuevo lote/unidad fisica" description="Registra un lote, caja, paquete, rollo o pieza. Barcode y numero de lote son opcionales, pero ayudan a ubicar el material despues." />
+                <ModuleHeader title="Nuevo lote/unidad fisica" description={managed ? 'Cada bobina física tiene un lote distinto. Usa un código nuevo para cada bobina.' : 'Registra un lote, caja, paquete, rollo o pieza.'} />
 
                 <form onSubmit={submit} className="grid gap-5 rounded-lg border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:grid-cols-2">
                     <SelectField label="Sucursal" name="branch_id" value={data.branch_id} onChange={(event) => setData('branch_id', event.target.value)} error={errors.branch_id} required>
@@ -50,7 +52,7 @@ export default function Form({ branches, products }) {
                         ))}
                     </SelectField>
                     <FormField label="Barcode opcional" name="barcode" value={data.barcode} onChange={(event) => setData('barcode', event.target.value)} error={errors.barcode} />
-                    <FormField label="Numero de lote opcional" name="lot_number" value={data.lot_number} onChange={(event) => setData('lot_number', event.target.value)} error={errors.lot_number} />
+                    {managed ? <FormField label="Código nuevo de lote" name="new_lot_code" value={data.new_lot_code} onChange={(event) => setData('new_lot_code', event.target.value.toUpperCase())} error={errors.new_lot_code ?? errors.lot_code} required /> : <FormField label="Numero de lote opcional" name="lot_number" value={data.lot_number} onChange={(event) => setData('lot_number', event.target.value)} error={errors.lot_number} />}
                     <FormField label="Peso inicial kg (opcional)" name="initial_kg" type="number" step={decimalStep(decimalFormat.decimalsFor('weight'))} value={data.initial_kg} onChange={(event) => setData('initial_kg', event.target.value)} error={errors.initial_kg} />
                     <FormField label={`Cantidad inicial (${selectedUnit})`} name="initial_meters" type="number" step={decimalStep(decimalFormat.decimalsFor(quantityKind))} value={data.initial_meters} onChange={(event) => setData('initial_meters', event.target.value)} error={errors.initial_meters} required />
 

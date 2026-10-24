@@ -21,6 +21,7 @@ use App\Modules\Inventory\Models\ProductBranchStock;
 use App\Modules\Inventory\Models\ProductCategory;
 use App\Modules\Inventory\Models\ProductCategoryAttribute;
 use App\Modules\Inventory\Models\ProductCoil;
+use App\Modules\Inventory\Policies\ProductCoilPolicy;
 use App\Modules\Inventory\Models\ProductUnit;
 use App\Modules\Inventory\Models\Thickness;
 use App\Modules\Payments\Models\CreditNote;
@@ -101,6 +102,7 @@ class AppServiceProvider extends ServiceProvider
         Gate::before(function (User $user, string $ability) {
             return AuthSessionCache::isSuperAdministrator($user) ? true : null;
         });
+        Gate::policy(ProductCoil::class, ProductCoilPolicy::class);
 
         if (str_starts_with((string) config('app.url'), 'https://')) {
             URL::forceRootUrl((string) config('app.url'));

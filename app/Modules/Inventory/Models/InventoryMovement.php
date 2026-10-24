@@ -27,6 +27,11 @@ class InventoryMovement extends AuditableModel
         'branch_id',
         'product_id',
         'product_coil_id',
+        'lot_code_snapshot',
+        'lot_quantity_before',
+        'lot_quantity_after',
+        'reverses_movement_id',
+        'idempotency_key',
         'user_id',
         'source_type',
         'source_id',
@@ -42,6 +47,8 @@ class InventoryMovement extends AuditableModel
         'meters_delta' => 'decimal:3',
         'meters_before' => 'decimal:3',
         'meters_after' => 'decimal:3',
+        'lot_quantity_before' => 'decimal:3',
+        'lot_quantity_after' => 'decimal:3',
         'created_at' => 'datetime',
     ];
 
@@ -77,6 +84,11 @@ class InventoryMovement extends AuditableModel
     }
 
     public function coil(): BelongsTo
+    {
+        return $this->belongsTo(ProductCoil::class, 'product_coil_id');
+    }
+
+    public function lot(): BelongsTo
     {
         return $this->belongsTo(ProductCoil::class, 'product_coil_id');
     }

@@ -785,7 +785,10 @@ class BusinessProfilePresetFactory
             'name' => $name,
             'business_type' => $businessType,
             'description' => $description,
-            'configuration' => BusinessProfileConfiguration::normalized($configuration),
+            'configuration' => BusinessProfileConfiguration::normalized(array_replace_recursive([
+                'inventory' => ['lot_tracking_enabled' => false],
+                'sales' => ['reserve_lots_on_quotation' => false],
+            ], $configuration)),
         ];
     }
 }

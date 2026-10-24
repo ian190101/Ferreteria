@@ -1,6 +1,7 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { Head, router } from '@inertiajs/react';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import LotSelector from '../../../../Inventory/Resources/Components/LotSelector';
 
 const storageKey = (branchId) => `pos:branch:${branchId}:cart`;
 const queueKey = (branchId) => `pos:branch:${branchId}:pending-sales`;
@@ -60,7 +61,7 @@ export default function Index({ branches = [], selectedBranchId, saleTypes = [],
             })
             .slice(0, 30);
     }, [products, query]);
-    const total = cart.reduce((sum, item) => sum + (Number(item.quantity) * Number(item.sale_price)), 0);
+    const total = cart.reduce((sum, item) => sum + (Number(item.quantity) * Number(item.unit_factor ?? 1) * Number(item.sale_price)), 0);
     const selectedPaymentMethod = paymentMethods.find((method) => String(method.id) === String(paymentMethodId));
     const amountToCharge = paymentAmount === '' ? total : Number(paymentAmount);
 
@@ -165,6 +166,31 @@ export default function Index({ branches = [], selectedBranchId, saleTypes = [],
             .filter((item) => item.quantity > 0));
     };
 
+    const updateLot = (cartKey, lotId) => {
+        setCart((current) => {
+            const selected = current.find((item) => item.cart_key === cartKey);
+            if (!selected) return current;
+            const nextKey = `${selected.base_cart_key ?? cartKey.split(':lot:')[0]}:unit:${selected.selected_unit ?? selected.unit}:lot:${lotId || 'pending'}`;
+            const duplicate = current.find((item) => item.cart_key === nextKey && item.cart_key !== cartKey);
+            if (duplicate) return current.filter((item) => item.cart_key !== cartKey).map((item) => item.cart_key === nextKey ? { ...item, quantity: Number(item.quantity) + Number(selected.quantity) } : item);
+            return current.map((item) => item.cart_key === cartKey ? { ...item, cart_key: nextKey, lot_id: lotId } : item);
+        });
+    };
+
+    const updateUnit = (cartKey, symbol) => {
+        setCart((current) => {
+            const selected = current.find((item) => item.cart_key === cartKey);
+            if (!selected) return current;
+            const conversion = (selected.unit_conversions ?? []).find((row) => row.symbol === symbol);
+            if (symbol !== selected.unit && !conversion) return current;
+            const factor = symbol === selected.unit ? '1' : conversion.factor_to_base;
+            const nextKey = `${selected.base_cart_key}:unit:${symbol}:lot:${selected.lot_id || 'pending'}`;
+            const duplicate = current.find((item) => item.cart_key === nextKey && item.cart_key !== cartKey);
+            if (duplicate) return current.filter((item) => item.cart_key !== cartKey).map((item) => item.cart_key === nextKey ? { ...item, quantity: Number(item.quantity) + Number(selected.quantity) } : item);
+            return current.map((item) => item.cart_key === cartKey ? { ...item, cart_key: nextKey, selected_unit: symbol, unit_factor: factor } : item);
+        });
+    };
+
     const changeBranch = (branchId) => {
         router.get(route('pos.index'), { branch_id: branchId }, { preserveState: false, preserveScroll: true });
     };
@@ -172,6 +198,12 @@ export default function Index({ branches = [], selectedBranchId, saleTypes = [],
     const checkout = () => {
         if (cart.length === 0) {
             setNotice('Agrega al menos un producto antes de finalizar la venta.');
+            return;
+        }
+
+        if (posPolicy.lotTrackingEnabled && cart.some((item) => item.requires_lot && !item.lot_id)) {
+            setCheckoutErrors({ lot_id: 'Selecciona un lote para cada producto gestionado.' });
+            setNotice('Selecciona los lotes antes de finalizar.');
             return;
         }
 
@@ -265,7 +297,8 @@ export default function Index({ branches = [], selectedBranchId, saleTypes = [],
             preserveState: false,
             onStart: () => setCheckoutProcessing(true),
             onFinish: () => setCheckoutProcessing(false),
-            onSuccess: () => {
+            onSuccess: (page) => {
+                if (page.props.flash?.warning) setNotice(page.props.flash.warning);
                 if (queuedId) {
                     setPendingSales((current) => current.filter((entry) => entry.id !== queuedId));
                 } else {
@@ -527,15 +560,19 @@ export default function Index({ branches = [], selectedBranchId, saleTypes = [],
                                         <div>
                                             <p className="text-sm font-bold text-slate-950 dark:text-white">{item.name}</p>
                                             {item.variant_name ? <p className="text-xs font-semibold text-brand-primary">{item.variant_name}</p> : null}
-                                            <p className="text-xs text-slate-500">Bs {money(item.sale_price)} por {item.unit}</p>
+                                            <p className="text-xs text-slate-500">Bs {money(item.sale_price)} por {item.base_unit ?? item.unit}</p>
                                         </div>
-                                        <p className="text-sm font-bold">Bs {money(item.quantity * item.sale_price)}</p>
+                                        <p className="text-sm font-bold">Bs {money(item.quantity * Number(item.unit_factor ?? 1) * item.sale_price)}</p>
                                     </div>
                                     <div className="mt-3 flex items-center gap-2">
                                         <button type="button" onClick={() => updateQuantity(cartKey, item.quantity - 1)} className="h-9 w-9 rounded-full border border-slate-300 text-lg font-bold dark:border-slate-700">-</button>
                                         <input value={item.quantity} onChange={(event) => updateQuantity(cartKey, event.target.value)} className="h-9 w-20 rounded-xl border border-slate-200 bg-slate-50 text-center text-sm font-semibold dark:border-slate-800 dark:bg-slate-950" />
                                         <button type="button" onClick={() => updateQuantity(cartKey, item.quantity + 1)} className="h-9 w-9 rounded-full border border-slate-300 text-lg font-bold dark:border-slate-700">+</button>
                                     </div>
+                                    {posPolicy.lotTrackingEnabled && item.requires_lot ? <div className="mt-3 space-y-2">
+                                        {(item.unit_conversions ?? []).length ? <label className="block text-sm">Unidad de venta<select value={item.selected_unit ?? item.unit} onChange={(event) => updateUnit(cartKey, event.target.value)} className="mt-1 block w-full rounded-md border-slate-300 text-sm dark:bg-slate-900"><option value={item.unit}>{item.unit} (unidad base)</option>{item.unit_conversions.filter((row) => row.symbol !== item.unit).map((row) => <option key={row.symbol} value={row.symbol}>{row.name} · 1 = {row.factor_to_base} {item.base_unit ?? item.unit}</option>)}</select></label> : null}
+                                        <p className="text-xs text-slate-500">1 {item.selected_unit ?? item.unit} = {item.unit_factor ?? 1} {item.base_unit ?? item.unit}. Salida prevista: {(Number(item.quantity) * Number(item.unit_factor ?? 1)).toFixed(3)} {item.base_unit ?? item.unit} del lote seleccionado. El stock general se descuenta por esa misma cantidad.</p>
+                                        <LotSelector productId={item.product_id ?? item.id} branchId={selectedBranchId} context="pos" value={item.lot_id ?? ''} onChange={(value) => updateLot(cartKey, value)} error={checkoutErrors[`items.${cart.indexOf(item)}.lot_id`]} unit={item.base_unit ?? item.unit} /></div> : null}
                                 </div>
                             );})}
                         </div>
@@ -603,10 +640,11 @@ function buildCheckoutPayload({ selectedBranchId, saleTypeId, currencyId, paymen
             items: cart.map((item) => ({
                 product_id: item.product_id ?? item.id,
                 product_coil_id: '',
+                lot_id: item.requires_lot ? item.lot_id : undefined,
                 description: item.variant_name ? `${item.name} - ${item.variant_name}` : item.name,
                 unit_label: item.unit,
                 display_quantity: item.quantity,
-                display_unit_label: item.unit,
+                display_unit_label: item.selected_unit ?? item.unit,
                 item_attributes: item.variant_attributes ? Object.entries(item.variant_attributes).map(([key, value]) => ({ name: key, value })) : [],
                 calculation_mode: 'direct',
                 meters: item.quantity,
@@ -637,7 +675,11 @@ function normalizeCartItem(product, variant = null) {
         variant_id: variant?.id ?? null,
         variant_name: variant?.name ?? null,
         variant_attributes: variant?.attributes ?? null,
-        cart_key: variant?.id ? `${product.id}:variant:${variant.id}` : `${product.id}:base`,
+        base_cart_key: variant?.id ? `${product.id}:variant:${variant.id}` : `${product.id}:base`,
+        cart_key: variant?.id ? `${product.id}:variant:${variant.id}:unit:${product.unit}:lot:pending` : `${product.id}:base:unit:${product.unit}:lot:pending`,
+        selected_unit: product.unit,
+        unit_factor: '1',
+        lot_id: '',
         sale_price: variantPrice,
         sku: variant?.sku ?? product.sku,
         barcode: variant?.barcode ?? product.barcode,

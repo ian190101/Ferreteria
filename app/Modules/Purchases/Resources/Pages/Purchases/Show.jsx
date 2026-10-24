@@ -52,7 +52,7 @@ export default function Show({ purchase }) {
                                     <td className="px-4 py-3">{item.kilograms ?? '-'}</td>
                                     <td className="px-4 py-3">{(item.calculation_mode ?? 'direct') === 'direct' ? '-' : `${item.meters} m`}</td>
                                     <td className="px-4 py-3">{item.unit_cost}</td>
-                                    <td className="px-4 py-3">{item.coil?.barcode ?? item.lot_number ?? '-'}</td>
+                                    <td className="px-4 py-3">{item.lot_code_snapshot ?? item.lot_number ?? item.coil?.barcode ?? '-'}{item.lot?.lot_code && item.lot_code_snapshot !== item.lot.lot_code ? <p className="text-xs text-slate-500">Actual: {item.lot.lot_code}</p> : null}</td>
                                 </tr>
                             ))}
                         </tbody>

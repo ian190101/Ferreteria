@@ -4,16 +4,17 @@ namespace App\Modules\Sales\Models;
 
 use App\Modules\Inventory\Models\Product;
 use App\Modules\Inventory\Models\ProductCoil;
-use Illuminate\Database\Eloquent\Model;
+use App\Modules\Shared\Models\AuditableModel;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-class DeliveryNoteItem extends Model
+class DeliveryNoteItem extends AuditableModel
 {
     protected $fillable = [
         'delivery_note_id',
         'sale_item_id',
         'product_id',
         'product_coil_id',
+        'lot_code_snapshot',
         'meters',
         'display_quantity',
         'display_unit_label',
@@ -40,6 +41,11 @@ class DeliveryNoteItem extends Model
     }
 
     public function coil(): BelongsTo
+    {
+        return $this->belongsTo(ProductCoil::class, 'product_coil_id');
+    }
+
+    public function lot(): BelongsTo
     {
         return $this->belongsTo(ProductCoil::class, 'product_coil_id');
     }

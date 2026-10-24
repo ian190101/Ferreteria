@@ -70,7 +70,7 @@ export default function Index({ returns, branches, sales, saleItems, filters }) 
                             <option value="">Seleccionar</option>
                             {availableItems.map((item) => (
                                 <option key={item.id} value={item.id}>
-                                    {item.product?.name ?? item.description} - {decimalFormat.measure(item.remaining_meters)} m disp.
+                                    {item.product?.name ?? item.description} - {decimalFormat.measure(item.remaining_meters)} m disp. - lote {item.lot_code_snapshot ?? item.lot?.lot_code ?? item.coil?.barcode ?? 'global'}
                                 </option>
                             ))}
                         </SelectField>
@@ -90,7 +90,7 @@ export default function Index({ returns, branches, sales, saleItems, filters }) 
                         </div>
                         {selectedItem ? (
                             <div className="rounded-md bg-slate-100 p-3 text-xs text-slate-600 dark:bg-slate-800 dark:text-slate-300 sm:col-span-2 lg:col-span-4">
-                                Disponible: {decimalFormat.measure(selectedItem.remaining_meters)} m. Bobina: {selectedItem.coil?.barcode ?? 'Stock global'}. Precio: Bs {decimalFormat.money(selectedItem.unit_price)}.
+                                Pendiente de devolución: {decimalFormat.measure(selectedItem.remaining_meters)} m. Lote original: {selectedItem.lot_code_snapshot ?? selectedItem.lot?.lot_code ?? selectedItem.coil?.barcode ?? 'Stock global'}. Precio: Bs {decimalFormat.money(selectedItem.unit_price)}.
                             </div>
                         ) : null}
                     </form>
@@ -146,7 +146,7 @@ export default function Index({ returns, branches, sales, saleItems, filters }) 
                                     <td className="px-4 py-3">
                                         {saleReturn.items.map((item) => (
                                             <p key={item.id} className="text-xs">
-                                                {item.product?.name ?? '-'} - {decimalFormat.measure(item.meters)} m {item.coil ? `(${item.coil.barcode})` : '(global)'}
+                                                {item.product?.name ?? '-'} - {decimalFormat.measure(item.meters)} m ({item.lot_code_snapshot ?? item.lot?.lot_code ?? item.coil?.barcode ?? 'global'})
                                             </p>
                                         ))}
                                     </td>

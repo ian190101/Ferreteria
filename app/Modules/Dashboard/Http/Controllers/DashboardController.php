@@ -95,8 +95,8 @@ class DashboardController extends Controller
     private function metrics(array $permissions, ?int $branchId, array $branchIds, Carbon $from, Carbon $to, Carbon $today): array
     {
         return [
-            'sales_range_total' => $this->can($permissions, 'sales.view') ? (float) $this->salesQuery($branchId, $branchIds)->whereBetween('sold_at', [$from, $to])->sum('total') : null,
-            'sales_range_count' => $this->can($permissions, 'sales.view') ? $this->salesQuery($branchId, $branchIds)->whereBetween('sold_at', [$from, $to])->count() : null,
+            'sales_range_total' => $this->can($permissions, 'sales.view') ? (float) $this->salesQuery($branchId, $branchIds)->where('document_type', 'sale_note')->whereBetween('sold_at', [$from, $to])->sum('total') : null,
+            'sales_range_count' => $this->can($permissions, 'sales.view') ? $this->salesQuery($branchId, $branchIds)->where('document_type', 'sale_note')->whereBetween('sold_at', [$from, $to])->count() : null,
             'receivables_total' => $this->can($permissions, 'payments.view') ? (float) $this->receivablesQuery($branchId, $branchIds)->sum('balance_due') : null,
             'receivables_count' => $this->can($permissions, 'payments.view') ? $this->receivablesQuery($branchId, $branchIds)->count() : null,
             'open_cash_count' => $this->can($permissions, 'cash.view') ? $this->cashQuery($branchId, $branchIds)->count() : null,
@@ -183,6 +183,7 @@ class DashboardController extends Controller
     private function salesTrend(?int $branchId, array $branchIds, Carbon $from, Carbon $to): array
     {
         $rows = $this->salesQuery($branchId, $branchIds)
+            ->where('document_type', 'sale_note')
             ->whereBetween('sold_at', [$from, $to])
             ->selectRaw('DATE(sold_at) as date, SUM(total * exchange_rate_to_bob) as total, COUNT(*) as count')
             ->groupBy('date')
@@ -214,6 +215,7 @@ class DashboardController extends Controller
             ]);
 
         $coilRows = ProductCoil::query()
+            ->whereNull('product_coils.lot_code')
             ->join('products', 'product_coils.product_id', '=', 'products.id')
             ->when(true, fn ($query) => $this->applyBranchScope($query, $branchId, $branchIds, 'product_coils.branch_id'))
             ->where('status', 'available')
@@ -249,6 +251,7 @@ class DashboardController extends Controller
             ->join('sales', 'sale_items.sale_id', '=', 'sales.id')
             ->join('products', 'sale_items.product_id', '=', 'products.id')
             ->whereNull('sales.deleted_at')
+            ->where('sales.document_type', 'sale_note')
             ->where('sales.status', '!=', 'void')
             ->when(true, fn ($query) => $this->applyBranchScope($query, $branchId, $branchIds, 'sales.branch_id'))
             ->whereBetween('sales.sold_at', [$from, $to])
@@ -580,7 +583,7 @@ class DashboardController extends Controller
     {
         return Sale::query()
             ->when(true, fn ($query) => $this->applyBranchScope($query, $branchId, $branchIds))
-            ->where('status', '!=', 'void');
+            ->whereNotIn('status', ['void', 'voided', 'cancelled']);
     }
 
     private function receivablesQuery(?int $branchId, array $branchIds): Builder
@@ -695,7 +698,7 @@ class DashboardController extends Controller
 
     private function sectionCacheKey(string $section, int $userId, ?int $branchId, Carbon $from, Carbon $to): string
     {
-        return sprintf('dashboard:%s:v8:%s:%s:%s:%s:%s:%s:%s', $section, SystemCacheInvalidator::operationalVersion(), $this->financialVersion(), AuthSessionCache::version(), $userId, $branchId ?? 'all', $from->toDateString(), $to->toDateString());
+        return sprintf('dashboard:%s:v9:%s:%s:%s:%s:%s:%s:%s', $section, SystemCacheInvalidator::operationalVersion(), $this->financialVersion(), AuthSessionCache::version(), $userId, $branchId ?? 'all', $from->toDateString(), $to->toDateString());
     }
 
     private function financialVersion(): string

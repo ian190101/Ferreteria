@@ -18,6 +18,18 @@ class BusinessProfileCompatibilityValidator
 
         $errors = [];
         $warnings = [];
+        $lotPolicy = app(\App\Modules\Inventory\Services\LotTrackingPolicy::class);
+        if ($configuration['inventory']['lot_tracking_enabled'] && ! $lotPolicy->enabled($configuration)) {
+            $errors[] = 'El control de lotes requiere módulo de inventario y capacidades de inventario y lotes.';
+        }
+        if ($configuration['sales']['reserve_lots_on_quotation']
+            && (! $lotPolicy->enabled($configuration) || ! ($modules['reservations'] ?? false)
+                || ! ($capabilities['uses_reservations'] ?? false))) {
+            $errors[] = 'La reserva de lotes al cotizar requiere control de lotes y reservas activas.';
+        }
+        if ($lotPolicy->enabled($configuration) && ($sales['inventory_discount_timing'] ?? '') === 'manual') {
+            $errors[] = 'El control de lotes requiere descuento al emitir, pagar o despachar.';
+        }
 
         $enabled = fn (string $key): bool => (bool) ($capabilities[$key] ?? false);
         $flag = fn (string $key): bool => (bool) ($featureFlags[$key] ?? false);

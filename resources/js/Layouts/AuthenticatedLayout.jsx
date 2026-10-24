@@ -26,7 +26,7 @@ const iconPaths = {
 };
 
 export default function AuthenticatedLayout({ header, children, businessNamePreview = null }) {
-    const { props: { auth, branding, businessProfile, sandboxMode }, url } = usePage();
+    const { props: { auth, branding, businessProfile, sandboxMode, flash = {} }, url } = usePage();
     const user = auth.user;
     const permissions = auth.permissions;
     const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -184,6 +184,10 @@ export default function AuthenticatedLayout({ header, children, businessNamePrev
                 </header>
 
                 <main className="min-h-[calc(100vh-4rem)] px-0 py-0">
+                    {flash.success || flash.warning ? <div className="print-hidden mx-auto max-w-7xl space-y-2 px-4 pt-4 sm:px-6">
+                        {flash.success ? <p role="status" className="rounded-lg border border-emerald-300 bg-emerald-50 p-3 text-sm text-emerald-900">{flash.success}</p> : null}
+                        {flash.warning ? <p role="alert" className="rounded-lg border border-amber-400 bg-amber-50 p-3 text-sm font-semibold text-amber-950">⚠ {flash.warning}</p> : null}
+                    </div> : null}
                     {children}
                 </main>
             </div>

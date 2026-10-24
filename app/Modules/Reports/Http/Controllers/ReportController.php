@@ -36,7 +36,7 @@ class ReportController extends Controller
         abort_if($branchId && ! BranchAccess::canAccess($user, $branchId), 403);
 
         $cacheKey = sprintf(
-            'reports:dashboard:v4:%s:%s:%s:%s:%s:%s',
+            'reports:dashboard:v5:%s:%s:%s:%s:%s:%s',
             SystemCacheInvalidator::operationalVersion(),
             $this->financialVersion(),
             $user->id,
@@ -49,8 +49,8 @@ class ReportController extends Controller
 
         $metrics = Cache::remember($cacheKey.':'.md5(json_encode($profileFeatures)), now()->addSeconds($this->cacheSeconds()), function () use ($from, $to, $branchId, $profileFeatures) {
             return [
-                'sales_total' => $profileFeatures['sales'] ? (float) $this->salesQuery($from, $to, $branchId)->sum('total') : 0.0,
-                'sales_count' => $profileFeatures['sales'] ? $this->salesQuery($from, $to, $branchId)->count() : 0,
+                'sales_total' => $profileFeatures['sales'] ? (float) $this->salesQuery($from, $to, $branchId)->where('document_type', 'sale_note')->sum('total') : 0.0,
+                'sales_count' => $profileFeatures['sales'] ? $this->salesQuery($from, $to, $branchId)->where('document_type', 'sale_note')->count() : 0,
                 'quotations_count' => $profileFeatures['quotes'] ? $this->salesQuery($from, $to, $branchId)->where('document_type', 'quotation')->count() : 0,
                 'purchase_total' => $profileFeatures['purchases'] ? (float) $this->purchaseQuery($from, $to, $branchId)->sum('total_amount') : 0.0,
                 'purchase_count' => $profileFeatures['purchases'] ? $this->purchaseQuery($from, $to, $branchId)->count() : 0,
@@ -130,7 +130,7 @@ class ReportController extends Controller
 
     private function sectionCacheKey(string $section, int $userId, ?int $branchId, Carbon $from, Carbon $to): string
     {
-        return sprintf('reports:%s:v4:%s:%s:%s:%s:%s:%s', $section, SystemCacheInvalidator::operationalVersion(), $this->financialVersion(), $userId, $branchId ?? 'all', $from->toDateString(), $to->toDateString());
+        return sprintf('reports:%s:v5:%s:%s:%s:%s:%s:%s', $section, SystemCacheInvalidator::operationalVersion(), $this->financialVersion(), $userId, $branchId ?? 'all', $from->toDateString(), $to->toDateString());
     }
 
     private function financialVersion(): string
@@ -152,6 +152,7 @@ class ReportController extends Controller
         return Sale::query()
             ->when(true, fn ($query) => BranchAccess::apply($query, request()->user()))
             ->when($branchId, fn ($query) => $query->where('branch_id', $branchId))
+            ->whereNotIn('status', ['void', 'voided', 'cancelled'])
             ->whereBetween('sold_at', [$from, $to]);
     }
 
@@ -364,7 +365,8 @@ class ReportController extends Controller
             ->leftJoin('products', 'sale_items.product_id', '=', 'products.id')
             ->whereBetween('sales.sold_at', [$from, $to])
             ->where('sales.document_type', 'sale_note')
-            ->whereNotIn('sales.status', ['voided', 'cancelled'])
+            ->whereNotIn('sales.status', ['void', 'voided', 'cancelled'])
+            ->whereNull('sales.deleted_at')
             ->when($allowedBranchIds !== null, fn ($query) => $query->whereIn('sales.branch_id', $allowedBranchIds ?: [-1]))
             ->when($branchId, fn ($query) => $query->where('sales.branch_id', $branchId));
     }

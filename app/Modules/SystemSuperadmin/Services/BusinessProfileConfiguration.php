@@ -214,6 +214,7 @@ class BusinessProfileConfiguration
                 'credit_limit_policy' => 'disabled',
                 'default_credit_limit' => 0,
                 'inventory_discount_timing' => 'sale_note',
+                'reserve_lots_on_quotation' => false,
                 'item_merge_control_enabled' => true,
                 'item_merge_rule' => 'same_product_unit_and_measure',
                 'visible_columns' => ['description', 'model', 'quantity', 'unit', 'base', 'price', 'subtotal'],
@@ -506,6 +507,7 @@ class BusinessProfileConfiguration
             'inventory' => [
                 'always_by_branch' => true,
                 'lot_tracking_optional' => true,
+                'lot_tracking_enabled' => false,
                 'unit_conversions' => true,
             ],
             'ux' => [
@@ -524,13 +526,27 @@ class BusinessProfileConfiguration
 
     public static function normalized(array $configuration): array
     {
-        return self::replaceRecursive(self::defaults(), $configuration);
+        $normalized = self::replaceRecursive(self::defaults(), $configuration);
+        $normalized['inventory']['lot_tracking_enabled'] = self::boolean(
+            $normalized['inventory']['lot_tracking_enabled']
+        );
+        $normalized['sales']['reserve_lots_on_quotation'] = self::boolean(
+            $normalized['sales']['reserve_lots_on_quotation']
+        );
+
+        return $normalized;
+    }
+
+    private static function boolean(mixed $value): bool
+    {
+        return in_array($value, [true, 1, '1'], true);
     }
 
     private static function replaceRecursive(array $defaults, array $configuration): array
     {
         foreach ($configuration as $key => $value) {
-            if (is_array($value) && isset($defaults[$key]) && is_array($defaults[$key]) && ! array_is_list($value)) {
+            if (is_array($value) && isset($defaults[$key]) && is_array($defaults[$key])
+                && ! array_is_list($defaults[$key]) && ($value === [] || ! array_is_list($value))) {
                 $defaults[$key] = self::replaceRecursive($defaults[$key], $value);
 
                 continue;

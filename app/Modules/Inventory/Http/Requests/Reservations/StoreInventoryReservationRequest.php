@@ -7,6 +7,8 @@ use App\Modules\Inventory\Models\Product;
 use App\Modules\Inventory\Models\ProductBranchStock;
 use App\Modules\Inventory\Models\ProductCoil;
 use App\Modules\Sales\Models\Sale;
+use App\Modules\Sales\Models\SaleItem;
+use App\Modules\Inventory\Services\LotTrackingPolicy;
 use App\Support\BranchAccess;
 use Illuminate\Foundation\Http\FormRequest;
 
@@ -24,6 +26,8 @@ class StoreInventoryReservationRequest extends FormRequest
             'product_id' => ['required', 'integer', 'exists:products,id'],
             'product_coil_id' => ['nullable', 'integer', 'exists:product_coils,id'],
             'sale_id' => ['nullable', 'integer', 'exists:sales,id'],
+            'sale_item_id' => ['nullable', 'integer', 'exists:sale_items,id'],
+            'lot_id' => ['nullable', 'integer', 'exists:product_coils,id'],
             'meters' => ['required', 'numeric', 'gt:0', 'max:999999999999.999'],
             'expires_at' => ['nullable', 'date', 'after:now'],
             'reason' => ['nullable', 'string', 'max:255'],
@@ -43,6 +47,31 @@ class StoreInventoryReservationRequest extends FormRequest
             $product = Product::query()->find($this->integer('product_id'));
 
             if (! $product) {
+                return;
+            }
+
+            $lotPolicy = app(LotTrackingPolicy::class);
+            if ($lotPolicy->required($product, $lotPolicy->activeConfiguration())) {
+                $lot = ProductCoil::query()->where('branch_id', $this->integer('branch_id'))
+                    ->where('product_id', $product->id)->whereNull('voided_at')
+                    ->find($this->integer('lot_id'));
+                if (! $lot) {
+                    $validator->errors()->add('lot_id', 'Selecciona un lote vigente del producto y sucursal.');
+                }
+                $sale = Sale::query()->where('branch_id', $this->integer('branch_id'))
+                    ->where('document_type', 'quotation')->where('status', 'quoted')
+                    ->find($this->integer('sale_id'));
+                $line = SaleItem::query()->where('sale_id', $sale?->id)
+                    ->where('product_id', $product->id)->where('product_coil_id', $lot?->id)
+                    ->find($this->integer('sale_item_id'));
+                if (! $line) {
+                    $validator->errors()->add('sale_item_id', 'La reserva debe corresponder a una línea de la cotización, producto y lote.');
+                }
+                if ($line && is_numeric($this->input('meters')) && app(\App\Modules\Inventory\Services\InventoryQuantityService::class)
+                    ->compareExact((string) $this->input('meters'), (string) $line->meters) !== 0) {
+                    $validator->errors()->add('meters', 'La reserva debe coincidir con la cantidad pendiente de la línea.');
+                }
+
                 return;
             }
 

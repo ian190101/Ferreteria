@@ -23,6 +23,7 @@ class StoreInventoryAdjustmentRequest extends FormRequest
             'branch_id' => ['required', 'integer', 'exists:branches,id'],
             'product_id' => ['required', 'integer', 'exists:products,id'],
             'product_coil_id' => ['nullable', 'integer', 'exists:product_coils,id'],
+            'lot_id' => ['nullable', 'integer', 'exists:product_coils,id'],
             'adjustment_number' => ['required', 'string', 'max:80', 'unique:inventory_adjustments,adjustment_number'],
             'type' => ['required', Rule::in([InventoryAdjustment::TYPE_INCREASE, InventoryAdjustment::TYPE_DECREASE])],
             'meters' => ['required', 'numeric', 'gt:0', 'max:999999999999.999'],
@@ -44,6 +45,16 @@ class StoreInventoryAdjustmentRequest extends FormRequest
             $product = Product::query()->find($this->integer('product_id'));
 
             if (! $product) {
+                return;
+            }
+
+            $lotPolicy = app(\App\Modules\Inventory\Services\LotTrackingPolicy::class);
+            if ($lotPolicy->required($product, $lotPolicy->activeConfiguration())) {
+                $lot = ProductCoil::query()->where('branch_id', $this->integer('branch_id'))
+                    ->where('product_id', $product->id)->find($this->integer('lot_id'));
+                if (! $lot || $lot->lot_code === null) {
+                    $validator->errors()->add('lot_id', 'Selecciona un lote del producto y sucursal.');
+                }
                 return;
             }
 

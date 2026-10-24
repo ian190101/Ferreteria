@@ -4,16 +4,17 @@ namespace App\Modules\Sales\Models;
 
 use App\Modules\Inventory\Models\Product;
 use App\Modules\Inventory\Models\ProductCoil;
-use Illuminate\Database\Eloquent\Model;
+use App\Modules\Shared\Models\AuditableModel;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-class SaleItem extends Model
+class SaleItem extends AuditableModel
 {
     protected $fillable = [
         'sale_id',
         'product_id',
         'product_coil_id',
+        'lot_code_snapshot',
         'description',
         'unit_label',
         'display_quantity',
@@ -46,6 +47,11 @@ class SaleItem extends Model
     }
 
     public function coil(): BelongsTo
+    {
+        return $this->belongsTo(ProductCoil::class, 'product_coil_id');
+    }
+
+    public function lot(): BelongsTo
     {
         return $this->belongsTo(ProductCoil::class, 'product_coil_id');
     }

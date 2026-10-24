@@ -6,17 +6,26 @@ use App\Modules\Inventory\Http\Controllers\ProductCoilController;
 use App\Modules\Inventory\Http\Controllers\ProductCatalogController;
 use App\Modules\Inventory\Http\Controllers\ProductBarcodeLabelController;
 use App\Modules\Inventory\Http\Controllers\ProductController;
+use App\Modules\Inventory\Http\Controllers\ProductLotController;
 use App\Modules\Inventory\Http\Controllers\Reservations\InventoryReservationController;
 use App\Modules\Inventory\Http\Controllers\StockOverviewController;
 use App\Modules\Inventory\Http\Controllers\ThicknessController;
 use App\Modules\Inventory\Http\Controllers\Transfers\InventoryTransferController;
 use Illuminate\Support\Facades\Route;
 
+Route::middleware(['auth', 'lot_admin', 'verified', 'business_feature:inventory', 'business_capability:uses_lots'])
+    ->prefix('inventory/products/{product}/lots')->name('inventory.lots.')
+    ->group(function (): void {
+        Route::patch('/{lot}', [ProductLotController::class, 'update'])->name('update');
+        Route::post('/{lot}/void', [ProductLotController::class, 'void'])->name('void');
+    });
+
 Route::middleware(['auth', 'verified', 'business_feature:inventory'])
     ->prefix('inventory')
     ->name('inventory.')
     ->group(function () {
         Route::middleware('permission:inventory.products.view')->group(function () {
+            Route::get('/products/{product}/lots', [ProductLotController::class, 'index'])->name('lots.index');
             Route::get('/stock', StockOverviewController::class)->name('stock.index');
             Route::get('/products', [ProductController::class, 'index'])->name('products.index');
             Route::get('/products/{product}/barcode-label', [ProductBarcodeLabelController::class, 'show'])
@@ -25,7 +34,11 @@ Route::middleware(['auth', 'verified', 'business_feature:inventory'])
             Route::get('/thicknesses', [ThicknessController::class, 'index'])->name('thicknesses.index');
         });
 
+        Route::get('/products/{product}/lots/options', [ProductLotController::class, 'options'])
+            ->middleware('business_capability:uses_lots')->name('lots.options');
+
         Route::middleware('permission:inventory.products.manage')->group(function () {
+            Route::post('/products/{product}/lots', [ProductLotController::class, 'store'])->name('lots.store');
             Route::get('/products/create', [ProductController::class, 'create'])->name('products.create');
             Route::post('/products', [ProductController::class, 'store'])->name('products.store');
             Route::get('/products/{product}/edit', [ProductController::class, 'edit'])->name('products.edit');

@@ -9,14 +9,13 @@ class UpdateThicknessRequest extends FormRequest
 {
     protected function prepareForValidation(): void
     {
-        if ($this->filled('kg_per_meter')) {
-            $kgPerMeter = (float) $this->input('kg_per_meter');
-
-            if ($kgPerMeter > 0) {
-                $this->merge([
-                    'kg_to_meter_factor' => round(1 / $kgPerMeter, 6),
-                ]);
-            }
+        $kgPerMeter = (string) $this->input('kg_per_meter', '');
+        if (preg_match('/^\d+(?:\.\d{1,6})?$/D', $kgPerMeter)
+            && bccomp($kgPerMeter, '0', 6) > 0) {
+            $this->merge([
+                'kg_to_meter_factor' => app(\App\Modules\Inventory\Services\InventoryQuantityService::class)
+                    ->divideExact('1', $kgPerMeter, 6),
+            ]);
         }
     }
 
@@ -38,7 +37,7 @@ class UpdateThicknessRequest extends FormRequest
                 'max:9999.9999',
                 Rule::unique('thicknesses', 'millimeters')->ignore($thicknessId),
             ],
-            'kg_per_meter' => ['required', 'numeric', 'gt:0', 'max:999999999999.999999'],
+            'kg_per_meter' => ['required', 'regex:/^\d+(?:\.\d{1,6})?$/D', 'numeric', 'gt:0', 'max:999999999999.999999'],
             'kg_to_meter_factor' => ['required', 'numeric', 'gt:0', 'max:999999999999.999999'],
             'is_active' => ['required', 'boolean'],
         ];

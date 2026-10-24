@@ -11,6 +11,50 @@ use App\Modules\SystemSuperadmin\Services\ActiveBusinessProfile;
 
 class CommercialPolicy
 {
+    public function priceForExact(Product $product, ?int $branchId = null, ?int $customerId = null): string
+    {
+        $policy = $this->pricePolicy();
+        if (in_array($policy, ['customer_price', 'mixed'], true) && $customerId) {
+            $price = $this->rulePriceExact($product->id, null, $customerId);
+            if ($price !== null) {
+                return $price;
+            }
+        }
+        if (in_array($policy, ['branch_price', 'mixed'], true) && $branchId) {
+            $price = $this->rulePriceExact($product->id, $branchId, null);
+            if ($price !== null) {
+                return $price;
+            }
+        }
+
+        return (string) $product->sale_price;
+    }
+
+    public function discountExceedsLimitExact(string $gross, string $discount): bool
+    {
+        $limit = (string) (ActiveBusinessProfile::payload()['sales']['max_discount_percent'] ?? '0');
+        return bccomp(bcmul($discount, '100', 8), bcmul($gross, $limit, 8), 8) > 0;
+    }
+
+    public function assertCreditAllowedExact(?Customer $customer, string $newBalance): void
+    {
+        if (! $customer || bccomp($newBalance, '0', 2) <= 0 || $this->creditLimitPolicy() === 'disabled') {
+            return;
+        }
+        $limit = (string) ($customer->credit_limit ?? '0');
+        if (bccomp($limit, '0', 2) <= 0) {
+            $limit = (string) (ActiveBusinessProfile::payload()['sales']['default_credit_limit'] ?? '0');
+        }
+        if (bccomp($limit, '0', 2) <= 0) {
+            return;
+        }
+        $current = (string) Sale::query()->where('customer_id', $customer->id)
+            ->where('balance_due', '>', 0)->sum('balance_due');
+        if (bccomp(bcadd($current, $newBalance, 2), $limit, 2) > 0
+            && $this->creditLimitPolicy() === 'block') {
+            throw \Illuminate\Validation\ValidationException::withMessages(['customer_id' => 'El cliente supera el límite de crédito.']);
+        }
+    }
     public function pricePolicy(): string
     {
         return $this->salesValue('price_policy', 'base_price');
@@ -156,6 +200,13 @@ class CommercialPolicy
 
     private function rulePrice(int $productId, ?int $branchId, ?int $customerId): ?float
     {
+        $price = $this->rulePriceExact($productId, $branchId, $customerId);
+
+        return $price === null ? null : (float) $price;
+    }
+
+    private function rulePriceExact(int $productId, ?int $branchId, ?int $customerId): ?string
+    {
         $rule = ProductPriceRule::query()
             ->where('product_id', $productId)
             ->where('is_active', true)
@@ -170,7 +221,7 @@ class CommercialPolicy
             ->latest('id')
             ->first(['price']);
 
-        return $rule ? (float) $rule->price : null;
+        return $rule ? (string) $rule->price : null;
     }
 
     private function userHasListedRole(User $user, array $roles): bool

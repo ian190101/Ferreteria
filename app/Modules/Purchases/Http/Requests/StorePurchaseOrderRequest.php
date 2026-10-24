@@ -28,10 +28,12 @@ class StorePurchaseOrderRequest extends FormRequest
             'items' => ['required', 'array', 'min:1'],
             'items.*.product_id' => ['required', 'integer', 'exists:products,id'],
             'items.*.weight_unit' => ['nullable', 'in:kg,ton'],
-            'items.*.kilograms' => ['nullable', 'numeric', 'gt:0', 'max:999999999999.999'],
-            'items.*.meters' => ['nullable', 'numeric', 'gt:0', 'max:999999999999.999'],
-            'items.*.unit_cost' => ['required', 'numeric', 'gte:0', 'max:999999999999.9999'],
+            'items.*.kilograms' => ['nullable', 'regex:/^\d+(?:\.\d+)?$/D', 'numeric', 'gt:0', 'max:999999999999.999'],
+            'items.*.meters' => ['nullable', 'regex:/^\d+(?:\.\d+)?$/D', 'numeric', 'gt:0', 'max:999999999999.999'],
+            'items.*.unit_cost' => ['required', 'regex:/^\d+(?:\.\d+)?$/D', 'numeric', 'gte:0', 'max:999999999999.9999'],
             'items.*.lot_number' => ['nullable', 'string', 'max:80'],
+            'items.*.lot_id' => ['nullable', 'integer', 'exists:product_coils,id'],
+            'items.*.new_lot_code' => ['nullable', 'string', 'max:80'],
             'items.*.coil_barcode' => ['nullable', 'string', 'max:80', 'distinct', Rule::unique('product_coils', 'barcode')->whereNull('deleted_at'), Rule::unique('purchase_order_items', 'coil_barcode')],
             'items.*.description' => ['nullable', 'string', 'max:255'],
         ];
@@ -50,7 +52,7 @@ class StorePurchaseOrderRequest extends FormRequest
             $products = Product::query()
                 ->with('thickness:id')
                 ->whereIn('id', $items->pluck('product_id')->filter()->unique()->values())
-                ->get(['id', 'thickness_id', 'inventory_tracking_mode'])
+                ->get(['id', 'thickness_id', 'inventory_tracking_mode', 'is_inventory_item', 'requires_lot'])
                 ->keyBy('id');
 
             foreach ($items as $index => $item) {
@@ -68,7 +70,21 @@ class StorePurchaseOrderRequest extends FormRequest
                     $validator->errors()->add("items.{$index}.kilograms", 'El producto necesita espesor para convertir peso a metros.');
                 }
 
-                if ($product->inventory_tracking_mode === Product::TRACKING_COIL) {
+                $lotPolicy = app(\App\Modules\Inventory\Services\LotTrackingPolicy::class);
+                if ($lotPolicy->required($product, $lotPolicy->activeConfiguration())) {
+                    $hasExisting = filled($item['lot_id'] ?? null);
+                    $hasNew = filled($item['new_lot_code'] ?? null);
+                    if ($hasExisting === $hasNew) {
+                        $validator->errors()->add("items.{$index}.lot_id", 'Elige un lote existente o un código nuevo.');
+                    }
+                    if ($hasExisting && ! \App\Modules\Inventory\Models\ProductCoil::query()
+                        ->where('product_id', $product->id)->where('branch_id', $this->integer('branch_id'))
+                        ->whereNull('voided_at')->whereKey($item['lot_id'])->exists()) {
+                        $validator->errors()->add("items.{$index}.lot_id", 'El lote no pertenece al producto y sucursal.');
+                    }
+                }
+                if ($product->inventory_tracking_mode === Product::TRACKING_COIL
+                    && ! $lotPolicy->required($product, $lotPolicy->activeConfiguration())) {
                     if (blank($item['lot_number'] ?? null)) {
                         $validator->errors()->add("items.{$index}.lot_number", 'El rastreo individual requiere numero de lote para poder recibirse.');
                     }

@@ -31,6 +31,7 @@ class PosController extends Controller
         $products = Product::query()
             ->with(array_filter([
                 'unit:id,name,symbol,kind',
+                'unitConversions.unit:id,name,symbol',
                 'serviceType:id,name,code,is_delivery',
                 'branchStocks' => fn ($query) => $query
                     ->where('branch_id', $branchId),
@@ -39,7 +40,8 @@ class PosController extends Controller
             ]))
             ->where('is_active', true)
             ->where('is_sellable', true)
-            ->where('inventory_tracking_mode', Product::TRACKING_GLOBAL)
+            ->where(fn ($query) => $query->where('inventory_tracking_mode', Product::TRACKING_GLOBAL)
+                ->orWhere('requires_lot', true))
             ->whereIn('item_type', $allowedItemTypes)
             ->whereHas('branchStocks', fn ($query) => $query
                 ->where('branch_id', $branchId)
@@ -55,6 +57,7 @@ class PosController extends Controller
                 'base_unit',
                 'sale_price',
                 'inventory_tracking_mode',
+                'requires_lot',
                 'item_type',
                 'service_type_id',
                 'is_inventory_item',
@@ -70,9 +73,15 @@ class PosController extends Controller
                     'sku' => $product->sku,
                     'barcode' => $product->barcode,
                     'unit' => $product->unit?->symbol ?: $product->base_unit ?: 'u',
+                    'base_unit' => $product->base_unit,
+                    'unit_conversions' => app(\App\Modules\Inventory\Services\ProductWorkflowPolicy::class)->unitEquivalencesEnabled()
+                        ? $product->unitConversions->filter(fn ($row) => $row->is_active && $row->unit)
+                            ->map(fn ($row) => ['symbol' => $row->unit->symbol, 'name' => $row->unit->name, 'factor_to_base' => (string) $row->factor_to_base])->values()
+                        : [],
                     'sale_price' => $price,
                     'stock' => (float) ($product->branchStocks->first()?->available_meters ?? 0),
                     'tracking' => $product->inventory_tracking_mode,
+                    'requires_lot' => (bool) $product->requires_lot,
                     'item_type' => $product->item_type ?: 'physical',
                     'service_type' => $product->serviceType ? [
                         'id' => $product->serviceType->id,
@@ -113,6 +122,7 @@ class PosController extends Controller
                 ->where('is_active', true)
                 ->where('is_sellable', true)
                 ->where('inventory_tracking_mode', Product::TRACKING_COIL)
+                ->where('requires_lot', false)
                 ->whereHas('branchStocks', fn ($query) => $query
                     ->where('branch_id', $branchId)
                     ->where('is_enabled', true))

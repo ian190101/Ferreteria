@@ -131,6 +131,9 @@ class DeliveryNoteController extends Controller
             ->findOrFail((int) Sale::query()->whereKey($request->integer('sale_id'))->value('branch_id')));
 
         DB::transaction(function () use ($request, $inventory, $workflow, $route) {
+            $lotPolicy = app(\App\Modules\Inventory\Services\LotTrackingPolicy::class);
+            $lotPolicy->lockRule();
+            $lotPolicy->persistedConfiguration();
             $sale = Sale::query()
                 ->where('document_type', 'sale_note')
                 ->where('status', '!=', 'void')
@@ -172,13 +175,15 @@ class DeliveryNoteController extends Controller
                 'notes' => $request->validated('notes'),
             ]);
 
-            $totalMeters = 0.0;
+            $totalMeters = '0.000';
             $validatedItems = collect($request->validated('items'));
             $metersByItem = $validatedItems
                 ->groupBy('sale_item_id')
-                ->map(fn ($rows) => round((float) $rows->sum('meters'), 3));
+                ->map(fn ($rows) => $rows->reduce(fn (string $sum, array $row) =>
+                    bcadd($sum, (string) ($row['meters'] ?? '0'), 3), '0.000'));
             $saleItems = SaleItem::query()
                 ->where('sale_id', $sale->id)
+                ->with('product:id,is_inventory_item,requires_lot')
                 ->lockForUpdate()
                 ->get()
                 ->keyBy('id');
@@ -192,17 +197,57 @@ class DeliveryNoteController extends Controller
                 ->selectRaw('sale_item_id, SUM(meters) as delivered_meters')
                 ->groupBy('sale_item_id')
                 ->pluck('delivered_meters', 'sale_item_id');
+            $returnedAfterDelivery = $inventory->returnedDeliveryMetersByItem($saleItems->keys()->all());
             $pendingByItem = $saleItems->mapWithKeys(fn (SaleItem $saleItem) => [
-                $saleItem->id => max(round(
-                    (float) $saleItem->meters
-                    - (float) ($returnedByItem[$saleItem->id] ?? 0)
-                    - (float) ($deliveredByItem[$saleItem->id] ?? 0),
-                    3
-                ), 0),
+                $saleItem->id => $inventory->pendingDeliveryMeters($saleItem,
+                    (string) ($returnedByItem[$saleItem->id] ?? '0'),
+                    (string) ($deliveredByItem[$saleItem->id] ?? '0'),
+                    (string) ($returnedAfterDelivery[$saleItem->id] ?? '0')),
             ]);
+
+            $plan = $saleItems->filter(fn (SaleItem $item) => $item->lot_code_snapshot !== null)
+                ->map(fn (SaleItem $item) => [
+                    'product_id' => (int) $item->product_id,
+                    'branch_id' => (int) $sale->branch_id,
+                    'lot_id' => (int) $item->product_coil_id,
+                ])->all();
+            if ($plan !== []) {
+                app(\App\Modules\Inventory\Services\LotInventoryService::class)->lockBatch($plan);
+            }
 
             foreach ($validatedItems as $itemPayload) {
                 $saleItem = $saleItems->get($itemPayload['sale_item_id']);
+                $managed = $saleItem && $saleItem->lot_code_snapshot !== null;
+                if ($managed) {
+                    $quantity = app(\App\Modules\Inventory\Services\InventoryQuantityService::class);
+                    $meters = filled($itemPayload['meters'] ?? null)
+                        ? $quantity->exact((string) $itemPayload['meters'])
+                        : ($quantity->compareExact((string) ($saleItem->display_quantity ?? '0'), '0') > 0
+                            ? $quantity->divideExact(bcmul((string) ($itemPayload['quantity'] ?? $itemPayload['display_quantity'] ?? '0'),
+                                (string) $saleItem->meters, 9), (string) $saleItem->display_quantity)
+                            : $quantity->exact((string) ($itemPayload['quantity'] ?? $itemPayload['display_quantity'] ?? '0')));
+                    if ($quantity->compareExact($meters, (string) $pendingByItem[$saleItem->id]) > 0) {
+                        throw ValidationException::withMessages(['items' => 'El despacho supera la cantidad pendiente del lote.']);
+                    }
+                    $deliveryItem = $delivery->items()->create([
+                        'sale_item_id' => $saleItem->id,
+                        'product_id' => $saleItem->product_id,
+                        'product_coil_id' => $saleItem->product_coil_id,
+                        'lot_code_snapshot' => $saleItem->lot_code_snapshot,
+                        'meters' => $meters,
+                        'display_quantity' => $itemPayload['quantity'] ?? $itemPayload['display_quantity']
+                            ?? ($quantity->compareExact((string) ($saleItem->display_quantity ?? '0'), '0') > 0
+                                ? $quantity->divideExact(bcmul($meters, (string) $saleItem->display_quantity, 9), (string) $saleItem->meters)
+                                : $meters),
+                        'display_unit_label' => $saleItem->display_unit_label ?: $saleItem->unit_label,
+                    ]);
+                    if ($workflow->shouldDiscountInventoryOnDelivery()) {
+                        $inventory->decrementForDeliveryItem($deliveryItem, (int) $request->user()->id);
+                    }
+                    $totalMeters = $quantity->addExact($totalMeters, $meters);
+                    $pendingByItem[$saleItem->id] = $quantity->subtractExact((string) $pendingByItem[$saleItem->id], $meters);
+                    continue;
+                }
                 $displayQuantity = round((float) ($itemPayload['quantity'] ?? $itemPayload['display_quantity'] ?? 0), 3);
                 $meters = $this->quantityToBase($saleItem, $itemPayload);
                 $pendingMeters = (float) ($pendingByItem[$saleItem->id] ?? 0);
@@ -226,13 +271,13 @@ class DeliveryNoteController extends Controller
                     $inventory->decrementForDeliveryItem($deliveryItem, (int) $request->user()->id);
                 }
 
-                $totalMeters += $meters;
+                $totalMeters = bcadd($totalMeters, (string) $meters, 3);
                 $pendingByItem[$saleItem->id] = max(round($pendingMeters - $meters, 3), 0);
             }
 
             $delivery->update([
-                'total_meters' => round($totalMeters, 3),
-                'status' => $pendingByItem->every(fn (float $pending) => $pending <= 0) ? 'completed' : 'partial',
+                'total_meters' => $totalMeters,
+                'status' => $pendingByItem->every(fn ($pending) => bccomp((string) $pending, '0', 3) <= 0) ? 'completed' : 'partial',
             ]);
             $sale->update([
                 'internal_notes' => trim(implode("\n", array_filter([
@@ -243,7 +288,8 @@ class DeliveryNoteController extends Controller
             ]);
         });
 
-        return redirect()->route('sales.deliveries.index')->with('success', 'Despacho registrado correctamente.');
+        return redirect()->route('sales.deliveries.index')->with('success', 'Despacho registrado correctamente.')
+            ->with('warning', app(\App\Modules\Inventory\Services\LotDepletionNotice::class)->forSale(Sale::query()->findOrFail($request->integer('sale_id'))));
     }
 
     public function storeDriver(Request $request): RedirectResponse
@@ -278,11 +324,12 @@ class DeliveryNoteController extends Controller
 
     private function deliverableSaleItems(Request $request)
     {
-        return SaleItem::query()
+        $items = SaleItem::query()
             ->with([
                 'sale:id,branch_id,receipt_number,customer_name,status,document_type,requires_delivery',
                 'product:id,name,sku,inventory_tracking_mode',
                 'coil:id,barcode,lot_number',
+                'lot:id,lot_code',
             ])
             ->withSum('returnItems as returned_meters_sum', 'meters')
             ->withSum('deliveryItems as delivered_meters_sum', 'meters')
@@ -293,20 +340,42 @@ class DeliveryNoteController extends Controller
                 ->where('requires_delivery', true))
             ->latest('id')
             ->limit(300)
-            ->get()
-            ->map(function (SaleItem $item) {
-                $returnedMeters = (float) $item->returned_meters_sum;
-                $deliveredMeters = (float) $item->delivered_meters_sum;
-                $pendingMeters = max(round((float) $item->meters - $returnedMeters - $deliveredMeters, 3), 0);
-                $displayQuantity = (float) $item->display_quantity;
-                $baseQuantity = (float) $item->meters;
-                $deliveredQuantity = $baseQuantity > 0 && $displayQuantity > 0
-                    ? round($deliveredMeters * ($displayQuantity / $baseQuantity), 3)
-                    : $deliveredMeters;
-                $returnedQuantity = $baseQuantity > 0 && $displayQuantity > 0
-                    ? round($returnedMeters * ($displayQuantity / $baseQuantity), 3)
-                    : $returnedMeters;
-                $pendingQuantity = max(round($displayQuantity - $returnedQuantity - $deliveredQuantity, 3), 0);
+            ->get();
+        $inventory = app(SaleInventoryService::class);
+        $returnedAfterDelivery = $inventory->returnedDeliveryMetersByItem($items->pluck('id')->all());
+
+        return $items->map(function (SaleItem $item) use ($inventory, $returnedAfterDelivery) {
+                if ($item->lot?->lot_code !== null) {
+                    $quantity = app(\App\Modules\Inventory\Services\InventoryQuantityService::class);
+                    $returnedMeters = $quantity->exact((string) ($item->returned_meters_sum ?? '0'));
+                    $deliveredMeters = $quantity->exact((string) ($item->delivered_meters_sum ?? '0'));
+                    $pendingMeters = $inventory->pendingDeliveryMeters($item, $returnedMeters, $deliveredMeters,
+                        (string) ($returnedAfterDelivery[$item->id] ?? '0'));
+                    $displayQuantity = $quantity->exact((string) ($item->display_quantity ?? '0'));
+                    $baseQuantity = $quantity->exact((string) $item->meters);
+                    $deliveredQuantity = $quantity->compareExact($baseQuantity, '0') > 0
+                        ? $quantity->divideExact(bcmul($deliveredMeters, $displayQuantity, 9), $baseQuantity)
+                        : $deliveredMeters;
+                    $returnedQuantity = $quantity->compareExact($baseQuantity, '0') > 0
+                        ? $quantity->divideExact(bcmul($returnedMeters, $displayQuantity, 9), $baseQuantity)
+                        : $returnedMeters;
+                    $pendingQuantity = $quantity->compareExact($baseQuantity, '0') > 0
+                        ? $quantity->divideExact(bcmul($pendingMeters, $displayQuantity, 9), $baseQuantity)
+                        : $pendingMeters;
+                } else {
+                    $returnedMeters = (float) $item->returned_meters_sum;
+                    $deliveredMeters = (float) $item->delivered_meters_sum;
+                    $pendingMeters = max(round((float) $item->meters - $returnedMeters - $deliveredMeters, 3), 0);
+                    $displayQuantity = (float) $item->display_quantity;
+                    $baseQuantity = (float) $item->meters;
+                    $deliveredQuantity = $baseQuantity > 0 && $displayQuantity > 0
+                        ? round($deliveredMeters * ($displayQuantity / $baseQuantity), 3)
+                        : $deliveredMeters;
+                    $returnedQuantity = $baseQuantity > 0 && $displayQuantity > 0
+                        ? round($returnedMeters * ($displayQuantity / $baseQuantity), 3)
+                        : $returnedMeters;
+                    $pendingQuantity = max(round($displayQuantity - $returnedQuantity - $deliveredQuantity, 3), 0);
+                }
 
                 return [
                     'id' => $item->id,
@@ -327,9 +396,13 @@ class DeliveryNoteController extends Controller
                     'sale' => $item->sale,
                     'product' => $item->product,
                     'coil' => $item->coil,
+                    'lot' => $item->lot,
+                    'lot_code_snapshot' => $item->lot_code_snapshot,
                 ];
             })
-            ->filter(fn (array $item) => $item['pending_meters'] > 0)
+            ->filter(fn (array $item) => is_string($item['pending_meters'])
+                ? bccomp($item['pending_meters'], '0', 3) > 0
+                : $item['pending_meters'] > 0)
             ->values();
     }
 

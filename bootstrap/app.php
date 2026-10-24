@@ -10,6 +10,7 @@ use App\Http\Middleware\ForceHttpsForProxy;
 use App\Http\Middleware\HandleInertiaRequests;
 use App\Http\Middleware\SandboxContext;
 use App\Http\Middleware\SecurityHeaders;
+use App\Modules\Inventory\Http\Middleware\EnsureLotAdministrator;
 use App\Support\SystemErrorResponder;
 use App\Support\UserHomeRoute;
 use Illuminate\Foundation\Application;
@@ -94,6 +95,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'business_feature' => EnsureBusinessFeatureEnabled::class,
             'business_capability' => EnsureBusinessCapabilityEnabled::class,
             'system_superadmin' => EnsureSystemSuperadmin::class,
+            'lot_admin' => EnsureLotAdministrator::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {
