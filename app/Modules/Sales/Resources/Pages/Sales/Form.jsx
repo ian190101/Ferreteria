@@ -27,8 +27,8 @@ const DEFAULT_ITEM = {
     meters: '1',
     price_mode: 'meter',
     price_per_ton: '',
-    unit_price: '0',
-    discount_amount: '0',
+    unit_price: '0.00',
+    discount_amount: '0.00',
 };
 
 export default function Form({
@@ -114,7 +114,7 @@ export default function Form({
             meters: '',
             price_mode: 'meter',
             price_per_ton: '',
-            unit_price: productSalePrice(product),
+            unit_price: canOverridePrices ? decimalFormat.fixed(productSalePrice(product), 'cost') : productSalePrice(product),
         } : item));
 
         setItemsWithMergeNotice(mergeDuplicateItems(items, index, products, itemMergePolicy));
@@ -129,7 +129,7 @@ export default function Form({
             description: '',
             display_unit_label: '',
             item_attributes: [],
-            unit_price: '0',
+            unit_price: '0.00',
         } : item)));
     };
 
@@ -173,7 +173,7 @@ export default function Form({
             advance_amount_input: quotation.advance_option?.type === 'percentage' ? '' : quotation.advance_amount ?? '',
             terms: quotation.terms ?? documentPolicy.defaultTerms ?? '',
             internal_notes: `Generada desde cotizacion ${quotation.receipt_number}`,
-            items: (quotation.items ?? []).map((item) => saleItemFromQuotation(item, products, canOverridePrices)),
+            items: (quotation.items ?? []).map((item) => saleItemFromQuotation(item, products, canOverridePrices, decimalFormat)),
         });
     };
 
@@ -203,7 +203,8 @@ export default function Form({
             return;
         }
 
-        setItemsWithMergeNotice(addOrIncrementSaleProductItem(data.items, product, itemMergePolicy));
+        const price = canOverridePrices ? decimalFormat.fixed(productSalePrice(product), 'cost') : productSalePrice(product);
+        setItemsWithMergeNotice(addOrIncrementSaleProductItem(data.items, product, price, itemMergePolicy));
         setBarcodeQuery('');
         setBarcodeMessage(`${product.name} agregado al documento.`);
     };
@@ -457,7 +458,7 @@ export default function Form({
                                             name={`items.${index}.unit_price`}
                                             type="number"
                                             step={decimalStep(decimalFormat.decimalsFor('cost'))}
-                                            value={canOverridePrices ? item.unit_price : productSalePrice(product)}
+                                            value={canOverridePrices ? item.unit_price : decimalFormat.fixed(productSalePrice(product), 'cost')}
                                             onChange={(event) => updateItem(index, 'unit_price', event.target.value)}
                                             error={errors[`items.${index}.unit_price`]}
                                             disabled={!canOverridePrices}
@@ -522,16 +523,17 @@ function prepareSaleItem(item, products, decimalFormat, units, lotTrackingEnable
             ? (summary.meters ? decimalFormat.fixed(summary.meters, 'measure') : '')
             : (summary.meters ? decimalFormat.fixed(summary.meters, item.quantity_mode === 'direct' ? quantityKindForItem(item, product, units) : 'measure') : item.display_quantity),
         unit_price: item.price_mode === 'ton'
-            ? (summary.unitPrice ? decimalFormat.fixed(summary.unitPrice, 'cost') : '')
+            // El equivalente por unidad conserva la escala interna para no perder precisión al convertir desde toneladas.
+            ? (summary.unitPrice ? summary.unitPrice.toFixed(4) : '')
             : item.unit_price,
         discount_amount: item.discount_amount || '0',
     };
 }
 
-function saleItemFromQuotation(item, products, canOverridePrices) {
+function saleItemFromQuotation(item, products, canOverridePrices, decimalFormat) {
     const product = products.find((entry) => String(entry.id) === String(item.product_id));
     const calculationMode = item.calculation_mode ?? 'direct';
-    const unitPrice = canOverridePrices ? (item.unit_price ?? productSalePrice(product)) : productSalePrice(product);
+    const unitPrice = canOverridePrices ? decimalFormat.fixed(item.unit_price ?? productSalePrice(product), 'cost') : productSalePrice(product);
 
     return {
         ...DEFAULT_ITEM,
@@ -553,7 +555,7 @@ function saleItemFromQuotation(item, products, canOverridePrices) {
     };
 }
 
-function addOrIncrementSaleProductItem(items, product, itemMergePolicy = {}) {
+function addOrIncrementSaleProductItem(items, product, price, itemMergePolicy = {}) {
     const unit = productUnitSymbol(product);
     const duplicateIndex = items.findIndex((item) => (
         String(item.product_id) === String(product.id)
@@ -586,8 +588,7 @@ function addOrIncrementSaleProductItem(items, product, itemMergePolicy = {}) {
         meters: '',
         price_mode: 'meter',
         price_per_ton: '',
-        unit_price: productSalePrice(product),
-        discount_amount: '0',
+        unit_price: price,
     };
 
     const emptyIndex = items.findIndex((item) => (

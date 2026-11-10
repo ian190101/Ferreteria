@@ -9,9 +9,13 @@ class DecimalPrecision
 {
     public const SETTING_KEY = 'decimal_precision';
 
+    private const CACHE_KEY = 'system:decimal-precision:v2';
+
+    private const MONEY_SCALE = 2;
+
     public static function config(): array
     {
-        return Cache::remember('system:decimal-precision:v1', now()->addMinutes(30), function () {
+        return Cache::remember(self::CACHE_KEY, now()->addMinutes(30), function () {
             $setting = SystemSetting::query()
                 ->where('key', self::SETTING_KEY)
                 ->first(['value']);
@@ -22,7 +26,7 @@ class DecimalPrecision
 
     public static function forget(): void
     {
-        Cache::forget('system:decimal-precision:v1');
+        Cache::forget(self::CACHE_KEY);
     }
 
     public static function defaults(): array
@@ -30,23 +34,24 @@ class DecimalPrecision
         return [
             'quantity' => 0,
             'measure' => 2,
-            'money' => 1,
+            'money' => self::MONEY_SCALE,
             'percent' => 2,
             'exchange_rate' => 6,
             'weight' => 2,
-            'cost' => 1,
+            'cost' => self::MONEY_SCALE,
             'modules' => [
                 'sales' => [
                     'quantity' => 0,
                     'measure' => 2,
-                    'money' => 1,
+                    'money' => self::MONEY_SCALE,
+                    'cost' => self::MONEY_SCALE,
                 ],
                 'purchases' => [
                     'quantity' => 0,
                     'measure' => 2,
-                    'money' => 1,
+                    'money' => self::MONEY_SCALE,
                     'weight' => 2,
-                    'cost' => 1,
+                    'cost' => self::MONEY_SCALE,
                 ],
                 'inventory' => [
                     'quantity' => 0,
@@ -55,7 +60,7 @@ class DecimalPrecision
                     'cost' => 1,
                 ],
                 'finance' => [
-                    'money' => 1,
+                    'money' => self::MONEY_SCALE,
                 ],
             ],
         ];
@@ -70,10 +75,27 @@ class DecimalPrecision
             $normalized[$key] = self::bounded($normalized[$key] ?? $defaults[$key]);
         }
 
-        foreach (($normalized['modules'] ?? []) as $module => $rules) {
+        if (! is_array($normalized['modules'])) {
+            $normalized['modules'] = $defaults['modules'];
+        }
+        foreach ($normalized['modules'] as $module => $rules) {
+            if (! is_array($rules)) {
+                $normalized['modules'][$module] = $defaults['modules'][$module] ?? [];
+
+                continue;
+            }
             foreach ($rules as $key => $decimals) {
                 $normalized['modules'][$module][$key] = self::bounded($decimals);
             }
+        }
+
+        // Los importes se capturan en centavos incluso con preferencias antiguas guardadas.
+        $normalized['money'] = self::MONEY_SCALE;
+        foreach (['sales', 'purchases', 'finance'] as $module) {
+            $normalized['modules'][$module]['money'] = self::MONEY_SCALE;
+        }
+        foreach (['sales', 'purchases'] as $module) {
+            $normalized['modules'][$module]['cost'] = self::MONEY_SCALE;
         }
 
         return $normalized;

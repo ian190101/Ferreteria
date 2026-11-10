@@ -3,11 +3,11 @@ import { usePage } from '@inertiajs/react';
 const fallbackPrecision = {
     quantity: 0,
     measure: 2,
-    money: 1,
+    money: 2,
     percent: 2,
     exchange_rate: 6,
     weight: 2,
-    cost: 1,
+    cost: 2,
     modules: {},
 };
 

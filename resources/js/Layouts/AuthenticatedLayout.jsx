@@ -98,14 +98,14 @@ export default function AuthenticatedLayout({ header, children, businessNamePrev
     }, []);
 
     return (
-        <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,rgb(var(--color-primary)/0.10),transparent_34rem),linear-gradient(180deg,#f8fafc,#eef2f7)] text-slate-900 dark:bg-[radial-gradient(circle_at_top_left,rgb(var(--color-primary)/0.22),transparent_32rem),linear-gradient(180deg,#020617,#0f172a)] dark:text-slate-100">
+        <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,rgb(var(--color-primary)/0.10),transparent_34rem),linear-gradient(180deg,#f8fafc,#eef2f7)] text-slate-900 dark:bg-[radial-gradient(circle_at_top_left,rgb(var(--color-primary)/0.22),transparent_32rem),linear-gradient(180deg,#020617,#0f172a)] dark:text-slate-100 print:min-h-0 print:bg-none">
             <SystemErrorFeedback />
-            <aside className="app-surface fixed inset-y-0 left-0 z-40 hidden w-72 border-r border-white/60 bg-white/80 shadow-[0_20px_60px_rgb(15_23_42/0.08)] backdrop-blur-2xl dark:border-white/10 dark:bg-slate-950/80 lg:flex lg:flex-col">
+            <aside className="app-surface fixed inset-y-0 left-0 z-40 hidden w-72 border-r border-white/60 bg-white/80 shadow-[0_20px_60px_rgb(15_23_42/0.08)] backdrop-blur-2xl dark:border-white/10 dark:bg-slate-950/80 lg:flex lg:flex-col print:hidden">
                 <SidebarContent navigation={navigation} user={user} branding={branding} businessProfile={businessProfile} businessNamePreview={businessNamePreview} sandboxActive={Boolean(sandboxMode?.active)} />
             </aside>
 
             {sidebarOpen ? (
-                <div className="fixed inset-0 z-50 lg:hidden">
+                <div className="fixed inset-0 z-50 lg:hidden print:hidden">
                     <button aria-label="Cerrar menu" className="absolute inset-0 bg-slate-950/50" type="button" onClick={() => setSidebarOpen(false)} />
                     <aside className="app-surface relative flex h-full w-[min(20rem,86vw)] flex-col border-r border-white/60 bg-white/90 shadow-xl backdrop-blur-2xl dark:border-white/10 dark:bg-slate-950/90">
                         <SidebarContent navigation={navigation} user={user} branding={branding} businessProfile={businessProfile} businessNamePreview={businessNamePreview} sandboxActive={Boolean(sandboxMode?.active)} onNavigate={() => setSidebarOpen(false)} />
@@ -113,14 +113,14 @@ export default function AuthenticatedLayout({ header, children, businessNamePrev
                 </div>
             ) : null}
 
-            <div className="lg:pl-72">
+            <div className="lg:pl-72 print:pl-0">
                 {navigating ? (
-                    <div className="fixed inset-x-0 top-0 z-[80] h-1 overflow-hidden bg-brand-primary/15">
+                    <div className="fixed inset-x-0 top-0 z-[80] h-1 overflow-hidden bg-brand-primary/15 print:hidden">
                         <div className="h-full w-1/3 animate-[loading-bar_1s_ease-in-out_infinite] rounded-full bg-brand-primary" />
                     </div>
                 ) : null}
                 {sandboxMode?.active ? (
-                    <div className="sticky top-0 z-50 flex flex-wrap items-center justify-between gap-3 border-b border-amber-300 bg-amber-100 px-4 py-2 text-sm font-semibold text-amber-950 shadow-sm lg:px-8">
+                    <div className="sticky top-0 z-50 flex flex-wrap items-center justify-between gap-3 border-b border-amber-300 bg-amber-100 px-4 py-2 text-sm font-semibold text-amber-950 shadow-sm lg:px-8 print:hidden">
                         <span>Modo demo completo activo: no afecta produccion.</span>
                         <div className="flex gap-2">
                             <Link href={route('system-superadmin.business-profiles.sandbox-full.leave')} method="post" as="button" className="rounded-full bg-white px-3 py-1 text-xs text-amber-900 shadow-sm">
@@ -133,7 +133,7 @@ export default function AuthenticatedLayout({ header, children, businessNamePrev
                     </div>
                 ) : null}
                 {!sandboxMode?.active && businessProfile?.preview?.active ? (
-                    <div className="sticky top-0 z-50 flex flex-wrap items-center justify-between gap-3 border-b border-sky-300 bg-sky-100 px-4 py-2 text-sm font-semibold text-sky-950 shadow-sm lg:px-8">
+                    <div className="sticky top-0 z-50 flex flex-wrap items-center justify-between gap-3 border-b border-sky-300 bg-sky-100 px-4 py-2 text-sm font-semibold text-sky-950 shadow-sm lg:px-8 print:hidden">
                         <span>Usando borrador temporal: {businessProfile.preview.name}. Solo afecta tu sesion de sistemasuperadmin.</span>
                         <Link href={route('system-superadmin.business-profiles.draft-preview.stop')} method="delete" as="button" className="rounded-full bg-white px-3 py-1 text-xs text-sky-900 shadow-sm">
                             Volver al perfil activo

@@ -26,7 +26,7 @@ const DEFAULT_ITEM = {
     meters: '',
     cost_mode: 'meter',
     cost_per_ton: '',
-    unit_cost: '0',
+    unit_cost: '0.00',
     purchase_stock_mode: '',
     lot_number: '',
     lot_id: '',
@@ -85,7 +85,7 @@ export default function Form({ branches = [], suppliers = [], units = [], catego
             display_unit_label: '',
             item_attributes: [],
             meters: '',
-            unit_cost: '0',
+            unit_cost: '0.00',
             lot_number: '',
             coil_barcode: '',
             description: '',
@@ -190,7 +190,7 @@ export default function Form({ branches = [], suppliers = [], units = [], catego
             return;
         }
 
-        setItemsWithMergeNotice(addOrIncrementProductItem(data.items, product, units, categories, branches, itemMergePolicy));
+        setItemsWithMergeNotice(addOrIncrementProductItem(data.items, product, units, categories, branches, itemMergePolicy, decimalFormat.fixed(product.purchase_price, 'cost')));
         setBarcodeQuery('');
         setBarcodeMessage(`${product.name} agregado a la compra.`);
     };
@@ -478,12 +478,14 @@ function preparePurchaseItem(item, products, decimalFormat, units, categories, t
     const product = products.find((product) => String(product.id) === String(item.product_id))
         ?? draftProductFromItem(item, categories, units, thicknesses);
     const summary = purchaseItemSummary(item, product);
+    const costFromTon = item.cost_mode === 'ton' && item.calculation_mode === 'weight';
+    const unitCost = costFromTon ? summary.unitCost.toFixed(4) : item.unit_cost;
 
     return {
         product_id: item.product_mode === 'new' ? '' : item.product_id,
         new_product: item.product_mode === 'new' ? {
             ...item.new_product,
-            purchase_price: summary.unitCost ? decimalFormat.fixed(summary.unitCost, 'cost') : item.new_product?.purchase_price,
+            purchase_price: unitCost,
         } : undefined,
         display_quantity: item.calculation_mode === 'weight'
             ? (summary.meters ? decimalFormat.fixed(summary.meters, 'measure') : '1')
@@ -496,7 +498,7 @@ function preparePurchaseItem(item, products, decimalFormat, units, categories, t
         kilograms: item.calculation_mode === 'weight' || (lotTrackingEnabled && product?.requires_lot) ? item.kilograms : '',
         meters: lotTrackingEnabled && product?.requires_lot ? '' : summary.meters ? decimalFormat.fixed(summary.meters, item.calculation_mode === 'direct' ? quantityKindForItem(item, product, units) : 'measure') : item.meters,
         base_quantity: lotTrackingEnabled && product?.requires_lot && item.calculation_mode === 'length' ? item.meters : undefined,
-        unit_cost: summary.unitCost ? decimalFormat.fixed(summary.unitCost, 'cost') : item.unit_cost,
+        unit_cost: unitCost,
         lot_number: item.lot_number,
         coil_barcode: item.coil_barcode,
         lot_id: lotTrackingEnabled && product?.requires_lot && item.lot_mode === 'existing' ? item.lot_id : undefined,
@@ -513,7 +515,7 @@ function newDefaultItem(categories = [], units = [], branches = []) {
     };
 }
 
-function addOrIncrementProductItem(items, product, units = [], categories = [], branches = [], itemMergePolicy = {}) {
+function addOrIncrementProductItem(items, product, units, categories, branches, itemMergePolicy, unitCost) {
     const unit = productUnitSymbol(product);
     const duplicateIndex = items.findIndex((item) => (
         item.product_mode !== 'new'
@@ -542,7 +544,7 @@ function addOrIncrementProductItem(items, product, units = [], categories = [], 
         calculation_mode: 'direct',
         item_attributes: defaultItemAttributes(product),
         meters: '',
-        unit_cost: String(product.purchase_price ?? 0),
+        unit_cost: unitCost,
         purchase_stock_mode: product.inventory_tracking_mode ?? 'global',
         description: product.name ?? '',
     };

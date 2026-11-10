@@ -46,7 +46,6 @@ const catalogs = {
 
 export default function Settings({ saleTypes, currencies, advanceOptions, documentSequences, branches, decimalPrecision, documentPolicy = {}, itemMergeSetting = {} }) {
     const [editing, setEditing] = useState(null);
-    const decimalFormat = useDecimalFormatter('sales');
     const { data, setData, post, put, processing, errors, reset, clearErrors } = useForm(emptyForm());
     const decimalForm = useForm({
         decimal_precision: decimalDefaults(decimalPrecision),
@@ -286,6 +285,7 @@ function emptyForm() {
 }
 
 function Catalog({ kind, title, rows, columns, links, onEdit, onDelete }) {
+    const decimalFormat = useDecimalFormatter('sales');
     return (
         <div className="mb-8">
             <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">

@@ -1,6 +1,7 @@
 import PrimaryButton from '@/Components/PrimaryButton';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { assetUrl } from '@/Utils/assets';
+import { halfSheetPapers, halfSheetSideMarginMm } from '@/Utils/receiptPaper';
 import FormField from '../../../../../Shared/Resources/Components/FormField';
 import ContextHelp from '../../../../../Shared/Resources/Components/ContextHelp';
 import ModuleHeader from '../../../../../Shared/Resources/Components/ModuleHeader';
@@ -67,9 +68,9 @@ const DEFAULT_ITEM_COLUMNS = [
 
 const PAPER_PREVIEW_SIZES = {
     letter: { width: '100%', minHeight: '520px', aspectRatio: '216 / 279' },
-    half_letter: { width: '72%', minHeight: '520px', aspectRatio: '139.5 / 216', compact: true },
+    half_letter: { ...halfSheetPapers.half_letter, width: '100%' },
     legal: { width: '100%', minHeight: '660px', aspectRatio: '216 / 356' },
-    half_legal: { width: '82%', minHeight: '520px', aspectRatio: '178 / 216', compact: true },
+    half_legal: { ...halfSheetPapers.half_legal, width: '100%' },
     full_page: { width: '100%', minHeight: '560px', aspectRatio: '210 / 297' },
     thermal: { width: null, minHeight: '360px' },
 };
@@ -202,7 +203,7 @@ export default function Form({ template, branches, defaultLayout, attributeField
                                     <option value="quotation">{documentPolicy.quotationLabel ?? 'Cotizacion'}</option>
                                     <option value="sale_note">{documentPolicy.saleNoteLabel ?? 'Nota de venta'}</option>
                                 </SelectField>
-                                <SelectField label="Tipo de hoja" name="paper_type" value={data.paper_type} onChange={(event) => setData('paper_type', event.target.value)} error={errors.paper_type} helpTitle="Tipo de hoja" helpTooltip="Media hoja carta/oficio imprime en una sola mitad vertical. No crea dos copias; solo ajusta el area imprimible del documento.">
+                                <SelectField label="Tipo de hoja" name="paper_type" value={data.paper_type} onChange={(event) => setData('paper_type', event.target.value)} error={errors.paper_type} helpTitle="Tipo de hoja" helpTooltip="Media hoja carta/oficio usa todo el ancho de la hoja vertical y reserva su mitad inferior. Si el documento continúa, usa la mitad superior de la siguiente hoja.">
                                     <option value="letter">Bond carta</option>
                                     <option value="half_letter">Bond carta media hoja exacta</option>
                                     <option value="legal">Oficio</option>
@@ -213,7 +214,7 @@ export default function Form({ template, branches, defaultLayout, attributeField
                                 {data.paper_type === 'thermal' ? (
                                     <FormField label="Ancho termico mm" name="thermal_width_mm" type="number" min="40" max="120" value={data.thermal_width_mm} onChange={(event) => setData('thermal_width_mm', event.target.value)} error={errors.thermal_width_mm} />
                                 ) : null}
-                                <FormField label="Margen mm" name="margin_mm" type="number" min="0" max="30" value={data.layout.margin_mm} onChange={(event) => setLayout(['margin_mm'], Number(event.target.value))} error={errors['layout.margin_mm']} />
+                                <FormField label="Margen mm" name="margin_mm" type="number" min="0" max="30" value={data.layout.margin_mm} onChange={(event) => setLayout(['margin_mm'], Number(event.target.value))} error={errors['layout.margin_mm']} helpText="En media hoja, este ajuste controla el margen superior. Los márgenes laterales son de 4 mm." />
                                 <FormField label="Tamano fuente" name="font_size" type="number" min="8" max="18" value={data.layout.font_size} onChange={(event) => setLayout(['font_size'], Number(event.target.value))} error={errors['layout.font_size']} />
                                 <SelectField label="Fuente" name="font_family" value={data.layout.font_family} onChange={(event) => setLayout(['font_family'], event.target.value)} error={errors['layout.font_family']}>
                                     <option value="monospace">Monoespaciada</option>
@@ -453,7 +454,9 @@ function Preview({ data, attributeFields, documentPolicy }) {
                         maxWidth: '100%',
                         minHeight: paper.minHeight,
                         aspectRatio: paper.aspectRatio,
-                        padding: `${data.layout.margin_mm ?? 8}px`,
+                        padding: paper.compact
+                            ? `${data.layout.margin_mm ?? 8}px ${halfSheetSideMarginMm}px`
+                            : `${data.layout.margin_mm ?? 8}px`,
                         boxSizing: 'border-box',
                         fontFamily: data.layout.font_family,
                         fontSize: `${data.layout.font_size}px`,
@@ -467,7 +470,10 @@ function Preview({ data, attributeFields, documentPolicy }) {
                     ) : null}
                     <p className="text-center font-bold" style={{ color: primary }}>FABRICA DE CALAMINAS</p>
                     <p className="text-center text-xs" style={{ color: primary }}>Direccion / telefonos</p>
-                    <div className={`${paper.compact ? 'mt-1 pt-1' : 'mt-3 pt-2'} border-t border-black text-right text-xs`} style={{ color: secondary }}>{String(previewDocumentLabel(data.document_type, documentPolicy)).toUpperCase()}<br />Nro.: 000001</div>
+                    <div className={`${paper.compact ? 'mt-1 pt-1' : 'mt-3 pt-2'} border-t border-black text-right text-xs`} style={{ color: secondary }}>
+                        {data.layout.fields.document_title ? <div>{String(previewDocumentLabel(data.document_type, documentPolicy)).toUpperCase()}</div> : null}
+                        {data.layout.fields.receipt_number ? <div>Nro.: 000001</div> : null}
+                    </div>
                     <div className={`${paper.compact ? 'mt-1 pt-1' : 'mt-3 pt-2'} grid grid-cols-2 gap-1 border-t border-black text-xs`}>
                         <span>Cliente</span><span>Moneda</span><span>Vendedor</span><span>Tipo</span>
                     </div>

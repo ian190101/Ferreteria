@@ -6,15 +6,15 @@ import SelectField from '../../../../Shared/Resources/Components/SelectField';
 import { Head, Link, router, useForm, usePage } from '@inertiajs/react';
 import { chooseAction, promptAction } from '@/Utils/alerts';
 import { decimalStep, useDecimalFormatter } from '@/Utils/formatters';
+import { halfSheetPapers, halfSheetSideMarginMm } from '@/Utils/receiptPaper';
 import { useEffect, useRef, useState } from 'react';
 
 const PAPER_SIZES = {
     letter: { width: '216mm', height: '279mm', page: 'letter' },
-    half_letter: { width: '139.5mm', height: '216mm', page: '139.5mm 216mm', compact: true },
     legal: { width: '216mm', height: '356mm', page: 'legal' },
-    half_legal: { width: '178mm', height: '216mm', page: '178mm 216mm', compact: true },
     full_page: { width: '210mm', height: '297mm', page: 'A4' },
     thermal: { width: null, height: null, page: 'auto' },
+    ...halfSheetPapers,
 };
 
 const DEFAULT_ITEM_COLUMNS = [
@@ -49,6 +49,10 @@ export default function Show({ sale, template, documentPolicy = {}, billingPolic
     const paperWidth = template.paper_type === 'thermal' ? `${template.thermal_width_mm ?? 80}mm` : paper.width;
     const paperHeight = template.paper_type === 'thermal' ? null : paper.height;
     const isCompactPaper = Boolean(paper.compact);
+    const verticalMargin = `${layout.margin_mm ?? 8}mm`;
+    const sideMargin = `${halfSheetSideMarginMm}mm`;
+    // Se reserva la mitad inferior en cada hoja; las filas sobrantes pasan a la siguiente.
+    const pageMargin = isCompactPaper ? `${verticalMargin} ${sideMargin} calc(${paper.height} + ${sideMargin})` : '0';
     const primary = layout.colors.primary;
     const secondary = layout.colors.secondary;
     const logoPath = template.use_branding ? branch.setting?.logo_path : layout.logo?.path;
@@ -127,7 +131,7 @@ export default function Show({ sale, template, documentPolicy = {}, billingPolic
     };
 
     const renderSection = (section) => {
-        const props = { sale, branch, currency, documentTitle, fields, primary, secondary, layout, logoPath, compact: isCompactPaper, decimalFormat };
+        const props = { sale, branch, currency, documentTitle, documentPolicy, fields, primary, secondary, layout, logoPath, compact: isCompactPaper, decimalFormat };
 
         return {
             header: <HeaderSection key="header" {...props} />,
@@ -147,14 +151,23 @@ export default function Show({ sale, template, documentPolicy = {}, billingPolic
                 @media print {
                     body { background: #fff !important; }
                     nav, header, .print-hidden { display: none !important; }
-                    main { padding: 0 !important; }
+                    main { min-height: 0 !important; padding: 0 !important; }
+                    .ticket-document { width: 100% !important; max-width: none !important; margin: 0 !important; }
                     .ticket-preview-shell, .ticket-preview-stage { display: contents !important; width: auto !important; height: auto !important; overflow: visible !important; }
-                    .ticket-paper { box-shadow: none !important; margin: 0 auto !important; transform: none !important; }
-                    @page { margin: 0; size: ${paper.page}; }
+                    .ticket-paper {
+                        box-shadow: none !important;
+                        margin: 0 !important;
+                        min-height: 0 !important;
+                        transform: none !important;
+                        ${paper.width ? 'width: 100% !important;' : ''}
+                        ${isCompactPaper ? 'padding: 0 !important;' : ''}
+                    }
+                    .ticket-paper tr { break-inside: avoid; }
+                    @page { margin: ${pageMargin}; size: ${paper.page}; }
                 }
             `}</style>
 
-            <section className="mx-auto max-w-7xl px-4 py-8 print:px-0 print:py-0">
+            <section className="ticket-document mx-auto max-w-7xl px-4 py-8 print:px-0 print:py-0">
                 <div className="print-hidden mb-4 flex flex-wrap gap-3">
                     <button onClick={() => window.print()} className="rounded-md bg-brand-primary px-4 py-2 text-sm font-semibold text-white">Imprimir</button>
                     {canManageSales && sale.document_type === 'quotation' && sale.status === 'quoted' ? (
@@ -292,9 +305,8 @@ export default function Show({ sale, template, documentPolicy = {}, billingPolic
                             className="ticket-paper origin-top-left bg-white text-black shadow-lg"
                             style={{
                                 width: paperWidth,
-                                height: isCompactPaper ? paperHeight ?? undefined : undefined,
-                                minHeight: !isCompactPaper ? paperHeight ?? undefined : undefined,
-                                padding: `${layout.margin_mm ?? 8}mm`,
+                                minHeight: paperHeight ?? undefined,
+                                padding: isCompactPaper ? `${verticalMargin} ${sideMargin} ${sideMargin}` : verticalMargin,
                                 boxSizing: 'border-box',
                                 fontFamily: layout.font_family,
                                 fontSize: `${layout.font_size}px`,
@@ -374,8 +386,7 @@ function HeaderSection({ sale, branch, documentTitle, fields, layout, primary, l
             <div className="text-right">
                 <p>DOCUMENTO SIN VALOR FISCAL</p>
                 <p>*** Exija su factura ***</p>
-                <p className="font-bold">{documentTitle}</p>
-                <div className={compact ? 'mt-9' : 'mt-12'}>
+                <div className={compact ? 'mt-2' : 'mt-12'}>
                     {fields.document_title ? <p className="font-bold">{documentTitle}</p> : null}
                     {fields.receipt_number ? <p>Nro.: {sale.receipt_number}</p> : null}
                 </div>
@@ -708,11 +719,15 @@ function precisionKindForUnit(unit) {
     return 'quantity';
 }
 
-function TermsSection({ sale, compact = false }) {
+function TermsSection({ sale, documentPolicy, compact = false }) {
+    const key = sale.document_type === 'quotation' ? 'quotation' : (documentPolicy.documentMain === 'ticket' ? 'ticket' : 'sale_note');
+    const terms = sale.terms?.trim() || documentPolicy.termsByDocument?.[key] || documentPolicy.defaultTerms;
+
+    if (!terms) return null;
+
     return (
         <section className={`${compact ? 'mt-2 pt-1' : 'mt-4 pt-2'} whitespace-pre-line border-t border-black`}>
-            {sale.terms ? `${sale.terms}\n` : ''}
-            NOTA: NO SE ACEPTAN CAMBIOS NI DEVOLUCIONES.
+            {terms}
         </section>
     );
 }

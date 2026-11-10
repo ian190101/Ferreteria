@@ -19,7 +19,7 @@ export default function DecimalPrecisionEditor({ value, onChange }) {
         <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4 dark:border-slate-800 dark:bg-slate-950/30">
             <h4 className="text-sm font-semibold text-slate-950 dark:text-white">Decimales del sistema</h4>
             <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                Controla cuantos decimales se muestran por defecto y por modulo. Se aplica a ventas, compras, inventario y finanzas.
+                Los importes de ventas, compras y finanzas usan dos decimales. Las demás precisiones se pueden ajustar por módulo.
             </p>
 
             <div className="mt-4 grid gap-3 sm:grid-cols-3 lg:grid-cols-4">
@@ -29,6 +29,7 @@ export default function DecimalPrecisionEditor({ value, onChange }) {
                         label={label}
                         value={value[key] ?? 0}
                         onChange={(nextValue) => onChange([key], nextValue)}
+                        readOnly={key === 'money'}
                     />
                 ))}
             </div>
@@ -44,6 +45,7 @@ export default function DecimalPrecisionEditor({ value, onChange }) {
                                     label={decimalLabel(key)}
                                     value={decimals}
                                     onChange={(nextValue) => onChange(['modules', module, key], nextValue)}
+                                    readOnly={module !== 'inventory' && (key === 'money' || (key === 'cost' && ['sales', 'purchases'].includes(module)))}
                                 />
                             ))}
                         </div>
@@ -54,7 +56,7 @@ export default function DecimalPrecisionEditor({ value, onChange }) {
     );
 }
 
-function DecimalInput({ label, value, onChange }) {
+function DecimalInput({ label, value, onChange, readOnly = false }) {
     return (
         <label className="block">
             <span className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">{label}</span>
@@ -64,6 +66,7 @@ function DecimalInput({ label, value, onChange }) {
                 max="6"
                 step="1"
                 value={value}
+                readOnly={readOnly}
                 onChange={(event) => onChange(event.target.value)}
                 className="mt-1 block w-full rounded-2xl border-slate-200 bg-white/80 text-sm shadow-sm focus:border-brand-primary focus:ring-brand-primary dark:border-white/10 dark:bg-white/10 dark:text-slate-100"
             />
@@ -87,16 +90,16 @@ export function decimalDefaults(value = {}) {
     return {
         quantity: Number(value.quantity ?? 0),
         measure: Number(value.measure ?? 2),
-        money: Number(value.money ?? 1),
+        money: Number(value.money ?? 2),
         percent: Number(value.percent ?? 2),
         exchange_rate: Number(value.exchange_rate ?? 6),
         weight: Number(value.weight ?? 2),
-        cost: Number(value.cost ?? 1),
+        cost: Number(value.cost ?? 2),
         modules: {
-            sales: { quantity: Number(value.modules?.sales?.quantity ?? 0), measure: Number(value.modules?.sales?.measure ?? 2), money: Number(value.modules?.sales?.money ?? 1) },
-            purchases: { quantity: Number(value.modules?.purchases?.quantity ?? 0), measure: Number(value.modules?.purchases?.measure ?? 2), money: Number(value.modules?.purchases?.money ?? 1), weight: Number(value.modules?.purchases?.weight ?? 2), cost: Number(value.modules?.purchases?.cost ?? 1) },
+            sales: { quantity: Number(value.modules?.sales?.quantity ?? 0), measure: Number(value.modules?.sales?.measure ?? 2), money: Number(value.modules?.sales?.money ?? 2), cost: Number(value.modules?.sales?.cost ?? 2) },
+            purchases: { quantity: Number(value.modules?.purchases?.quantity ?? 0), measure: Number(value.modules?.purchases?.measure ?? 2), money: Number(value.modules?.purchases?.money ?? 2), weight: Number(value.modules?.purchases?.weight ?? 2), cost: Number(value.modules?.purchases?.cost ?? 2) },
             inventory: { quantity: Number(value.modules?.inventory?.quantity ?? 0), measure: Number(value.modules?.inventory?.measure ?? 2), weight: Number(value.modules?.inventory?.weight ?? 2), cost: Number(value.modules?.inventory?.cost ?? 1) },
-            finance: { money: Number(value.modules?.finance?.money ?? 1) },
+            finance: { money: Number(value.modules?.finance?.money ?? 2) },
         },
     };
 }
